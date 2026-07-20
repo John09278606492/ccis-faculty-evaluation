@@ -7,6 +7,7 @@ use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
+use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
 
 class FieldsRelationManager extends RelationManager
@@ -26,12 +27,6 @@ class FieldsRelationManager extends RelationManager
             ->schema([
                 Forms\Components\Section::make('Field Configuration')
                     ->schema([
-                        Forms\Components\TextInput::make('section')
-                            ->label('Section')
-                            ->placeholder('e.g., A. Commitment')
-                            ->helperText('Group fields into sections for organized display')
-                            ->maxLength(100),
-
                         Forms\Components\TextInput::make('label')
                             ->required()
                             ->maxLength(255)
@@ -44,11 +39,12 @@ class FieldsRelationManager extends RelationManager
                             ->helperText('Internal field name (auto-generated from label)'),
 
                         // When custom scale is enabled, lock type to likert_scale
+                        // section_header is excluded — sections are managed via the Form Builder
                         Forms\Components\Select::make('type')
                             ->options(
                                 $hasCustomScale
                                 ? ['likert_scale' => 'Likert Scale (Rating)']
-                                : FormField::TYPES
+                                : collect(FormField::TYPES)->except('section_header')->toArray()
                             )
                             ->required()
                             ->live()
@@ -140,8 +136,9 @@ class FieldsRelationManager extends RelationManager
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('type')
-                    ->options(FormField::TYPES),
-            ])
+                    ->options(collect(FormField::TYPES)->except('section_header')->toArray()),
+            ], layout: FiltersLayout::AboveContent)
+            ->modifyQueryUsing(fn($query) => $query->where('type', '!=', 'section_header'))
             ->headerActions([
                 Tables\Actions\CreateAction::make()
                     ->label('Add Field'),

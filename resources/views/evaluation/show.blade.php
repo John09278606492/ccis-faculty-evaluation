@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ $form->name }} - Instructor Evaluation</title>
+    <title>{{ $form->name }} - Evaluation</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         .rating-radio:checked + .rating-circle {
@@ -17,10 +17,20 @@
             border-color: var(--scale-color, #3b82f6);
             background-color: color-mix(in srgb, var(--scale-color, #3b82f6) 10%, white);
         }
+        .eval-richtext ul, .eval-richtext ol { padding-left: 1.5em; margin: 2px 0; }
+        .eval-richtext ul { list-style-type: disc; }
+        .eval-richtext ol { list-style-type: decimal; }
+        .eval-richtext li { margin: 1px 0; }
+        .eval-richtext p { margin: 2px 0; }
+        .eval-table { border-collapse: collapse; }
+        .eval-table th, .eval-table td { border: 1px solid #e5e7eb; }
+        .eval-col-uniform { width: var(--col-width); min-width: 120px; }
     </style>
 </head>
 <body class="bg-gray-100 min-h-screen py-8">
     @php
+        $hasRatingFields = $fields->whereIn('type', ['likert_scale', 'rating'])->count() > 0;
+
         $ratingScale = $form->rating_scale ?? [
             ['value' => 5, 'label' => 'Outstanding', 'description' => 'The performance almost always exceeds the job requirements. The Faculty is an exceptional role model.', 'color' => '#22c55e'],
             ['value' => 4, 'label' => 'Very Satisfactory', 'description' => 'The performance meets and often exceeds the job requirements.', 'color' => '#3b82f6'],
@@ -48,11 +58,11 @@
             <p class="text-gray-600 text-sm mb-4">{{ $form->description }}</p>
             @endif
 
-            <div class="bg-blue-50 border border-blue-200 p-4 rounded-lg text-left">
+            <div class="bg-[#f5f0fa] border border-[#d4b8e8] p-4 rounded-lg text-left">
                 <div class="grid grid-cols-2 gap-4 text-sm">
                     <div>
-                        <span class="text-gray-500">Name of Faculty:</span>
-                        <span class="font-semibold">{{ $courseOffering->instructor->name ?? 'N/A' }}</span>
+                        <span class="text-gray-500">Name of {{ $courseOffering->evaluatee_label ?? 'Faculty' }}:</span>
+                        <span class="font-semibold">{{ $courseOffering->evaluatee->name ?? 'N/A' }}</span>
                     </div>
                     <div>
                         <span class="text-gray-500">Course:</span>
@@ -75,10 +85,10 @@
         @if($alreadySubmitted)
         <div class="bg-yellow-50 border-l-4 border-yellow-400 p-6 rounded-lg">
             <h2 class="text-lg font-semibold text-yellow-800 mb-2">Already Submitted</h2>
-            <p class="text-yellow-700 mb-4">You have already submitted an evaluation for this course offering.</p>
+            <p class="text-yellow-700 mb-4">You have already submitted an evaluation for this assignment.</p>
             <a
                 href="{{ url()->previous() }}"
-                class="inline-flex items-center gap-2 bg-gray-800 text-white font-semibold py-2 px-5 rounded-lg hover:bg-gray-700 transition"
+                class="inline-flex items-center gap-2 bg-[#340167] text-white font-semibold py-2 px-5 rounded-lg hover:bg-[#280150] transition"
             >
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
@@ -87,7 +97,8 @@
             </a>
         </div>
         @else
-        <!-- Rating Scale Legend -->
+        <!-- Rating Scale Legend (only shown when form has rating/likert fields) -->
+        @if($hasRatingFields)
         <div class="bg-white rounded-lg shadow-md p-4 mb-6">
             <h3 class="font-semibold text-gray-700 mb-3">Rating Scale</h3>
             <div class="overflow-x-auto">
@@ -111,6 +122,7 @@
                 </table>
             </div>
         </div>
+        @endif
 
         <!-- Form -->
         <form action="{{ route('evaluate.store', $courseOffering) }}" method="POST">
@@ -125,6 +137,7 @@
             @php
                 $groupedFields = $fields->groupBy('section');
                 $sectionIndex = 0;
+                $globalFieldNumber = 0;
             @endphp
 
             @foreach($groupedFields as $section => $sectionFields)
@@ -137,17 +150,21 @@
 
                 <div class="bg-white rounded-lg shadow-md mb-6 overflow-hidden" data-section="{{ $section ?: 'General Questions' }}">
                     <!-- Section Header -->
-                    <div class="bg-gray-800 text-white px-4 py-3 flex items-center justify-between">
+                    <div class="bg-[#340167] text-white px-4 py-3 flex items-center justify-between">
                         <h3 class="font-semibold">{{ $section ?: 'General Questions' }}</h3>
                     </div>
 
                     {{-- Likert Scale Fields as Table --}}
                     @if($sectionHasLikert)
                     <div class="overflow-x-auto">
-                        <table class="w-full">
+                        @php $colCount = count($form->field_columns ?? []); @endphp
+                        <table class="w-full eval-table" @if($colCount) style="--col-width: {{ floor(40 / $colCount) }}%" @endif>
                             <thead>
                                 <tr class="bg-gray-50 border-b-2 border-gray-200">
-                                    <th class="text-left py-3 px-4 font-semibold text-gray-700 w-1/2">Criteria</th>
+                                    <th class="text-left py-3 px-4 font-semibold text-gray-700" @if(!$colCount) style="width:50%" @endif>Criteria</th>
+                                    @foreach($form->field_columns ?? [] as $col)
+                                    <th class="text-left py-3 px-4 font-semibold text-gray-700 eval-col-uniform">{{ $col['label'] }}</th>
+                                    @endforeach
                                     @foreach($ratingScale as $scale)
                                     <th class="py-3 px-2 text-center w-20">
                                         <div class="flex flex-col items-center">
@@ -160,9 +177,10 @@
                             </thead>
                             <tbody>
                                 @foreach($sectionFields->where(fn($f) => in_array($f->type, ['likert_scale', 'rating'])) as $index => $field)
+                                @php $globalFieldNumber++; @endphp
                                 <tr class="border-b hover:bg-gray-50 {{ $loop->even ? 'bg-gray-50/50' : '' }}">
                                     <td class="py-3 px-4 text-gray-800">
-                                        <span class="font-medium">{{ $index + 1 }}.</span>
+                                        <span class="font-medium">{{ $globalFieldNumber }}.</span>
                                         {{ $field->label }}
                                         @if($field->is_required)<span class="text-red-500">*</span>@endif
                                         @if($field->help_text)
@@ -172,6 +190,11 @@
                                         <p class="text-red-500 text-xs mt-1">{{ $message }}</p>
                                         @enderror
                                     </td>
+                                    @foreach($form->field_columns ?? [] as $col)
+                                    <td class="py-3 px-4 text-gray-700 text-sm eval-richtext eval-col-uniform">
+                                        {!! $field->column_values[$col['key']] ?? '' !!}
+                                    </td>
+                                    @endforeach
                                     @foreach($ratingScale as $scale)
                                     <td class="py-3 px-2 text-center">
                                         <label class="rating-label flex justify-center cursor-pointer" style="--scale-color: {{ $scale['color'] ?? '#3b82f6' }}">
@@ -312,7 +335,8 @@
                 </div>
             @endforeach
 
-            <!-- Overall Score -->
+            <!-- Overall Score (only when form has rating fields) -->
+            @if($hasRatingFields)
             <div class="bg-white rounded-lg shadow-md p-6 mb-6 border-2 border-blue-200" id="overall-score-card">
                 <div class="flex items-center justify-between">
                     <div>
@@ -327,6 +351,7 @@
                     </div>
                 </div>
             </div>
+            @endif
 
             {{-- Overall Comment (configurable: hidden/optional/required) --}}
             @if($overallCommentMode !== 'hidden')
@@ -339,7 +364,7 @@
                         <span class="text-gray-400 font-normal text-sm">(optional)</span>
                     @endif
                 </label>
-                <p class="text-sm text-gray-500 mb-3">Share any overall feedback about the instructor or the course.</p>
+                <p class="text-sm text-gray-500 mb-3">Share any overall feedback about the {{ strtolower($courseOffering->evaluatee_label ?? 'faculty') }} or the course.</p>
                 <textarea
                     name="overall_comment"
                     rows="4"
@@ -356,7 +381,7 @@
             <div class="bg-white rounded-lg shadow-md p-6">
                 <button
                     type="submit"
-                    class="w-full bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg hover:bg-blue-700 transition"
+                    class="w-full bg-[#340167] text-white font-semibold py-3 px-6 rounded-lg hover:bg-[#280150] transition"
                 >
                     Submit Evaluation
                 </button>
@@ -369,7 +394,7 @@
         </p>
     </div>
 
-    @if(!$alreadySubmitted)
+    @if(!$alreadySubmitted && $hasRatingFields)
     <script>
         const scoringConfig = {
             sectionMethod: @json($sectionMethod),

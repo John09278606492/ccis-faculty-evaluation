@@ -16,6 +16,7 @@ use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+    use Filament\Tables\Enums\FiltersLayout;
 
 class CourseOfferingResource extends Resource
 {
@@ -23,11 +24,15 @@ class CourseOfferingResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-list';
 
-    protected static ?string $navigationGroup = 'Course Management';
+    protected static ?string $navigationGroup = 'Evaluations';
 
     protected static ?int $navigationSort = 1;
 
-    protected static ?string $navigationLabel = 'Course Offerings';
+    protected static ?string $navigationLabel = 'Evaluation Assignments';
+
+    protected static ?string $modelLabel = 'Evaluation Assignment';
+
+    protected static ?string $pluralModelLabel = 'Evaluation Assignments';
 
     // Disable automatic tenancy scoping - we'll handle it manually
     protected static bool $isScopedToTenant = false;
@@ -47,8 +52,31 @@ class CourseOfferingResource extends Resource
     {
         return $form
             ->schema([
-                Forms\Components\Section::make('Course Offering Details')
+                Forms\Components\Section::make('Assignment Details')
                     ->schema([
+                        Forms\Components\Toggle::make('is_instructor_evaluation')
+                            ->label('Evaluatee is an instructor')
+                            ->helperText('Enable if the person being evaluated is an instructor assigned to a course. Disable for evaluating non-teaching staff or other personnel.')
+                            ->default(true)
+                            ->live()
+                            ->dehydrated(false) // Not saved to DB
+                            ->afterStateHydrated(function ($component, $record) {
+                                // On edit, set the toggle based on whether a course is assigned
+                                if ($record) {
+                                    $component->state($record->course_id !== null);
+                                }
+                            })
+                            ->afterStateUpdated(function ($state, callable $set) {
+                                if (!$state) {
+                                    // Clear instructor-specific fields
+                                    $set('department_id', null);
+                                    $set('course_id', null);
+                                } else {
+                                    $set('user_id', null);
+                                }
+                            })
+                            ->columnSpanFull(),
+
                         Forms\Components\Select::make('semester_id')
                             ->label('Semester')
                             ->options(function () {
@@ -61,6 +89,7 @@ class CourseOfferingResource extends Resource
                             ->required()
                             ->searchable(),
 
+                        // --- Instructor mode fields ---
                         Forms\Components\Select::make('department_id')
                             ->label('Department')
                             ->options(function () {
@@ -69,11 +98,12 @@ class CourseOfferingResource extends Resource
                                     ->where('is_active', true)
                                     ->pluck('name', 'id');
                             })
-                            ->required()
+                            ->required(fn (callable $get) => $get('is_instructor_evaluation'))
                             ->searchable()
                             ->live()
                             ->afterStateUpdated(fn(callable $set) => $set('course_id', null) && $set('user_id', null))
-                            ->dehydrated(false), // Don't save to database (helper field only)
+                            ->dehydrated(false) // Don't save to database (helper field only)
+                            ->visible(fn (callable $get) => $get('is_instructor_evaluation')),
 
                         Forms\Components\Select::make('course_id')
                             ->label('Course')
@@ -87,35 +117,55 @@ class CourseOfferingResource extends Resource
                                     ->get()
                                     ->mapWithKeys(fn($c) => [$c->id => "{$c->code} - {$c->name}"]);
                             })
-                            ->required()
+                            ->required(fn (callable $get) => $get('is_instructor_evaluation'))
                             ->searchable()
-                            ->visible(fn(callable $get) => filled($get('department_id'))),
+                            ->visible(fn(callable $get) => $get('is_instructor_evaluation') && filled($get('department_id'))),
 
+                        // Evaluatee select — changes behavior based on toggle
                         Forms\Components\Select::make('user_id')
-                            ->label('Instructor')
+                            ->label(fn (callable $get) => $get('is_instructor_evaluation') ? 'Evaluatee (Instructor)' : 'Evaluatee (Person to Evaluate)')
                             ->options(function (callable $get) {
-                                $departmentId = $get('department_id');
-                                if (!$departmentId) {
-                                    return [];
+                                if ($get('is_instructor_evaluation')) {
+                                    // Instructor mode: filter by department
+                                    $departmentId = $get('department_id');
+                                    if (!$departmentId) {
+                                        return [];
+                                    }
+                                    return User::where('instructor_department_id', $departmentId)
+                                        ->get()
+                                        ->mapWithKeys(fn($u) => [$u->id => $u->full_name]);
                                 }
-                                return User::where('instructor_department_id', $departmentId)
-                                    ->where('is_instructor', true)
+
+                                // General mode: all users in the tenant
+                                $campusId = filament()->getTenant()?->id;
+                                return User::when($campusId, fn ($q) => $q->whereHas('campuses', fn ($sq) => $sq->where('campuses.id', $campusId)))
+                                    ->orderBy('first_name')
                                     ->get()
-                                    ->mapWithKeys(fn($u) => [$u->id => $u->name]);
+                                    ->mapWithKeys(fn($u) => [$u->id => $u->full_name . ($u->position ? " ({$u->position})" : '')]);
                             })
                             ->required()
                             ->searchable()
-                            ->visible(fn(callable $get) => filled($get('department_id'))),
+                            ->live()
+                            ->visible(fn (callable $get) => !$get('is_instructor_evaluation') || filled($get('department_id')))
+                            ->helperText(fn (callable $get) => !$get('is_instructor_evaluation') ? 'Select any person to evaluate — not limited to instructors' : null),
+
+                        Forms\Components\TextInput::make('evaluatee_label')
+                            ->label('Evaluatee Label')
+                            ->default('Faculty')
+                            ->placeholder('e.g., Faculty, Staff, Dean, Admin')
+                            ->helperText('What to call the person being evaluated on the form')
+                            ->maxLength(50),
 
                         Forms\Components\TextInput::make('section')
                             ->maxLength(20)
-                            ->placeholder('e.g., A, B, 1'),
+                            ->placeholder('e.g., A, B, 1')
+                            ->visible(fn (callable $get) => $get('is_instructor_evaluation')),
 
                         Forms\Components\Toggle::make('is_active')
                             ->default(true),
                     ])->columns(2),
 
-                Forms\Components\Section::make('Instructor Evaluation')
+                Forms\Components\Section::make('Evaluation Settings')
                     ->schema([
                         Forms\Components\Select::make('form_id')
                             ->label('Evaluation Form')
@@ -126,8 +176,8 @@ class CourseOfferingResource extends Resource
                                     ->pluck('name', 'id');
                             })
                             ->searchable()
-                            ->placeholder('Select an evaluation form for students')
-                            ->helperText('Students will use this form to evaluate the instructor'),
+                            ->placeholder('Select an evaluation form')
+                            ->helperText('Evaluators will use this form to evaluate the person assigned'),
                     ])
                     ->collapsible(),
             ]);
@@ -149,15 +199,17 @@ class CourseOfferingResource extends Resource
                     ->label('Course')
                     ->sortable()
                     ->searchable()
-                    ->badge(),
+                    ->badge()
+                    ->placeholder('N/A'),
 
                 Tables\Columns\TextColumn::make('course.name')
                     ->label('Course Name')
                     ->wrap()
-                    ->toggleable(),
+                    ->toggleable()
+                    ->placeholder('—'),
 
-                Tables\Columns\TextColumn::make('instructor.name')
-                    ->label('Instructor')
+                Tables\Columns\TextColumn::make('evaluatee.name')
+                    ->label('Evaluatee')
                     ->sortable()
                     ->searchable(),
 
@@ -166,7 +218,7 @@ class CourseOfferingResource extends Resource
 
                 Tables\Columns\TextColumn::make('students_count')
                     ->counts('students')
-                    ->label('Students')
+                    ->label('Evaluators')
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('ratings_count')
@@ -205,7 +257,7 @@ class CourseOfferingResource extends Resource
                     ->label('Evaluation Form')
                     ->options(fn() => FormModel::whereHas('campuses', fn($q) => $q->where('campuses.id', filament()->getTenant()?->id))->pluck('name', 'id'))
                     ->placeholder('All Forms'),
-            ])
+            ], layout: FiltersLayout::AboveContent)
             ->actions([
                 Tables\Actions\Action::make('evaluationLink')
                     ->label('Get Link')

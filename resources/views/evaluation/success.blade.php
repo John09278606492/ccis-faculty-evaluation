@@ -22,7 +22,8 @@
             <div class="bg-gray-50 rounded-lg p-4 text-left text-sm text-gray-600">
                 <p><strong>Course:</strong> {{ $courseOffering->course->code }} - {{ $courseOffering->course->name }}
                 </p>
-                <p><strong>Instructor:</strong> {{ $courseOffering->instructor->name }}</p>
+                <p><strong>{{ $courseOffering->evaluatee_label ?? 'Faculty' }}:</strong>
+                    {{ $courseOffering->evaluatee->name ?? 'N/A' }}</p>
             </div>
         </div>
     </div>

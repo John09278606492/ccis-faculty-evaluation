@@ -9,6 +9,7 @@ use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
+use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
 
 class CourseResource extends Resource
@@ -113,7 +114,7 @@ class CourseResource extends Resource
                 Tables\Filters\SelectFilter::make('department')
                     ->relationship('department', 'name'),
                 Tables\Filters\TernaryFilter::make('is_active'),
-            ])
+            ], layout: FiltersLayout::AboveContent)
             ->actions([
                 Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make(),

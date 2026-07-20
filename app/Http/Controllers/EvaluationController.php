@@ -29,6 +29,13 @@ class EvaluationController extends Controller
             ]);
         }
 
+        // Enforce requires_login — redirect unauthenticated users to login
+        if ($form->requires_login && !Auth::check()) {
+            session()->put('url.intended', url()->current());
+            return redirect()->route('filament.admin.auth.login')
+                ->with('warning', 'You must log in to access this evaluation form.');
+        }
+
         // Check if user's role is allowed to access this form
         if (Auth::check() && !empty($form->evaluator_roles)) {
             $user = Auth::user();
@@ -52,12 +59,20 @@ class EvaluationController extends Controller
                 ->where('course_offering_id', $courseOffering->id)
                 ->where('user_id', Auth::id())
                 ->exists();
+        } else {
+            // For anonymous users, check by IP + user_agent combo
+            $alreadySubmitted = FormSubmission::where('form_id', $form->id)
+                ->where('course_offering_id', $courseOffering->id)
+                ->whereNull('user_id')
+                ->where('ip_address', request()->ip())
+                ->where('user_agent', request()->userAgent())
+                ->exists();
         }
 
         return view('evaluation.show', [
             'courseOffering' => $courseOffering,
             'form' => $form,
-            'fields' => $form->fields()->orderBy('order')->get(),
+            'fields' => $form->fields()->where('type', '!=', 'section_header')->orderBy('order')->get(),
             'alreadySubmitted' => $alreadySubmitted,
         ]);
     }
@@ -74,9 +89,21 @@ class EvaluationController extends Controller
 
         $form = $courseOffering->evaluationForm;
 
+        // Check form is still available
+        if (!$form->isAvailable()) {
+            return redirect()->back()->with('error', 'This evaluation form is no longer available.');
+        }
+
+        // Enforce requires_login
+        if ($form->requires_login && !Auth::check()) {
+            return redirect()->route('filament.admin.auth.login')
+                ->with('warning', 'You must log in to submit this evaluation.');
+        }
+
         // Validate required fields
         $rules = [];
-        foreach ($form->fields as $field) {
+        $formFields = $form->fields->where('type', '!=', 'section_header');
+        foreach ($formFields as $field) {
             if ($field->is_required) {
                 $rules["fields.{$field->name}"] = 'required';
             }
@@ -88,7 +115,7 @@ class EvaluationController extends Controller
         $overallCommentMode = $scoringConfig['overall_comment'] ?? 'optional';
 
         if ($fieldCommentsMode === 'required') {
-            foreach ($form->fields as $field) {
+            foreach ($formFields as $field) {
                 $rules["field_comments.{$field->name}"] = 'required|string|min:1';
             }
         }
@@ -102,11 +129,23 @@ class EvaluationController extends Controller
             'overall_comment.required' => 'An overall comment is required.',
         ]);
 
-        // Check if already submitted (if logged in)
+        // Check if already submitted (logged-in user)
         if (Auth::check()) {
             $existing = FormSubmission::where('form_id', $form->id)
                 ->where('course_offering_id', $courseOffering->id)
                 ->where('user_id', Auth::id())
+                ->first();
+
+            if ($existing) {
+                return redirect()->back()->with('error', 'You have already submitted this evaluation.');
+            }
+        } else {
+            // Check for anonymous duplicate by IP + user_agent
+            $existing = FormSubmission::where('form_id', $form->id)
+                ->where('course_offering_id', $courseOffering->id)
+                ->whereNull('user_id')
+                ->where('ip_address', $request->ip())
+                ->where('user_agent', $request->userAgent())
                 ->first();
 
             if ($existing) {
@@ -157,7 +196,7 @@ class EvaluationController extends Controller
      */
     public function preview(\App\Models\Form $form)
     {
-        $fields = $form->fields()->orderBy('order')->get();
+        $fields = $form->fields()->where('type', '!=', 'section_header')->orderBy('order')->get();
 
         return view('evaluation.preview', [
             'form' => $form,

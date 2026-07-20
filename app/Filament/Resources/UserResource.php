@@ -6,6 +6,7 @@ use App\Models\User;
 use Filament\Tables;
 use Filament\Forms\Form;
 use Filament\Tables\Table;
+    use Filament\Tables\Enums\FiltersLayout;
 use Filament\Infolists\Infolist;
 use Filament\Resources\Resource;
 use Filament\Tables\Actions\Action;
@@ -32,6 +33,10 @@ class UserResource extends Resource
     protected static ?string $model = User::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-users';
+
+    protected static ?string $navigationGroup = 'User Management';
+
+    protected static ?int $navigationSort = 1;
 
     protected static ?string $tenantOwnershipRelationshipName = 'campuses';
 
@@ -205,11 +210,6 @@ class UserResource extends Resource
             ]);
     }
 
-    public static function canCreate(): bool
-    {
-        return true;
-    }
-
     public static function table(Table $table): Table
     {
         return $table
@@ -281,7 +281,7 @@ class UserResource extends Resource
                     ->label('Instructor Account')
                     ->trueLabel('Instructors Only')
                     ->falseLabel('Non-Instructors Only'),
-            ])
+            ], layout: FiltersLayout::AboveContent)
             ->actions([
                 Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make(),
@@ -312,8 +312,9 @@ class UserResource extends Resource
                             ->optionsLimit(10)
                             ->getOptionLabelFromRecordUsing(fn($record) => $record->name),
                     ])
-                    // Hide Set Role action for super_admin accounts
-                    ->hidden(fn($record) => static::isSuperAdmin($record)),
+                    // Custom actions don't inherit Policy checks automatically like
+                    // EditAction/DeleteAction do, so update_user is checked explicitly.
+                    ->visible(fn($record) => !static::isSuperAdmin($record) && (auth()->user()?->can('update_user') ?? false)),
                 // Impersonate::make(),
                 Tables\Actions\DeleteAction::make()
                     // Prevent deletion of super_admin accounts

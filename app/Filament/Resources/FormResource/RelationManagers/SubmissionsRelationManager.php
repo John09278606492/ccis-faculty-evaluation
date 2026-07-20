@@ -7,6 +7,7 @@ use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
+use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
 use Filament\Infolists;
 use Filament\Infolists\Infolist;
@@ -64,7 +65,7 @@ class SubmissionsRelationManager extends RelationManager
                     ->relationship('user', 'name'),
                 Tables\Filters\SelectFilter::make('department')
                     ->relationship('department', 'name'),
-            ])
+            ], layout: FiltersLayout::AboveContent)
             ->actions([
                 Tables\Actions\ViewAction::make()
                     ->modalContent(fn(FormSubmission $record) => view('filament.resources.form-resource.modals.view-submission', [

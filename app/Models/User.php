@@ -71,6 +71,7 @@ class User extends Authenticatable implements FilamentUser, HasAvatar, HasTenant
         'employee_id',
         'position',
         'phone',
+        'widget_order',
     ];
 
     /**
@@ -95,6 +96,7 @@ class User extends Authenticatable implements FilamentUser, HasAvatar, HasTenant
             'password' => 'hashed',
             'is_student' => 'boolean',
             'is_instructor' => 'boolean',
+            'widget_order' => 'array',
         ];
     }
 
@@ -105,7 +107,9 @@ class User extends Authenticatable implements FilamentUser, HasAvatar, HasTenant
 
     public function canAccessPanel(Panel $panel): bool
     {
-        return true;
+        // Only allow users with at least one assigned role to access the admin panel.
+        // This prevents SSO-created users (who have no role) from accessing admin features.
+        return $this->roles()->exists();
     }
 
     /**
@@ -198,6 +202,23 @@ class User extends Authenticatable implements FilamentUser, HasAvatar, HasTenant
     }
 
     /**
+     * Get this student's quiz attempts.
+     */
+    public function quizAttempts(): HasMany
+    {
+        return $this->hasMany(QuizAttempt::class, 'user_id');
+    }
+
+    /**
+     * Quizzes this student is explicitly assigned (only meaningful for quizzes
+     * with assign_to_all = false — see Quiz::isAssignedTo()).
+     */
+    public function assignedQuizzes(): BelongsToMany
+    {
+        return $this->belongsToMany(Quiz::class, 'quiz_student');
+    }
+
+    /**
      * Check if this user is an instructor.
      */
     public function isInstructor(): bool
@@ -219,5 +240,21 @@ class User extends Authenticatable implements FilamentUser, HasAvatar, HasTenant
     public function courseOfferingsAsInstructor(): HasMany
     {
         return $this->hasMany(CourseOffering::class, 'user_id');
+    }
+
+    /**
+     * Alias: course offerings where this user is the evaluatee.
+     */
+    public function courseOfferingsAsEvaluatee(): HasMany
+    {
+        return $this->courseOfferingsAsInstructor();
+    }
+
+    /**
+     * Alias: evaluatee's department (same as instructorDepartment).
+     */
+    public function evaluateeDepartment(): BelongsTo
+    {
+        return $this->instructorDepartment();
     }
 }

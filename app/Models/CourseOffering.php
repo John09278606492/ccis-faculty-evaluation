@@ -17,7 +17,8 @@ class CourseOffering extends Model
     protected $fillable = [
         'semester_id',
         'course_id',
-        'user_id', // The instructor (user with is_instructor=true)
+        'user_id', // The person being evaluated (evaluatee)
+        'evaluatee_label', // Display label: "Faculty", "Staff", "Dean", etc.
         'section',
         'is_active',
         'form_id', // Evaluation form assigned to this course offering
@@ -46,11 +47,19 @@ class CourseOffering extends Model
     }
 
     /**
-     * Get the instructor (user) assigned to this course offering.
+     * Get the evaluatee (person being evaluated) assigned to this course offering.
+     */
+    public function evaluatee(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'user_id');
+    }
+
+    /**
+     * Alias for evaluatee() — backward compatibility.
      */
     public function instructor(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'user_id');
+        return $this->evaluatee();
     }
 
     public function students(): BelongsToMany
@@ -63,6 +72,14 @@ class CourseOffering extends Model
     public function ratings(): HasMany
     {
         return $this->hasMany(Rating::class);
+    }
+
+    /**
+     * Get the quizzes/exams/activities assigned to this course offering.
+     */
+    public function quizzes(): HasMany
+    {
+        return $this->hasMany(Quiz::class);
     }
 
     /**

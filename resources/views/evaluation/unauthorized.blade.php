@@ -20,7 +20,7 @@
             @if(isset($courseOffering))
             <div class="bg-gray-50 rounded-lg p-4 mb-4 text-left text-sm">
                 <p><span class="text-gray-500">Course:</span> <span class="font-medium">{{ $courseOffering->course->code }}</span></p>
-                <p><span class="text-gray-500">Instructor:</span> <span class="font-medium">{{ $courseOffering->instructor->name ?? 'N/A' }}</span></p>
+                <p><span class="text-gray-500">{{ $courseOffering->evaluatee_label ?? 'Faculty' }}:</span> <span class="font-medium">{{ $courseOffering->evaluatee->name ?? 'N/A' }}</span></p>
             </div>
             @endif
 

@@ -18,6 +18,7 @@ class FormField extends Model
         'type',
         'placeholder',
         'help_text',
+        'column_values',
         'options',
         'validation_rules',
         'is_required',
@@ -27,6 +28,7 @@ class FormField extends Model
     protected $casts = [
         'options' => 'array',
         'validation_rules' => 'array',
+        'column_values' => 'array',
         'is_required' => 'boolean',
     ];
 
@@ -34,6 +36,7 @@ class FormField extends Model
      * Available field types.
      */
     public const TYPES = [
+        'section_header' => 'Section Header',
         'text' => 'Text Input',
         'textarea' => 'Text Area',
         'number' => 'Number',
@@ -81,10 +84,11 @@ class FormField extends Model
 
     /**
      * Get the Laravel validation rules for this field.
+     * Note: `validation_rules` is cast as `array`, so $value is already decoded.
      */
     public function getValidationRulesAttribute($value): array
     {
-        $rules = json_decode($value, true) ?? [];
+        $rules = is_string($value) ? (json_decode($value, true) ?? []) : ($value ?? []);
 
         if ($this->is_required) {
             array_unshift($rules, 'required');

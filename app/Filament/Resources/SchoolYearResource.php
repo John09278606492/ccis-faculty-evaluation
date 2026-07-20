@@ -9,6 +9,7 @@ use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
+use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
 
 class SchoolYearResource extends Resource
@@ -44,7 +45,7 @@ class SchoolYearResource extends Resource
 
                         Forms\Components\Toggle::make('is_current')
                             ->label('Current School Year')
-                            ->helperText('Mark as the current school year'),
+                            ->helperText('Only one School Year can be active at a time. Enabling this will deactivate any other current School Year for this campus.'),
                     ])->columns(2),
             ]);
     }
@@ -84,7 +85,7 @@ class SchoolYearResource extends Resource
             ->filters([
                 Tables\Filters\TernaryFilter::make('is_current')
                     ->label('Current Year'),
-            ])
+            ], layout: FiltersLayout::AboveContent)
             ->actions([
                 Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make(),

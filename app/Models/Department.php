@@ -29,9 +29,14 @@ class Department extends Model
         return $this->belongsTo(Campus::class);
     }
 
+    /**
+     * Get the instructors (users with is_instructor=true) for this department.
+     * Uses the User model with instructor_department_id foreign key.
+     */
     public function instructors(): HasMany
     {
-        return $this->hasMany(Instructor::class);
+        return $this->hasMany(User::class, 'instructor_department_id')
+            ->where('is_instructor', true);
     }
 
     public function courses(): HasMany

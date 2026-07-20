@@ -19,11 +19,21 @@
             border-color: var(--scale-color, #3b82f6);
             background-color: color-mix(in srgb, var(--scale-color, #3b82f6) 10%, white);
         }
+        .eval-richtext ul, .eval-richtext ol { padding-left: 1.5em; margin: 2px 0; }
+        .eval-richtext ul { list-style-type: disc; }
+        .eval-richtext ol { list-style-type: decimal; }
+        .eval-richtext li { margin: 1px 0; }
+        .eval-richtext p { margin: 2px 0; }
+        .eval-table { border-collapse: collapse; }
+        .eval-table th, .eval-table td { border: 1px solid #e5e7eb; }
+        .eval-col-uniform { width: var(--col-width); min-width: 120px; }
     </style>
 </head>
 
 <body class="bg-gray-100 min-h-screen py-8">
     @php
+        $hasRatingFields = $fields->whereIn('type', ['likert_scale', 'rating'])->count() > 0;
+
         $ratingScale = $form->rating_scale ?? [
             ['value' => 5, 'label' => 'Outstanding', 'description' => 'The performance almost always exceeds the job requirements.', 'color' => '#22c55e'],
             ['value' => 4, 'label' => 'Very Satisfactory', 'description' => 'The performance meets and often exceeds the job requirements.', 'color' => '#3b82f6'],
@@ -55,9 +65,9 @@
                         disabled.</p>
                 </div>
             </div>
-            <a href="javascript:history.back()"
+            <a href="javascript:void(0)" onclick="window.close(); return false;"
                 class="bg-white text-amber-600 font-semibold px-4 py-2 rounded-lg hover:bg-amber-50 transition text-sm">←
-                Back</a>
+                Close Preview</a>
         </div>
 
         <!-- Header -->
@@ -68,8 +78,8 @@
             @endif
             <div class="bg-blue-50 border border-blue-200 p-4 rounded-lg text-left">
                 <div class="grid grid-cols-2 gap-4 text-sm">
-                    <div><span class="text-gray-500">Name of Faculty:</span> <span
-                            class="font-semibold text-gray-400 italic">[Instructor Name]</span></div>
+                    <div><span class="text-gray-500">Name of Evaluatee:</span> <span
+                            class="font-semibold text-gray-400 italic">[Evaluatee Name]</span></div>
                     <div><span class="text-gray-500">Course:</span> <span
                             class="font-semibold text-gray-400 italic">[Course Code - Name]</span></div>
                     <div><span class="text-gray-500">Semester:</span> <span
@@ -80,7 +90,8 @@
             </div>
         </div>
 
-        <!-- Rating Scale Legend -->
+        <!-- Rating Scale Legend (only when form has rating fields) -->
+        @if($hasRatingFields)
         <div class="bg-white rounded-lg shadow-md p-4 mb-6">
             <h3 class="font-semibold text-gray-700 mb-3">Rating Scale</h3>
             <div class="overflow-x-auto">
@@ -97,7 +108,8 @@
                             <tr class="border-b last:border-b-0">
                                 <td class="py-2 px-3 font-bold text-center">{{ $scale['value'] }}</td>
                                 <td class="py-2 px-3 font-semibold" style="color: {{ $scale['color'] ?? '#374151' }}">
-                                    {{ $scale['label'] }}</td>
+                                    {{ $scale['label'] }}
+                                </td>
                                 <td class="py-2 px-3 text-gray-600">{{ $scale['description'] ?? '' }}</td>
                             </tr>
                         @endforeach
@@ -105,17 +117,23 @@
                 </table>
             </div>
         </div>
+        @endif
 
         <!-- Scoring Method Info -->
+        @if($hasRatingFields)
         <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-6 text-sm text-blue-800">
             <strong>Scoring:</strong>
             Section = {{ $sectionMethod === 'average' ? 'Average' : ($sectionMethod === 'sum' ? 'Sum' : 'Percentage') }}
             · Overall =
             {{ $overallMethod === 'average' ? 'Average of sections' : ($overallMethod === 'sum' ? 'Sum of sections' : ($overallMethod === 'grand_average' ? 'Grand average of all ratings' : 'Weighted average')) }}
         </div>
+        @endif
 
         <!-- Form Fields -->
-        @php $groupedFields = $fields->groupBy('section'); @endphp
+        @php
+            $groupedFields = $fields->groupBy('section');
+            $globalFieldNumber = 0;
+        @endphp
 
         @foreach($groupedFields as $section => $sectionFields)
             @php
@@ -125,16 +143,20 @@
             @endphp
 
             <div class="bg-white rounded-lg shadow-md mb-6 overflow-hidden">
-                <div class="bg-gray-800 text-white px-4 py-3">
+                <div class="bg-[#340167] text-white px-4 py-3">
                     <h3 class="font-semibold">{{ $section ?: 'General Questions' }}</h3>
                 </div>
 
                 @if($sectionHasLikert)
                     <div class="overflow-x-auto">
-                        <table class="w-full">
+                        @php $colCount = count($form->field_columns ?? []); @endphp
+                        <table class="w-full eval-table" @if($colCount) style="--col-width: {{ floor(40 / $colCount) }}%" @endif>
                             <thead>
                                 <tr class="bg-gray-50 border-b-2 border-gray-200">
-                                    <th class="text-left py-3 px-4 font-semibold text-gray-700 w-1/2">Criteria</th>
+                                    <th class="text-left py-3 px-4 font-semibold text-gray-700" @if(!$colCount) style="width:50%" @endif>Criteria</th>
+                                    @foreach($form->field_columns ?? [] as $col)
+                                    <th class="text-left py-3 px-4 font-semibold text-gray-700 eval-col-uniform">{{ $col['label'] }}</th>
+                                    @endforeach
                                     @foreach($ratingScale as $scale)
                                         <th class="py-3 px-2 text-center w-20">
                                             <div class="flex flex-col items-center">
@@ -149,12 +171,18 @@
                             </thead>
                             <tbody>
                                 @foreach($sectionFields->where(fn($f) => in_array($f->type, ['likert_scale', 'rating'])) as $index => $field)
+                                    @php $globalFieldNumber++; @endphp
                                     <tr class="border-b hover:bg-gray-50 {{ $loop->even ? 'bg-gray-50/50' : '' }}">
                                         <td class="py-3 px-4 text-gray-800">
-                                            <span class="font-medium">{{ $index + 1 }}.</span>
+                                            <span class="font-medium">{{ $globalFieldNumber }}.</span>
                                             {{ $field->label }}
                                             @if($field->is_required)<span class="text-red-500">*</span>@endif
                                         </td>
+                                        @foreach($form->field_columns ?? [] as $col)
+                                        <td class="py-3 px-4 text-gray-700 text-sm eval-richtext eval-col-uniform">
+                                            {!! $field->column_values[$col['key']] ?? '' !!}
+                                        </td>
+                                        @endforeach
                                         @foreach($ratingScale as $scale)
                                             <td class="py-3 px-2 text-center">
                                                 <label class="rating-label flex justify-center cursor-not-allowed"
@@ -212,7 +240,8 @@
             </div>
         @endforeach
 
-        <!-- Overall Score placeholder -->
+        <!-- Overall Score placeholder (only when form has rating fields) -->
+        @if($hasRatingFields)
         <div class="bg-white rounded-lg shadow-md p-6 mb-6 border-2 border-blue-200">
             <div class="flex items-center justify-between">
                 <div>
@@ -227,6 +256,7 @@
                 </div>
             </div>
         </div>
+        @endif
 
         <div class="bg-white rounded-lg shadow-md p-6 mb-6">
             <button type="button" disabled

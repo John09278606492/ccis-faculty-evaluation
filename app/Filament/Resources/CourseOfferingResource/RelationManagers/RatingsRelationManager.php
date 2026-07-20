@@ -8,6 +8,7 @@ use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
+use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
 
 class RatingsRelationManager extends RelationManager
@@ -19,7 +20,7 @@ class RatingsRelationManager extends RelationManager
         return $form
             ->schema([
                 Forms\Components\Select::make('user_id')
-                    ->label('Student')
+                    ->label('Evaluator')
                     ->options(function () {
                         $campusId = filament()->getTenant()?->id;
                         return User::whereHas('campuses', fn($q) => $q->where('campus_id', $campusId))
@@ -64,11 +65,11 @@ class RatingsRelationManager extends RelationManager
             ->recordTitleAttribute('id')
             ->columns([
                 Tables\Columns\TextColumn::make('user.student_id')
-                    ->label('Student ID')
+                    ->label('Evaluator ID')
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('user.name')
-                    ->label('Student Name')
+                    ->label('Evaluator Name')
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('ratingCriteria.name')
@@ -95,7 +96,7 @@ class RatingsRelationManager extends RelationManager
                 Tables\Filters\SelectFilter::make('rating_criteria_id')
                     ->label('Criteria')
                     ->relationship('ratingCriteria', 'name'),
-            ])
+            ], layout: FiltersLayout::AboveContent)
             ->headerActions([
                 Tables\Actions\CreateAction::make(),
             ])

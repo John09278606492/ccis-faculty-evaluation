@@ -5,6 +5,7 @@ namespace App\Filament\Resources\CourseOfferingResource\RelationManagers;
 use App\Models\FormSubmission;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
+use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -79,7 +80,7 @@ class EvaluationsRelationManager extends RelationManager
             ->defaultSort('submitted_at', 'desc')
             ->filters([
                 //
-            ])
+            ], layout: FiltersLayout::AboveContent)
             ->actions([
                 Tables\Actions\Action::make('view_details')
                     ->label('View')
@@ -97,7 +98,7 @@ class EvaluationsRelationManager extends RelationManager
                     ->modalCancelActionLabel('Close'),
             ])
             ->emptyStateHeading('No Evaluations Yet')
-            ->emptyStateDescription('No students have submitted evaluations for this course offering.')
+            ->emptyStateDescription('No evaluators have submitted evaluations for this assignment.')
             ->emptyStateIcon('heroicon-o-clipboard-document-check');
     }
 

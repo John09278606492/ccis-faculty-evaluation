@@ -9,9 +9,9 @@ use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
+use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Str;
 
@@ -23,30 +23,14 @@ class CampusResource extends Resource
 
     protected static ?string $navigationLabel = 'Campuses';
 
+    protected static ?string $navigationGroup = 'Settings';
+
+    protected static ?int $navigationSort = 1;
+
     protected static ?string $label = 'Campus';
 
-    // Disable tenancy for this resource - super admins should manage all campuses
+    // Disable tenancy for this resource - campuses are managed across all tenants
     protected static bool $isScopedToTenant = false;
-
-    public static function canViewAny(): bool
-    {
-        return auth()->user()?->isSuperAdmin() ?? false;
-    }
-
-    public static function canCreate(): bool
-    {
-        return auth()->user()?->isSuperAdmin() ?? false;
-    }
-
-    public static function canEdit(Model $record): bool
-    {
-        return auth()->user()?->isSuperAdmin() ?? false;
-    }
-
-    public static function canDelete(Model $record): bool
-    {
-        return auth()->user()?->isSuperAdmin() ?? false;
-    }
 
     public static function form(Form $form): Form
     {
@@ -149,7 +133,7 @@ class CampusResource extends Resource
                     ->placeholder('All')
                     ->trueLabel('Active')
                     ->falseLabel('Inactive'),
-            ])
+            ], layout: FiltersLayout::AboveContent)
             ->actions([
                 Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make(),

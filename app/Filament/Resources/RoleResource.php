@@ -12,6 +12,7 @@ use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
+use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
 use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Support\HtmlString;
@@ -59,20 +60,22 @@ class RoleResource extends Resource implements HasShieldPermissions
     }
 
     /**
-     * Only super_admin can edit the super_admin role or global roles.
+     * update_role is required to edit any role; the super_admin role and
+     * global (cross-campus) roles are additionally locked to super_admin
+     * itself, regardless of who holds update_role, to stop privilege escalation.
      */
     public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
     {
         $currentUser = auth()->user();
 
-        // super_admin can edit any role
-        if ($currentUser?->hasRole('super_admin')) {
+        if (!$currentUser?->can('update_role')) {
+            return false;
+        }
+
+        if ($currentUser->hasRole('super_admin')) {
             return true;
         }
 
-        // Non-super_admin cannot edit:
-        // 1. super_admin role
-        // 2. Global roles (team_id is null)
         if ($record->name === 'super_admin' || is_null($record->team_id)) {
             return false;
         }
@@ -81,22 +84,28 @@ class RoleResource extends Resource implements HasShieldPermissions
     }
 
     /**
-     * Only super_admin can delete the super_admin role or global roles.
+     * delete_role is required to delete any role; the super_admin role and
+     * global (cross-campus) roles are additionally locked to super_admin
+     * itself, regardless of who holds delete_role, to stop privilege escalation.
      */
     public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
     {
         $currentUser = auth()->user();
 
-        // super_admin can delete any role (except super_admin itself)
-        if ($currentUser?->hasRole('super_admin')) {
-            // Prevent deleting super_admin role
-            return $record->name !== 'super_admin';
+        if (!$currentUser?->can('delete_role')) {
+            return false;
         }
 
-        // Non-super_admin cannot delete:
-        // 1. super_admin role
-        // 2. Global roles (team_id is null)
-        if ($record->name === 'super_admin' || is_null($record->team_id)) {
+        // The super_admin role itself is never deletable, even by super_admin.
+        if ($record->name === 'super_admin') {
+            return false;
+        }
+
+        if ($currentUser->hasRole('super_admin')) {
+            return true;
+        }
+
+        if (is_null($record->team_id)) {
             return false;
         }
 
@@ -192,7 +201,7 @@ class RoleResource extends Resource implements HasShieldPermissions
             ])
             ->filters([
                 //
-            ])
+            ], layout: FiltersLayout::AboveContent)
             ->actions([
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make()
@@ -253,9 +262,7 @@ class RoleResource extends Resource implements HasShieldPermissions
 
     public static function getNavigationGroup(): ?string
     {
-        return Utils::isResourceNavigationGroupEnabled()
-            ? __('filament-shield::filament-shield.nav.group')
-            : '';
+        return 'User Management';
     }
 
     public static function getNavigationLabel(): string
@@ -270,7 +277,7 @@ class RoleResource extends Resource implements HasShieldPermissions
 
     public static function getNavigationSort(): ?int
     {
-        return Utils::getResourceNavigationSort();
+        return 2;
     }
 
     public static function getSlug(): string

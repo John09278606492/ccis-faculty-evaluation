@@ -6,18 +6,22 @@ use App\Models\CourseOffering;
 use App\Models\Department;
 use App\Models\FormSubmission;
 use App\Models\User;
+use BezhanSalleh\FilamentShield\Traits\HasPageShield;
 use Filament\Pages\Page;
 use Filament\Tables;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
+use Filament\Tables\Enums\FiltersLayout;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
 
 class EvaluationResults extends Page implements HasTable
 {
     use InteractsWithTable;
+    // Gated by the page_EvaluationResults permission instead of a hardcoded
+    // role-name list (the old check also referenced a view_evaluation_results
+    // permission that was never actually created, so it never took effect).
+    use HasPageShield;
 
     protected static ?string $navigationIcon = 'heroicon-o-chart-bar';
 
@@ -25,31 +29,22 @@ class EvaluationResults extends Page implements HasTable
 
     protected static ?string $navigationLabel = 'Evaluation Results';
 
-    protected static ?string $title = 'Instructor Evaluation Results';
+    protected static ?string $title = 'Evaluation Results';
 
     protected static ?int $navigationSort = 2;
 
     protected static ?string $navigationGroup = 'Evaluations';
 
-    /**
-     * Only show to users who can view evaluation results.
-     */
-    public static function shouldRegisterNavigation(): bool
+    protected function getHeaderWidgets(): array
     {
-        $user = Auth::user();
-        if (!$user)
-            return false;
-
-        return $user->hasRole('super_admin') ||
-            $user->hasRole('admin') ||
-            $user->hasRole('dean') ||
-            $user->hasRole('department_head') ||
-            $user->can('view_evaluation_results');
+        return [
+            \App\Filament\Pages\Widgets\EvaluationResultsStatsOverview::class,
+        ];
     }
 
-    public static function canAccess(): bool
+    public function getHeaderWidgetsColumns(): int|string|array
     {
-        return static::shouldRegisterNavigation();
+        return 3;
     }
 
     public function table(Table $table): Table
@@ -58,7 +53,7 @@ class EvaluationResults extends Page implements HasTable
             ->query($this->getTableQuery())
             ->columns([
                 Tables\Columns\TextColumn::make('name')
-                    ->label('Instructor')
+                    ->label('Evaluatee')
                     ->searchable(['first_name', 'last_name', 'name'])
                     ->sortable()
                     ->description(fn($record) => $record->employee_id ? "ID: {$record->employee_id}" : null),
@@ -146,7 +141,7 @@ class EvaluationResults extends Page implements HasTable
                         fn(Builder $query) =>
                         $query->whereHas('courseOfferingsAsInstructor.formSubmissions')
                     ),
-            ])
+            ], layout: FiltersLayout::AboveContent)
             ->actions([
                 Tables\Actions\Action::make('view_details')
                     ->label('View Details')
@@ -164,8 +159,8 @@ class EvaluationResults extends Page implements HasTable
                     ->modalCancelActionLabel('Close'),
             ])
             ->defaultSort('name')
-            ->emptyStateHeading('No Instructor Evaluations')
-            ->emptyStateDescription('No instructors have received evaluations yet.')
+            ->emptyStateHeading('No Evaluations Yet')
+            ->emptyStateDescription('No one has received evaluations yet.')
             ->emptyStateIcon('heroicon-o-chart-bar');
     }
 
@@ -174,12 +169,8 @@ class EvaluationResults extends Page implements HasTable
         $campusId = filament()->getTenant()?->id;
 
         return User::query()
-            ->where('is_instructor', true)
-            ->when($campusId, function ($query) use ($campusId) {
-                $query->where(function ($q) use ($campusId) {
-                    $q->whereHas('instructorDepartment', fn($d) => $d->where('campus_id', $campusId))
-                        ->orWhereHas('courseOfferingsAsInstructor.semester.schoolYear', fn($sy) => $sy->where('campus_id', $campusId));
-                });
+            ->whereHas('courseOfferingsAsInstructor', function ($q) use ($campusId) {
+                $q->when($campusId, fn($query) => $query->whereHas('semester.schoolYear', fn($sy) => $sy->where('campus_id', $campusId)));
             })
             ->with(['instructorDepartment']);
     }

@@ -1,0 +1,143 @@
+<x-filament-panels::page class="fi-dashboard-page">
+    @if (method_exists($this, 'filtersForm'))
+        {{ $this->filtersForm }}
+    @endif
+
+    <div x-data="{
+            draggedEl: null,
+            placeholder: null,
+            grid: null,
+
+            init() {
+                this.placeholder = document.createElement('div');
+                this.placeholder.className = 'col-span-full h-1.5 bg-primary-500 rounded-full my-1';
+                this.grid = this.$refs.widgetGrid;
+            },
+
+            startDrag(e) {
+                const handle = e.target.closest('.drag-handle');
+                if (!handle) { e.preventDefault(); return; }
+                const item = handle.closest('[data-widget-class]');
+                if (!item) { e.preventDefault(); return; }
+                this.draggedEl = item;
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', '');
+                requestAnimationFrame(() => {
+                    item.style.opacity = '0.4';
+                });
+            },
+
+            endDrag() {
+                if (this.draggedEl) {
+                    this.draggedEl.style.opacity = '';
+                }
+                if (this.placeholder.parentNode) {
+                    this.placeholder.remove();
+                }
+                this.draggedEl = null;
+            },
+
+            overDrag(e) {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                if (!this.draggedEl || !this.grid) return;
+
+                const after = this.getAfter(e.clientY);
+                if (after == null) {
+                    this.grid.appendChild(this.placeholder);
+                } else {
+                    this.grid.insertBefore(this.placeholder, after);
+                }
+            },
+
+            async dropDrag(e) {
+                e.preventDefault();
+                if (!this.draggedEl || !this.grid) return;
+
+                if (this.placeholder.parentNode) {
+                    this.grid.insertBefore(this.draggedEl, this.placeholder);
+                    this.placeholder.remove();
+                }
+                this.draggedEl.style.opacity = '';
+
+                const order = [...this.grid.querySelectorAll('[data-widget-class]')]
+                    .map(el => el.dataset.widgetClass);
+
+                // Call the Livewire method directly and reload to reflect new order
+                await $wire.call('reorderWidgets', order);
+                location.reload();
+            },
+
+            getAfter(y) {
+                const els = [...this.grid.querySelectorAll('[data-widget-class]')]
+                    .filter(el => el !== this.draggedEl);
+                return els.reduce((closest, child) => {
+                    const box = child.getBoundingClientRect();
+                    const offset = y - box.top - box.height / 2;
+                    if (offset < 0 && offset > closest.offset) {
+                        return { offset, element: child };
+                    }
+                    return closest;
+                }, { offset: Number.NEGATIVE_INFINITY }).element;
+            }
+        }">
+        {{-- Reset Order Button --}}
+        <div class="flex items-center justify-end gap-2 mb-3">
+            <button type="button"
+                x-on:click="if(confirm('Reset widget order to defaults?')) { $wire.call('resetWidgetOrder').then(() => location.reload()); }"
+                class="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium bg-gray-100 text-gray-600 transition hover:bg-danger-500 hover:text-white dark:bg-gray-800 dark:text-gray-400">
+                <x-heroicon-m-arrow-path class="w-4 h-4" />
+                <span>Reset Order</span>
+            </button>
+        </div>
+
+        {{-- Widget Grid --}}
+        <div x-ref="widgetGrid" x-on:dragstart="startDrag($event)" x-on:dragend="endDrag()"
+            x-on:dragover.prevent="overDrag($event)" x-on:drop.prevent="dropDrag($event)"
+            class="grid grid-cols-1 gap-6 md:grid-cols-2 fi-wi">
+            @foreach ($this->getVisibleWidgets() as $widgetKey => $widget)
+                @php
+                    $widgetClass = ($widget instanceof \Filament\Widgets\WidgetConfiguration) ? $widget->widget : $widget;
+                @endphp
+
+                @php
+                    // Read columnSpan from widget class to apply to wrapper
+                    $colSpan = 'full';
+                    try {
+                        $ref = new \ReflectionProperty($widgetClass, 'columnSpan');
+                        $val = $ref->getDefaultValue();
+                        if ($val !== null) {
+                            $colSpan = $val;
+                        }
+                    } catch (\Throwable $e) {
+                    }
+                    $spanClass = match (true) {
+                        $colSpan === 'full' => 'col-span-full',
+                        $colSpan === 2 || $colSpan === '2' => 'md:col-span-2',
+                        $colSpan === 1 || $colSpan === '1' => '',
+                        default => 'col-span-full',
+                    };
+                @endphp
+
+                <div data-widget-class="{{ $widgetClass }}" draggable="true" class="relative group {{ $spanClass }}">
+                    {{-- Drag Handle --}}
+                    <div
+                        class="drag-handle absolute top-0 left-0 right-0 z-20 h-8 cursor-grab active:cursor-grabbing flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div
+                            class="flex items-center gap-1 px-3 py-0.5 rounded-b-lg bg-[#340167]/80 dark:bg-[#DCDDDE]/80 backdrop-blur-sm shadow">
+                            <x-heroicon-m-bars-3 class="w-3.5 h-3.5 text-white dark:text-gray-800" />
+                            <span class="text-[11px] font-medium text-white dark:text-gray-800">Drag to reorder</span>
+                        </div>
+                    </div>
+
+                    @livewire(
+                        $widgetClass,
+                        [...(($widget instanceof \Filament\Widgets\WidgetConfiguration) ? [...$widget->widget::getDefaultProperties(), ...$widget->getProperties()] : $widget::getDefaultProperties()), ...$this->getWidgetData()],
+                        key("{$widgetClass}-{$widgetKey}"),
+                    )
+                    </div>
+            @endforeach
+        </div>
+    </div>
+</x-filament-panels::page>
+

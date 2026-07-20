@@ -63,7 +63,7 @@ class FormPolicy
      */
     public function forceDelete(User $user, Form $form): bool
     {
-        return $user->can('{{ ForceDelete }}');
+        return $user->can('force_delete_form');
     }
 
     /**
@@ -71,7 +71,7 @@ class FormPolicy
      */
     public function forceDeleteAny(User $user): bool
     {
-        return $user->can('{{ ForceDeleteAny }}');
+        return $user->can('force_delete_any_form');
     }
 
     /**
@@ -79,7 +79,7 @@ class FormPolicy
      */
     public function restore(User $user, Form $form): bool
     {
-        return $user->can('{{ Restore }}');
+        return $user->can('restore_form');
     }
 
     /**
@@ -87,7 +87,7 @@ class FormPolicy
      */
     public function restoreAny(User $user): bool
     {
-        return $user->can('{{ RestoreAny }}');
+        return $user->can('restore_any_form');
     }
 
     /**
@@ -95,7 +95,7 @@ class FormPolicy
      */
     public function replicate(User $user, Form $form): bool
     {
-        return $user->can('{{ Replicate }}');
+        return $user->can('replicate_form');
     }
 
     /**
@@ -103,6 +103,6 @@ class FormPolicy
      */
     public function reorder(User $user): bool
     {
-        return $user->can('{{ Reorder }}');
+        return $user->can('reorder_form');
     }
 }

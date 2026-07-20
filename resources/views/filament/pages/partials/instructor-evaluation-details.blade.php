@@ -2,7 +2,7 @@
     @if(empty($courseOfferings))
         <div class="text-center py-8">
             <x-heroicon-o-chart-bar class="w-12 h-12 mx-auto text-gray-400 mb-2" />
-            <p class="text-sm text-gray-500 dark:text-gray-400">No evaluation data found for this instructor.</p>
+            <p class="text-sm text-gray-500 dark:text-gray-400">No evaluation data found for this person.</p>
         </div>
     @else
         {{-- Overall Summary --}}
@@ -61,12 +61,12 @@
             @foreach($courseOfferings as $co)
                 <div class="rounded-lg border dark:border-gray-700 overflow-hidden">
                     {{-- Course Header --}}
-                    <div class="bg-gray-800 dark:bg-gray-900 px-4 py-3 flex items-center justify-between">
+                    <div class="bg-gray-100 dark:bg-gray-800 px-4 py-3 flex items-center justify-between">
                         <div>
-                            <span class="text-sm font-bold text-white">{{ $co['course_code'] }}</span>
-                            <span class="text-xs text-gray-300 ml-2">{{ $co['course_name'] }}</span>
+                            <span class="text-sm font-bold text-gray-900 dark:text-white">{{ $co['course_code'] }}</span>
+                            <span class="text-xs text-gray-600 dark:text-gray-300 ml-2">{{ $co['course_name'] }}</span>
                             @if($co['section'] !== '—')
-                                <span class="text-xs text-gray-400 ml-2">· Section {{ $co['section'] }}</span>
+                                <span class="text-xs text-gray-500 dark:text-gray-400 ml-2">· Section {{ $co['section'] }}</span>
                             @endif
                         </div>
                         <div class="flex items-center gap-3">
@@ -172,13 +172,13 @@
 
                     @if($hasAnyComments)
                         <div class="border-t dark:border-gray-700">
-                            <div class="px-4 py-2 bg-blue-50/50 dark:bg-blue-900/10 flex items-center gap-2">
-                                <svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <div class="px-4 py-2 bg-[#f5f0fa] dark:bg-[#1a0833]/20 flex items-center gap-2">
+                                <svg class="w-4 h-4 text-[#340167]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                         d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
                                 </svg>
                                 <span
-                                    class="text-xs font-semibold text-blue-700 dark:text-blue-300 uppercase tracking-wide">Evaluator
+                                    class="text-xs font-semibold text-[#340167] dark:text-[#c9a8e0] uppercase tracking-wide">Evaluator
                                     Comments</span>
                             </div>
 

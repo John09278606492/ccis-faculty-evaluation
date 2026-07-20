@@ -4,17 +4,22 @@ namespace App\Filament\Pages;
 
 use App\Models\CourseOffering;
 use App\Models\FormSubmission;
+use BezhanSalleh\FilamentShield\Traits\HasPageShield;
 use Filament\Pages\Page;
 use Filament\Tables;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
+use Filament\Tables\Enums\FiltersLayout;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 
 class MyEvaluations extends Page implements HasTable
 {
     use InteractsWithTable;
+    // Gates access via the page_MyEvaluations permission (see Roles) instead of
+    // just checking isStudent(), so an admin can actually toggle this on/off.
+    use HasPageShield;
 
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-check';
 
@@ -28,22 +33,16 @@ class MyEvaluations extends Page implements HasTable
 
     protected static ?string $navigationGroup = 'Student';
 
-    /**
-     * Only show this page to students.
-     */
-    public static function shouldRegisterNavigation(): bool
+    protected function getHeaderWidgets(): array
     {
-        $user = Auth::user();
-        return $user && $user->isStudent();
+        return [
+            \App\Filament\Pages\Widgets\MyEvaluationsStatsOverview::class,
+        ];
     }
 
-    /**
-     * Prevent non-students from accessing the page.
-     */
-    public static function canAccess(): bool
+    public function getHeaderWidgetsColumns(): int|string|array
     {
-        $user = Auth::user();
-        return $user && $user->isStudent();
+        return 3;
     }
 
     public function table(Table $table): Table
@@ -62,7 +61,7 @@ class MyEvaluations extends Page implements HasTable
                     ->limit(30),
 
                 Tables\Columns\TextColumn::make('instructor.name')
-                    ->label('Instructor')
+                    ->label('Evaluatee')
                     ->searchable()
                     ->sortable(),
 
@@ -123,7 +122,7 @@ class MyEvaluations extends Page implements HasTable
                             });
                         }
                     }),
-            ])
+            ], layout: FiltersLayout::AboveContent)
             ->actions([
                 Tables\Actions\Action::make('evaluate')
                     ->label('Evaluate')
@@ -172,7 +171,7 @@ class MyEvaluations extends Page implements HasTable
                     ->modalSubmitAction(false)
                     ->modalCancelAction(false),
             ])
-            ->emptyStateHeading('No Course Offerings')
+            ->emptyStateHeading('No Evaluation Assignments')
             ->emptyStateDescription('You are not enrolled in any courses yet.')
             ->emptyStateIcon('heroicon-o-academic-cap');
     }

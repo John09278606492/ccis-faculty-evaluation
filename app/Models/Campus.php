@@ -106,7 +106,7 @@ class Campus extends Model implements HasName, HasAvatar
     public function students(): BelongsToMany
     {
         return $this->belongsToMany(User::class, 'campus_user')
-            ->wherePivot('user_id', fn($q) => $q->where('is_student', true));
+            ->where('users.is_student', true);
     }
 
     /**

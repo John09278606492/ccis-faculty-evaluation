@@ -8,6 +8,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOneThrough;
 
+/**
+ * @deprecated This model is deprecated. Instructor data has been migrated to the User model.
+ * Use User::where('is_instructor', true) or Department::instructors() instead.
+ * The instructors table will be removed in a future migration.
+ */
 class Instructor extends Model
 {
     use HasFactory;

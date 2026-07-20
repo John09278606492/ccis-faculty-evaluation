@@ -4,17 +4,22 @@ namespace App\Filament\Pages;
 
 use App\Models\CourseOffering;
 use App\Models\FormSubmission;
+use BezhanSalleh\FilamentShield\Traits\HasPageShield;
 use Filament\Pages\Page;
 use Filament\Tables;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
+use Filament\Tables\Enums\FiltersLayout;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 
 class MyEvaluationResults extends Page implements HasTable
 {
     use InteractsWithTable;
+    // Gated by the page_MyEvaluationResults permission — super_admin already
+    // holds every generated permission automatically, so no extra role check needed.
+    use HasPageShield;
 
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-list';
 
@@ -28,23 +33,16 @@ class MyEvaluationResults extends Page implements HasTable
 
     protected static ?string $navigationGroup = 'Evaluations';
 
-    /**
-     * Only show to users who have permission to view their own evaluation results.
-     * Admins/higher-ups can grant this permission per-role or per-user via Shield.
-     */
-    public static function shouldRegisterNavigation(): bool
+    protected function getHeaderWidgets(): array
     {
-        $user = Auth::user();
-        if (!$user)
-            return false;
-
-        return $user->hasRole('super_admin') ||
-            $user->can('page_MyEvaluationResults');
+        return [
+            \App\Filament\Pages\Widgets\MyEvaluationResultsStatsOverview::class,
+        ];
     }
 
-    public static function canAccess(): bool
+    public function getHeaderWidgetsColumns(): int|string|array
     {
-        return static::shouldRegisterNavigation();
+        return 2;
     }
 
     public function table(Table $table): Table
@@ -127,7 +125,7 @@ class MyEvaluationResults extends Page implements HasTable
                     })
                     ->searchable()
                     ->preload(),
-            ])
+            ], layout: FiltersLayout::AboveContent)
             ->actions([
                 Tables\Actions\Action::make('view_scores')
                     ->label('View Scores')

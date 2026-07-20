@@ -107,7 +107,7 @@
             <div>
                 <p class="text-sm font-semibold text-gray-900 dark:text-white">{{ $form->name }}</p>
                 <p class="text-xs text-gray-500 dark:text-gray-400">
-                    {{ $record->course?->code }} · {{ $record->instructor?->name ?? 'N/A' }}
+                    {{ $record->course?->code }} · {{ $record->evaluatee?->name ?? 'N/A' }}
                 </p>
             </div>
             <div class="text-right">
@@ -158,7 +158,7 @@
 
             @foreach($groupedFields as $section => $sectionFields)
                 <div class="rounded-lg border dark:border-gray-700 overflow-hidden">
-                    <div class="bg-gray-800 dark:bg-gray-900 px-3 py-2">
+                    <div class="bg-[#340167] dark:bg-[#1f013d] px-3 py-2">
                         <p class="text-xs font-semibold text-white">{{ $section ?: 'General Questions' }}</p>
                     </div>
                     <div class="divide-y dark:divide-gray-700">
@@ -210,7 +210,7 @@
         @if(!empty($data['_overall_comment']))
             <div class="space-y-2">
                 <p class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Overall Comment</p>
-                <div class="bg-blue-50/50 dark:bg-blue-900/10 rounded-lg px-3 py-2 border dark:border-gray-700">
+                <div class="bg-[#f5f0fa] dark:bg-[#1a0833]/30 rounded-lg px-3 py-2 border dark:border-gray-700">
                     <p class="text-sm text-gray-800 dark:text-gray-200 italic">"{{ $data['_overall_comment'] }}"</p>
                 </div>
             </div>

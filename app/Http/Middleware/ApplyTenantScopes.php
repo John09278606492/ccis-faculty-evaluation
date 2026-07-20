@@ -4,7 +4,9 @@ namespace App\Http\Middleware;
 
 use App\Models\Book;
 use App\Models\Contact;
+use App\Models\Department;
 use App\Models\Post;
+use App\Models\SchoolYear;
 use Closure;
 use Filament\Facades\Filament;
 use Illuminate\Database\Eloquent\Builder;
@@ -33,6 +35,16 @@ class ApplyTenantScopes
 
             // Apply tenant scope to Book model
             Book::addGlobalScope('tenant', function (Builder $query) {
+                $query->whereBelongsTo(Filament::getTenant(), 'campus');
+            });
+
+            // Apply tenant scope to Department model
+            Department::addGlobalScope('tenant', function (Builder $query) {
+                $query->whereBelongsTo(Filament::getTenant(), 'campus');
+            });
+
+            // Apply tenant scope to SchoolYear model
+            SchoolYear::addGlobalScope('tenant', function (Builder $query) {
                 $query->whereBelongsTo(Filament::getTenant(), 'campus');
             });
         }

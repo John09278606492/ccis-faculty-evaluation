@@ -11,6 +11,7 @@ use Filament\Forms;
 use Filament\Forms\Form as FilamentForm;
 use Filament\Resources\Resource;
 use Filament\Tables;
+use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
 
 class FormResource extends Resource implements HasShieldPermissions
@@ -74,17 +75,11 @@ class FormResource extends Resource implements HasShieldPermissions
         return $query;
     }
 
-    /**
-     * Non-super_admin cannot create new forms.
-     */
-    public static function canCreate(): bool
-    {
-        return auth()->user()?->hasRole('super_admin') ?? false;
-    }
-
     public static function form(FilamentForm $form): FilamentForm
     {
-        $isSuperAdmin = auth()->user()?->hasRole('super_admin');
+        // Full form configuration (as opposed to just department assignment)
+        // requires update_form, so it's toggleable per-role in Roles.
+        $isSuperAdmin = auth()->user()?->can('update_form') ?? false;
 
         return $form
             ->schema([
@@ -172,13 +167,18 @@ class FormResource extends Resource implements HasShieldPermissions
                     ->visible($isSuperAdmin),
 
                 Forms\Components\Section::make('Rating Scale Configuration')
-                    ->description('Define the rating scale for Likert Scale fields. If left empty, uses default 5-point scale.')
+                    ->description('Define the rating scale for Likert Scale fields. When enabled, the form builder will only allow Likert Scale fields.')
                     ->schema([
                         Forms\Components\Toggle::make('use_custom_scale')
                             ->label('Use Custom Rating Scale')
                             ->live()
                             ->dehydrated(false)
-                            ->default(fn($record) => !empty($record?->rating_scale)),
+                            ->default(fn($record) => !empty($record?->rating_scale))
+                            ->afterStateUpdated(function ($state, Forms\Set $set) {
+                                if (!$state) {
+                                    $set('rating_scale', null);
+                                }
+                            }),
 
                         Forms\Components\Repeater::make('rating_scale')
                             ->label('Rating Scale Options')
@@ -258,7 +258,7 @@ class FormResource extends Resource implements HasShieldPermissions
                     ])
                     ->collapsible()
                     ->collapsed()
-                    ->visible($isSuperAdmin),
+                    ->visible(fn(Forms\Get $get): bool => $isSuperAdmin && (bool) $get('use_custom_scale')),
 
                 Forms\Components\Section::make('Comments Configuration')
                     ->description('Configure whether evaluators can or must leave comments.')
@@ -285,7 +285,7 @@ class FormResource extends Resource implements HasShieldPermissions
                     ])
                     ->collapsible()
                     ->collapsed()
-                    ->visible($isSuperAdmin),
+                    ->visible(fn(Forms\Get $get): bool => $isSuperAdmin && (bool) $get('use_custom_scale')),
 
                 Forms\Components\Section::make('Schedule & Limits')
                     ->schema([
@@ -313,8 +313,6 @@ class FormResource extends Resource implements HasShieldPermissions
 
     public static function table(Table $table): Table
     {
-        $isSuperAdmin = auth()->user()?->hasRole('super_admin');
-
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('name')
@@ -372,8 +370,16 @@ class FormResource extends Resource implements HasShieldPermissions
                 Tables\Filters\TernaryFilter::make('requires_login'),
                 Tables\Filters\SelectFilter::make('departments')
                     ->relationship('departments', 'name'),
-            ])
+            ], layout: FiltersLayout::AboveContent)
             ->actions([
+                Tables\Actions\Action::make('build')
+                    ->label('Build')
+                    ->icon('heroicon-o-squares-plus')
+                    ->color('primary')
+                    ->url(fn($record) => route('filament.admin.pages.forms.{record}.builder', [
+                        'tenant' => filament()->getTenant(),
+                        'record' => $record->id,
+                    ])),
                 Tables\Actions\Action::make('preview')
                     ->label('Preview')
                     ->icon('heroicon-o-eye')
@@ -382,23 +388,21 @@ class FormResource extends Resource implements HasShieldPermissions
                     ->openUrlInNewTab(),
                 Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make()
-                    ->visible($isSuperAdmin),
+                Tables\Actions\DeleteAction::make(),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make()
-                        ->visible($isSuperAdmin),
+                    Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ]);
     }
 
     public static function getRelations(): array
     {
-        $isSuperAdmin = auth()->user()?->hasRole('super_admin');
+        $canEditFields = auth()->user()?->can('update_form') ?? false;
 
-        // Non-super_admin cannot edit form fields, only view submissions
-        if (!$isSuperAdmin) {
+        // Without update_form, users can only view submissions, not edit form fields.
+        if (!$canEditFields) {
             return [
                 RelationManagers\SubmissionsRelationManager::class,
             ];

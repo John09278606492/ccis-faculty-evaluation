@@ -6,7 +6,6 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOneThrough;
 
 class Semester extends Model
 {
@@ -31,21 +30,6 @@ class Semester extends Model
         return $this->belongsTo(SchoolYear::class);
     }
 
-    /**
-     * Get the campus through the school year relationship for tenancy.
-     */
-    public function campus(): HasOneThrough
-    {
-        return $this->hasOneThrough(
-            Campus::class,
-            SchoolYear::class,
-            'id', // Foreign key on school_years table
-            'id', // Foreign key on campuses table
-            'school_year_id', // Local key on semesters table
-            'campus_id' // Local key on school_years table
-        );
-    }
-
     public function courseOfferings(): HasMany
     {
         return $this->hasMany(CourseOffering::class);
@@ -53,6 +37,7 @@ class Semester extends Model
 
     /**
      * Get the campus through the school year relationship.
+     * SchoolYear belongs to Campus, so we delegate through.
      */
     public function getCampusAttribute()
     {

@@ -21,6 +21,7 @@ class Form extends Model
         'evaluator_roles',
         'rating_scale',
         'scoring_config',
+        'field_columns',
         'starts_at',
         'ends_at',
         'max_submissions',
@@ -33,6 +34,7 @@ class Form extends Model
         'evaluator_roles' => 'array',
         'rating_scale' => 'array',
         'scoring_config' => 'array',
+        'field_columns' => 'array',
         'starts_at' => 'datetime',
         'ends_at' => 'datetime',
         'settings' => 'array',
@@ -85,6 +87,9 @@ class Form extends Model
 
     /**
      * Check if the form is currently available for submission.
+     *
+     * Tip: When checking many forms, use Form::withCount('submissions') to avoid N+1.
+     * The method will automatically use the eager-loaded `submissions_count` if available.
      */
     public function isAvailable(): bool
     {
@@ -102,8 +107,12 @@ class Form extends Model
             return false;
         }
 
-        if ($this->max_submissions && $this->submissions()->count() >= $this->max_submissions) {
-            return false;
+        if ($this->max_submissions) {
+            // Use eager-loaded count if available to avoid N+1 queries
+            $count = $this->submissions_count ?? $this->submissions()->count();
+            if ($count >= $this->max_submissions) {
+                return false;
+            }
         }
 
         return true;
@@ -111,9 +120,17 @@ class Form extends Model
 
     /**
      * Get a summary of submission count.
+     *
+     * For list views, prefer using Form::withCount('submissions') in your query,
+     * which provides $form->submissions_count automatically without N+1 queries.
      */
     public function getSubmissionCountAttribute(): int
     {
+        // Use eager-loaded count if available (set by withCount('submissions'))
+        if (array_key_exists('submissions_count', $this->attributes)) {
+            return (int) $this->attributes['submissions_count'];
+        }
+
         return $this->submissions()->count();
     }
 }

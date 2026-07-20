@@ -6,6 +6,7 @@ use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
+use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
 
 class SemestersRelationManager extends RelationManager
@@ -64,7 +65,7 @@ class SemestersRelationManager extends RelationManager
             ->defaultSort('start_date')
             ->filters([
                 //
-            ])
+            ], layout: FiltersLayout::AboveContent)
             ->headerActions([
                 Tables\Actions\CreateAction::make(),
             ])
