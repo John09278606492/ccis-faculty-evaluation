@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\Campus;
 use App\Models\Form;
 use App\Models\FormField;
 use Illuminate\Database\Seeder;
@@ -14,18 +15,19 @@ class NBC481EvaluationFormSeeder extends Seeder
      */
     public function run(): void
     {
-        // Note: You need to set the campus_id based on your setup
-        $campusId = 1; // Change this to your campus ID
+        $campus = Campus::query()->firstOrFail();
 
-        $form = Form::create([
-            'campus_id' => $campusId,
-            'name' => 'QCE NBC No. 481 - Instrument for Instruction/Teaching Effectiveness',
+        $form = Form::updateOrCreate([
             'slug' => 'qce-nbc-481-faculty-evaluation',
+        ], [
+            'name' => 'QCE NBC No. 481 - Instrument for Instruction/Teaching Effectiveness',
             'description' => 'Please evaluate the faculty using the scale below. Encircle your rating.',
             'is_active' => true,
             'requires_login' => true,
             'evaluator_roles' => ['student'], // Only students can use this form
         ]);
+        $form->campuses()->syncWithoutDetaching([$campus->id]);
+        $form->fields()->delete();
 
         $order = 0;
 
@@ -84,7 +86,7 @@ class NBC481EvaluationFormSeeder extends Seeder
         FormField::create([
             'form_id' => $form->id,
             'section' => $section,
-            'name' => 'q' . ($order + 1),
+            'name' => 'q'.($order + 1),
             'label' => $label,
             'type' => 'likert_scale',
             'is_required' => true,

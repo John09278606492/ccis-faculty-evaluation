@@ -2,24 +2,26 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Pages\Widgets\MyEvaluationsStatsOverview;
 use App\Models\CourseOffering;
 use App\Models\FormSubmission;
+use App\Services\EvaluationSubmissionIdentity;
 use BezhanSalleh\FilamentShield\Traits\HasPageShield;
 use Filament\Pages\Page;
 use Filament\Tables;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
-use Filament\Tables\Enums\FiltersLayout;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 
 class MyEvaluations extends Page implements HasTable
 {
-    use InteractsWithTable;
     // Gates access via the page_MyEvaluations permission (see Roles) instead of
     // just checking isStudent(), so an admin can actually toggle this on/off.
     use HasPageShield;
+
+    use InteractsWithTable;
 
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-check';
 
@@ -36,7 +38,7 @@ class MyEvaluations extends Page implements HasTable
     protected function getHeaderWidgets(): array
     {
         return [
-            \App\Filament\Pages\Widgets\MyEvaluationsStatsOverview::class,
+            MyEvaluationsStatsOverview::class,
         ];
     }
 
@@ -71,11 +73,11 @@ class MyEvaluations extends Page implements HasTable
 
                 Tables\Columns\TextColumn::make('semester.name')
                     ->label('Semester')
-                    ->description(fn($record) => $record->semester?->schoolYear?->name),
+                    ->description(fn ($record) => $record->semester?->schoolYear?->name),
 
                 Tables\Columns\IconColumn::make('has_evaluation_form')
                     ->label('Form?')
-                    ->getStateUsing(fn($record) => $record->form_id !== null)
+                    ->getStateUsing(fn ($record) => $record->form_id !== null)
                     ->boolean()
                     ->trueIcon('heroicon-o-check-circle')
                     ->falseIcon('heroicon-o-x-circle')
@@ -85,61 +87,46 @@ class MyEvaluations extends Page implements HasTable
                 Tables\Columns\TextColumn::make('evaluation_status')
                     ->label('Status')
                     ->getStateUsing(function ($record) {
-                        if (!$record->form_id) {
+                        if (! $record->form_id) {
                             return 'No Form';
                         }
 
                         $submitted = FormSubmission::where('form_id', $record->form_id)
                             ->where('course_offering_id', $record->id)
-                            ->where('user_id', Auth::id())
+                            ->where(fn ($query) => $query
+                                ->where('submission_fingerprint', $this->fingerprint($record))
+                                ->orWhere('user_id', Auth::id()))
                             ->exists();
 
                         return $submitted ? 'Completed' : 'Pending';
                     })
                     ->badge()
-                    ->color(fn(string $state): string => match ($state) {
+                    ->color(fn (string $state): string => match ($state) {
                         'Completed' => 'success',
                         'Pending' => 'warning',
                         default => 'gray',
                     }),
             ])
-            ->filters([
-                Tables\Filters\SelectFilter::make('evaluation_status')
-                    ->label('Evaluation Status')
-                    ->options([
-                        'pending' => 'Pending',
-                        'completed' => 'Completed',
-                    ])
-                    ->query(function (Builder $query, array $data) {
-                        if ($data['value'] === 'pending') {
-                            $query->whereNotNull('form_id')
-                                ->whereDoesntHave('formSubmissions', function ($q) {
-                                    $q->where('user_id', Auth::id());
-                                });
-                        } elseif ($data['value'] === 'completed') {
-                            $query->whereHas('formSubmissions', function ($q) {
-                                $q->where('user_id', Auth::id());
-                            });
-                        }
-                    }),
-            ], layout: FiltersLayout::AboveContent)
+            ->filters([])
             ->actions([
                 Tables\Actions\Action::make('evaluate')
                     ->label('Evaluate')
                     ->icon('heroicon-o-star')
                     ->color('primary')
                     ->visible(function ($record) {
-                        if (!$record->form_id) {
+                        if (! $record->form_id) {
                             return false;
                         }
 
                         // Check if already submitted
-                        return !FormSubmission::where('form_id', $record->form_id)
+                        return ! FormSubmission::where('form_id', $record->form_id)
                             ->where('course_offering_id', $record->id)
-                            ->where('user_id', Auth::id())
+                            ->where(fn ($query) => $query
+                                ->where('submission_fingerprint', $this->fingerprint($record))
+                                ->orWhere('user_id', Auth::id()))
                             ->exists();
                     })
-                    ->url(fn($record) => route('evaluate.course-offering', $record))
+                    ->url(fn ($record) => route('evaluate.course-offering', $record))
                     ->openUrlInNewTab(),
 
                 Tables\Actions\Action::make('view_submission')
@@ -147,20 +134,24 @@ class MyEvaluations extends Page implements HasTable
                     ->icon('heroicon-o-eye')
                     ->color('gray')
                     ->visible(function ($record) {
-                        if (!$record->form_id) {
+                        if (! $record->form_id) {
                             return false;
                         }
 
                         return FormSubmission::where('form_id', $record->form_id)
                             ->where('course_offering_id', $record->id)
-                            ->where('user_id', Auth::id())
+                            ->where(fn ($query) => $query
+                                ->where('submission_fingerprint', $this->fingerprint($record))
+                                ->orWhere('user_id', Auth::id()))
                             ->exists();
                     })
                     ->modalHeading('Your Evaluation')
                     ->modalContent(function ($record) {
                         $submission = FormSubmission::where('form_id', $record->form_id)
                             ->where('course_offering_id', $record->id)
-                            ->where('user_id', Auth::id())
+                            ->where(fn ($query) => $query
+                                ->where('submission_fingerprint', $this->fingerprint($record))
+                                ->orWhere('user_id', Auth::id()))
                             ->first();
 
                         return view('filament.pages.partials.evaluation-view', [
@@ -184,5 +175,11 @@ class MyEvaluations extends Page implements HasTable
                 $query->where('user_id', Auth::id());
             })
             ->with(['course', 'instructor', 'semester.schoolYear', 'evaluationForm']);
+    }
+
+    private function fingerprint(CourseOffering $courseOffering): string
+    {
+        return app(EvaluationSubmissionIdentity::class)
+            ->fingerprint($courseOffering, request(), Auth::user());
     }
 }

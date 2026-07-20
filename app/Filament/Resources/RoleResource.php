@@ -2,19 +2,20 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Resources\RoleResource\Pages;
+use App\Models\Campus;
 use BezhanSalleh\FilamentShield\Contracts\HasShieldPermissions;
 use BezhanSalleh\FilamentShield\Forms\ShieldSelectAllToggle;
-use App\Filament\Resources\RoleResource\Pages;
 use BezhanSalleh\FilamentShield\Support\Utils;
 use BezhanSalleh\FilamentShield\Traits\HasShieldFormComponents;
-use Filament\Facades\Filament;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
-use Illuminate\Contracts\Support\Arrayable;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\HtmlString;
 use Illuminate\Support\Str;
 
@@ -42,12 +43,12 @@ class RoleResource extends Resource implements HasShieldPermissions
      * Hide super_admin role and global roles from non-super_admin users.
      * Filter roles by current campus for non-super_admin users.
      */
-    public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
+    public static function getEloquentQuery(): Builder
     {
         $query = parent::getEloquentQuery();
 
         $currentUser = auth()->user();
-        if ($currentUser && !$currentUser->hasRole('super_admin')) {
+        if ($currentUser && ! $currentUser->hasRole('super_admin')) {
             // Non-super_admin users can only see:
             // 1. Roles that belong to their current campus (not global roles)
             // 2. Exclude super_admin role
@@ -64,11 +65,11 @@ class RoleResource extends Resource implements HasShieldPermissions
      * global (cross-campus) roles are additionally locked to super_admin
      * itself, regardless of who holds update_role, to stop privilege escalation.
      */
-    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    public static function canEdit(Model $record): bool
     {
         $currentUser = auth()->user();
 
-        if (!$currentUser?->can('update_role')) {
+        if (! $currentUser?->can('update_role')) {
             return false;
         }
 
@@ -88,11 +89,11 @@ class RoleResource extends Resource implements HasShieldPermissions
      * global (cross-campus) roles are additionally locked to super_admin
      * itself, regardless of who holds delete_role, to stop privilege escalation.
      */
-    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    public static function canDelete(Model $record): bool
     {
         $currentUser = auth()->user();
 
-        if (!$currentUser?->can('delete_role')) {
+        if (! $currentUser?->can('delete_role')) {
             return false;
         }
 
@@ -126,8 +127,8 @@ class RoleResource extends Resource implements HasShieldPermissions
                                     ->required()
                                     ->maxLength(255)
                                     // Prevent editing super_admin role name
-                                    ->disabled(fn($record) => $record?->name === 'super_admin')
-                                    ->hint(fn($record) => $record?->name === 'super_admin' ? 'This role name is protected and cannot be changed.' : null)
+                                    ->disabled(fn ($record) => $record?->name === 'super_admin')
+                                    ->hint(fn ($record) => $record?->name === 'super_admin' ? 'This role name is protected and cannot be changed.' : null)
                                     ->hintColor('warning'),
 
                                 Forms\Components\TextInput::make('guard_name')
@@ -136,30 +137,30 @@ class RoleResource extends Resource implements HasShieldPermissions
                                     ->nullable()
                                     ->maxLength(255)
                                     // Also disable guard editing for super_admin
-                                    ->disabled(fn($record) => $record?->name === 'super_admin'),
+                                    ->disabled(fn ($record) => $record?->name === 'super_admin'),
 
                                 Forms\Components\Select::make('team_id')
                                     ->label('Campus')
-                                    ->placeholder(fn() => auth()->user()?->hasRole('super_admin') ? 'Global (all campuses)' : 'Select a campus')
-                                    ->options(fn() => \App\Models\Campus::pluck('name', 'id'))
+                                    ->placeholder(fn () => auth()->user()?->hasRole('super_admin') ? 'Global (all campuses)' : 'Select a campus')
+                                    ->options(fn () => Campus::pluck('name', 'id'))
                                     // super_admin sees all campuses, others only see current campus
-                                    ->default(fn() => auth()->user()?->hasRole('super_admin') ? null : filament()->getTenant()?->id)
+                                    ->default(fn () => auth()->user()?->hasRole('super_admin') ? null : filament()->getTenant()?->id)
                                     // Non-super_admin users MUST always assign a campus (can't create global roles)
                                     // super_admin can leave empty for global roles, but not for super_admin role itself
-                                    ->required(fn() => !auth()->user()?->hasRole('super_admin'))
+                                    ->required(fn () => ! auth()->user()?->hasRole('super_admin'))
                                     // Hidden when editing super_admin role
-                                    ->hidden(fn($record) => $record?->name === 'super_admin')
+                                    ->hidden(fn ($record) => $record?->name === 'super_admin')
                                     // Non-super_admin users can only assign to current campus
-                                    ->disabled(fn() => !auth()->user()?->hasRole('super_admin'))
-                                    ->hint(fn() => auth()->user()?->hasRole('super_admin')
+                                    ->disabled(fn () => ! auth()->user()?->hasRole('super_admin'))
+                                    ->hint(fn () => auth()->user()?->hasRole('super_admin')
                                         ? 'Leave empty for a global role (available to all campuses)'
                                         : 'Role will be assigned to current campus'),
                                 ShieldSelectAllToggle::make('select_all')
                                     ->onIcon('heroicon-s-shield-check')
                                     ->offIcon('heroicon-s-shield-exclamation')
                                     ->label(__('filament-shield::filament-shield.field.select_all.name'))
-                                    ->helperText(fn(): HtmlString => new HtmlString(__('filament-shield::filament-shield.field.select_all.message')))
-                                    ->dehydrated(fn(bool $state): bool => $state),
+                                    ->helperText(fn (): HtmlString => new HtmlString(__('filament-shield::filament-shield.field.select_all.message')))
+                                    ->dehydrated(fn (bool $state): bool => $state),
 
                             ])
                             ->columns([
@@ -178,7 +179,7 @@ class RoleResource extends Resource implements HasShieldPermissions
                 Tables\Columns\TextColumn::make('name')
                     ->weight('font-medium')
                     ->label(__('filament-shield::filament-shield.column.name'))
-                    ->formatStateUsing(fn($state): string => Str::headline($state))
+                    ->formatStateUsing(fn ($state): string => Str::headline($state))
                     ->searchable(),
                 Tables\Columns\TextColumn::make('guard_name')
                     ->badge()
@@ -188,7 +189,7 @@ class RoleResource extends Resource implements HasShieldPermissions
                     ->label('Campus')
                     ->default('Global')
                     ->badge()
-                    ->color(fn(mixed $state): string => $state === 'Global' ? 'gray' : 'primary')
+                    ->color(fn (mixed $state): string => $state === 'Global' ? 'gray' : 'primary')
                     ->searchable(),
                 Tables\Columns\TextColumn::make('permissions_count')
                     ->badge()
@@ -206,14 +207,14 @@ class RoleResource extends Resource implements HasShieldPermissions
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make()
                     // Prevent deletion of super_admin role
-                    ->hidden(fn($record) => $record->name === 'super_admin'),
+                    ->hidden(fn ($record) => $record->name === 'super_admin'),
             ])
             ->bulkActions([
                 Tables\Actions\DeleteBulkAction::make()
                     // Filter out super_admin role from bulk deletion
                     ->deselectRecordsAfterCompletion()
                     ->before(function ($records) {
-                        return $records->filter(fn($record) => $record->name !== 'super_admin');
+                        return $records->filter(fn ($record) => $record->name !== 'super_admin');
                     }),
             ]);
     }

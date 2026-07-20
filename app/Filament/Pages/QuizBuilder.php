@@ -13,10 +13,15 @@ class QuizBuilder extends Page
     protected static bool $shouldRegisterNavigation = false;
 
     public ?int $quizId = null;
+
     public ?Quiz $quizRecord = null;
+
     public array $questions = [];
+
     public ?int $selectedQuestionId = null;
+
     public array $selectedQuestionData = [];
+
     public bool $showProperties = false;
 
     /**
@@ -108,7 +113,7 @@ class QuizBuilder extends Page
         $question = QuizQuestion::create([
             'quiz_id' => $this->quizId,
             'type' => $type,
-            'question_text' => $typeLabel . ($existingCount > 0 ? ' ' . ($existingCount + 1) : ''),
+            'question_text' => $typeLabel.($existingCount > 0 ? ' '.($existingCount + 1) : ''),
             'points' => 1,
             'order' => $order,
             ...$defaults,
@@ -124,7 +129,7 @@ class QuizBuilder extends Page
     public function selectQuestion(int $questionId): void
     {
         $question = QuizQuestion::find($questionId);
-        if (!$question || $question->quiz_id !== $this->quizId) {
+        if (! $question || $question->quiz_id !== $this->quizId) {
             return;
         }
 
@@ -166,12 +171,12 @@ class QuizBuilder extends Page
      */
     public function saveQuestionProperties(): void
     {
-        if (!$this->selectedQuestionId) {
+        if (! $this->selectedQuestionId) {
             return;
         }
 
         $question = QuizQuestion::find($this->selectedQuestionId);
-        if (!$question || $question->quiz_id !== $this->quizId) {
+        if (! $question || $question->quiz_id !== $this->quizId) {
             return;
         }
 
@@ -188,7 +193,7 @@ class QuizBuilder extends Page
                 $key = (string) $i;
                 $options[] = ['key' => $key, 'label' => $option['label'] ?? ''];
 
-                if (!empty($option['is_correct'])) {
+                if (! empty($option['is_correct'])) {
                     $correct[] = $key;
                 }
             }
@@ -226,7 +231,7 @@ class QuizBuilder extends Page
     public function deleteQuestion(int $questionId): void
     {
         $question = QuizQuestion::find($questionId);
-        if (!$question || $question->quiz_id !== $this->quizId) {
+        if (! $question || $question->quiz_id !== $this->quizId) {
             return;
         }
 
@@ -245,7 +250,7 @@ class QuizBuilder extends Page
     public function duplicateQuestion(int $questionId): void
     {
         $question = QuizQuestion::find($questionId);
-        if (!$question || $question->quiz_id !== $this->quizId) {
+        if (! $question || $question->quiz_id !== $this->quizId) {
             return;
         }
 
@@ -254,7 +259,7 @@ class QuizBuilder extends Page
             ->increment('order');
 
         $new = $question->replicate();
-        $new->question_text = $question->question_text . ' (Copy)';
+        $new->question_text = $question->question_text.' (Copy)';
         $new->order = $question->order + 1;
         $new->save();
 
@@ -273,7 +278,7 @@ class QuizBuilder extends Page
     {
         $count = count($this->selectedQuestionData['options'] ?? []);
         $this->selectedQuestionData['options'][] = [
-            'label' => 'Option ' . ($count + 1),
+            'label' => 'Option '.($count + 1),
             'is_correct' => false,
         ];
     }
@@ -297,7 +302,7 @@ class QuizBuilder extends Page
 
     public function getTitle(): string
     {
-        return 'Quiz Builder — ' . ($this->quizRecord->title ?? 'Untitled');
+        return 'Quiz Builder — '.($this->quizRecord->title ?? 'Untitled');
     }
 
     public static function getRoutePath(): string

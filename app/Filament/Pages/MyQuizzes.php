@@ -15,10 +15,11 @@ use Illuminate\Support\Facades\Auth;
 
 class MyQuizzes extends Page implements HasTable
 {
-    use InteractsWithTable;
     // Gated by the page_MyQuizzes permission (toggle per-role in Roles) instead
     // of just isStudent(), so access is actually controllable via permissions.
     use HasPageShield;
+
+    use InteractsWithTable;
 
     protected static ?string $navigationIcon = 'heroicon-o-pencil-square';
 
@@ -108,7 +109,7 @@ class MyQuizzes extends Page implements HasTable
 
     protected function latestAttempt(Quiz $quiz): ?QuizAttempt
     {
-        if (!array_key_exists($quiz->id, $this->attemptCache)) {
+        if (! array_key_exists($quiz->id, $this->attemptCache)) {
             $this->attemptCache[$quiz->id] = $quiz->attempts()
                 ->where('user_id', Auth::id())
                 ->latest('attempt_number')
@@ -122,9 +123,9 @@ class MyQuizzes extends Page implements HasTable
     {
         $attempt = $this->latestAttempt($quiz);
 
-        if (!$attempt) {
-            if (!$quiz->hasWindowOpened()) {
-                return 'Starts ' . $quiz->available_from->format('M j, g:ia');
+        if (! $attempt) {
+            if (! $quiz->hasWindowOpened()) {
+                return 'Starts '.$quiz->available_from->format('M j, g:ia');
             }
 
             return $quiz->isAvailable() ? 'Not Started' : 'Closed';
@@ -157,7 +158,7 @@ class MyQuizzes extends Page implements HasTable
             return 'Review';
         }
 
-        if (!$quiz->hasWindowOpened()) {
+        if (! $quiz->hasWindowOpened()) {
             return 'View';
         }
 

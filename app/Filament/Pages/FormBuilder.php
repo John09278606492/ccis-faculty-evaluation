@@ -4,9 +4,9 @@ namespace App\Filament\Pages;
 
 use App\Models\Form;
 use App\Models\FormField;
+use Filament\Facades\Filament;
 use Filament\Pages\Page;
 use Illuminate\Support\Str;
-use Livewire\Attributes\On;
 
 class FormBuilder extends Page
 {
@@ -17,12 +17,19 @@ class FormBuilder extends Page
     protected static ?string $title = 'Form Builder';
 
     public ?int $formId = null;
+
     public ?Form $formRecord = null;
+
     public array $fields = [];
+
     public ?int $selectedFieldId = null;
+
     public array $selectedFieldData = [];
+
     public bool $showProperties = false;
+
     public bool $hasCustomScale = false;
+
     public array $fieldColumns = [];
 
     /**
@@ -99,13 +106,13 @@ class FormBuilder extends Page
         );
 
         // Tenant check: verify form belongs to the user's current campus
-        $tenant = \Filament\Facades\Filament::getTenant();
-        if ($tenant && !$this->formRecord->campuses()->where('campus_id', $tenant->id)->exists()) {
+        $tenant = Filament::getTenant();
+        if ($tenant && ! $this->formRecord->campuses()->where('campus_id', $tenant->id)->exists()) {
             abort(403, 'This form does not belong to your campus.');
         }
 
         $this->loadFields();
-        $this->hasCustomScale = !empty($this->formRecord->rating_scale);
+        $this->hasCustomScale = ! empty($this->formRecord->rating_scale);
         $this->fieldColumns = $this->formRecord->field_columns ?? [];
     }
 
@@ -140,7 +147,7 @@ class FormBuilder extends Page
         $this->fields = $this->formRecord->fields()
             ->orderBy('order')
             ->get()
-            ->map(fn(FormField $f) => [
+            ->map(fn (FormField $f) => [
                 'id' => $f->id,
                 'section' => $f->section,
                 'label' => $f->label,
@@ -162,19 +169,20 @@ class FormBuilder extends Page
     public function addField(string $type, ?int $afterFieldId = null): void
     {
         // When custom rating scale is active, only allow likert_scale and section_header fields
-        if ($this->hasCustomScale && !in_array($type, ['likert_scale', 'section_header'])) {
+        if ($this->hasCustomScale && ! in_array($type, ['likert_scale', 'section_header'])) {
             $this->dispatch('notify', message: 'Only Likert Scale fields are allowed when custom rating scale is active.');
+
             return;
         }
 
         // Determine label
         if ($type === 'section_header') {
             $existingCount = collect($this->fields)->where('type', 'section_header')->count();
-            $label = 'Section ' . chr(65 + $existingCount); // A, B, C...
+            $label = 'Section '.chr(65 + $existingCount); // A, B, C...
         } else {
             $typeLabel = FormField::TYPES[$type] ?? ucfirst($type);
             $existingCount = collect($this->fields)->where('type', $type)->count();
-            $label = $typeLabel . ($existingCount > 0 ? ' ' . ($existingCount + 1) : '');
+            $label = $typeLabel.($existingCount > 0 ? ' '.($existingCount + 1) : '');
         }
 
         // Determine order
@@ -193,7 +201,7 @@ class FormBuilder extends Page
         $field = FormField::create([
             'form_id' => $this->formId,
             'label' => $label,
-            'name' => $type === 'section_header' ? Str::snake($label) . '_header' : Str::snake($label),
+            'name' => $type === 'section_header' ? Str::snake($label).'_header' : Str::snake($label),
             'type' => $type,
             'is_required' => false,
             'order' => $order,
@@ -213,8 +221,9 @@ class FormBuilder extends Page
     public function selectField(int $fieldId): void
     {
         $field = FormField::find($fieldId);
-        if (!$field || $field->form_id !== $this->formId)
+        if (! $field || $field->form_id !== $this->formId) {
             return;
+        }
 
         $this->selectedFieldId = $fieldId;
         $this->selectedFieldData = [
@@ -236,12 +245,14 @@ class FormBuilder extends Page
      */
     public function saveFieldProperties(): void
     {
-        if (!$this->selectedFieldId)
+        if (! $this->selectedFieldId) {
             return;
+        }
 
         $field = FormField::find($this->selectedFieldId);
-        if (!$field || $field->form_id !== $this->formId)
+        if (! $field || $field->form_id !== $this->formId) {
             return;
+        }
 
         $field->update([
             'label' => $this->selectedFieldData['label'],
@@ -249,7 +260,7 @@ class FormBuilder extends Page
             'placeholder' => $this->selectedFieldData['placeholder'] ?: null,
             'help_text' => $this->selectedFieldData['help_text'] ?: null,
             'is_required' => $this->selectedFieldData['is_required'] ?? false,
-            'column_values' => !empty($this->selectedFieldData['column_values'])
+            'column_values' => ! empty($this->selectedFieldData['column_values'])
                 ? $this->selectedFieldData['column_values']
                 : null,
             'options' => in_array($field->type, FormField::TYPES_WITH_OPTIONS)
@@ -285,8 +296,9 @@ class FormBuilder extends Page
     public function deleteField(int $fieldId): void
     {
         $field = FormField::find($fieldId);
-        if (!$field || $field->form_id !== $this->formId)
+        if (! $field || $field->form_id !== $this->formId) {
             return;
+        }
 
         $field->delete();
 
@@ -298,7 +310,7 @@ class FormBuilder extends Page
 
         // Re-sequence order
         $this->formRecord->fields()->orderBy('order')->get()
-            ->each(fn($f, $i) => $f->update(['order' => $i + 1]));
+            ->each(fn ($f, $i) => $f->update(['order' => $i + 1]));
 
         $this->recalculateSections();
         $this->loadFields();
@@ -310,8 +322,9 @@ class FormBuilder extends Page
     public function duplicateField(int $fieldId): void
     {
         $field = FormField::find($fieldId);
-        if (!$field || $field->form_id !== $this->formId)
+        if (! $field || $field->form_id !== $this->formId) {
             return;
+        }
 
         // Shift fields after this one
         FormField::where('form_id', $this->formId)
@@ -319,7 +332,7 @@ class FormBuilder extends Page
             ->increment('order');
 
         $newField = $field->replicate();
-        $newField->label = $field->label . ' (Copy)';
+        $newField->label = $field->label.' (Copy)';
         $newField->name = Str::snake($newField->label);
         $newField->order = $field->order + 1;
         $newField->save();
@@ -346,8 +359,8 @@ class FormBuilder extends Page
     {
         $count = count($this->selectedFieldData['options'] ?? []);
         $this->selectedFieldData['options'][] = [
-            'value' => 'option_' . ($count + 1),
-            'label' => 'Option ' . ($count + 1),
+            'value' => 'option_'.($count + 1),
+            'label' => 'Option '.($count + 1),
         ];
     }
 
@@ -367,8 +380,8 @@ class FormBuilder extends Page
     {
         $count = count($this->fieldColumns);
         $this->fieldColumns[] = [
-            'key' => 'column_' . ($count + 1),
-            'label' => 'Column ' . ($count + 1),
+            'key' => 'column_'.($count + 1),
+            'label' => 'Column '.($count + 1),
         ];
         $this->saveFieldColumns();
     }
@@ -408,14 +421,16 @@ class FormBuilder extends Page
      */
     public function updateColumnValue(string $columnKey, string $content): void
     {
-        if (!$this->selectedFieldId) return;
+        if (! $this->selectedFieldId) {
+            return;
+        }
 
         $this->selectedFieldData['column_values'][$columnKey] = $content;
     }
 
     public function getTitle(): string
     {
-        return 'Form Builder — ' . ($this->formRecord->name ?? 'Untitled');
+        return 'Form Builder — '.($this->formRecord->name ?? 'Untitled');
     }
 
     public static function getRoutePath(): string

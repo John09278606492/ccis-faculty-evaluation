@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Pages\Widgets\EvaluationResultsStatsOverview;
 use App\Models\CourseOffering;
 use App\Models\Department;
 use App\Models\FormSubmission;
@@ -11,17 +12,18 @@ use Filament\Pages\Page;
 use Filament\Tables;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
-use Filament\Tables\Table;
 use Filament\Tables\Enums\FiltersLayout;
+use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
 class EvaluationResults extends Page implements HasTable
 {
-    use InteractsWithTable;
     // Gated by the page_EvaluationResults permission instead of a hardcoded
     // role-name list (the old check also referenced a view_evaluation_results
     // permission that was never actually created, so it never took effect).
     use HasPageShield;
+
+    use InteractsWithTable;
 
     protected static ?string $navigationIcon = 'heroicon-o-chart-bar';
 
@@ -38,7 +40,7 @@ class EvaluationResults extends Page implements HasTable
     protected function getHeaderWidgets(): array
     {
         return [
-            \App\Filament\Pages\Widgets\EvaluationResultsStatsOverview::class,
+            EvaluationResultsStatsOverview::class,
         ];
     }
 
@@ -56,7 +58,7 @@ class EvaluationResults extends Page implements HasTable
                     ->label('Evaluatee')
                     ->searchable(['first_name', 'last_name', 'name'])
                     ->sortable()
-                    ->description(fn($record) => $record->employee_id ? "ID: {$record->employee_id}" : null),
+                    ->description(fn ($record) => $record->employee_id ? "ID: {$record->employee_id}" : null),
 
                 Tables\Columns\TextColumn::make('instructorDepartment.name')
                     ->label('Department')
@@ -67,7 +69,7 @@ class EvaluationResults extends Page implements HasTable
 
                 Tables\Columns\TextColumn::make('courses_count')
                     ->label('Courses')
-                    ->getStateUsing(fn($record) => $record->courseOfferingsAsInstructor()
+                    ->getStateUsing(fn ($record) => $record->courseOfferingsAsInstructor()
                         ->whereHas('formSubmissions')
                         ->count())
                     ->badge()
@@ -75,10 +77,9 @@ class EvaluationResults extends Page implements HasTable
 
                 Tables\Columns\TextColumn::make('evaluations_count')
                     ->label('Evaluations')
-                    ->getStateUsing(fn($record) => FormSubmission::whereHas(
+                    ->getStateUsing(fn ($record) => FormSubmission::whereHas(
                         'courseOffering',
-                        fn($q) =>
-                        $q->where('user_id', $record->id)
+                        fn ($q) => $q->where('user_id', $record->id)
                     )->count())
                     ->badge()
                     ->color('info'),
@@ -90,25 +91,31 @@ class EvaluationResults extends Page implements HasTable
                     })
                     ->badge()
                     ->color(function ($state) {
-                        if (!$state || !is_numeric($state))
+                        if (! $state || ! is_numeric($state)) {
                             return 'gray';
+                        }
                         $val = (float) $state;
-                        if ($val >= 4.5)
+                        if ($val >= 4.5) {
                             return 'success';
-                        if ($val >= 3.5)
+                        }
+                        if ($val >= 3.5) {
                             return 'info';
-                        if ($val >= 2.5)
+                        }
+                        if ($val >= 2.5) {
                             return 'warning';
+                        }
+
                         return 'danger';
-                    })
-                ,
+                    }),
 
                 Tables\Columns\TextColumn::make('rating')
                     ->label('Rating')
                     ->getStateUsing(function ($record) {
                         $score = $this->calculateInstructorScore($record);
-                        if (!$score)
+                        if (! $score) {
                             return '—';
+                        }
+
                         return $this->getRatingLabel((float) $score);
                     })
                     ->color(function ($state) {
@@ -127,7 +134,8 @@ class EvaluationResults extends Page implements HasTable
                     ->label('Department')
                     ->options(function () {
                         $campusId = filament()->getTenant()?->id;
-                        return Department::when($campusId, fn($q) => $q->where('campus_id', $campusId))
+
+                        return Department::when($campusId, fn ($q) => $q->where('campus_id', $campusId))
                             ->pluck('name', 'id');
                     })
                     ->searchable()
@@ -138,8 +146,7 @@ class EvaluationResults extends Page implements HasTable
                     ->toggle()
                     ->default(true)
                     ->query(
-                        fn(Builder $query) =>
-                        $query->whereHas('courseOfferingsAsInstructor.formSubmissions')
+                        fn (Builder $query) => $query->whereHas('courseOfferingsAsInstructor.formSubmissions')
                     ),
             ], layout: FiltersLayout::AboveContent)
             ->actions([
@@ -147,7 +154,7 @@ class EvaluationResults extends Page implements HasTable
                     ->label('View Details')
                     ->icon('heroicon-o-eye')
                     ->color('primary')
-                    ->modalHeading(fn($record) => "Evaluation Results: {$record->name}")
+                    ->modalHeading(fn ($record) => "Evaluation Results: {$record->name}")
                     ->modalWidth('4xl')
                     ->modalContent(function ($record) {
                         return view('filament.pages.partials.instructor-evaluation-details', [
@@ -170,7 +177,7 @@ class EvaluationResults extends Page implements HasTable
 
         return User::query()
             ->whereHas('courseOfferingsAsInstructor', function ($q) use ($campusId) {
-                $q->when($campusId, fn($query) => $query->whereHas('semester.schoolYear', fn($sy) => $sy->where('campus_id', $campusId)));
+                $q->when($campusId, fn ($query) => $query->whereHas('semester.schoolYear', fn ($sy) => $sy->where('campus_id', $campusId)));
             })
             ->with(['instructorDepartment']);
     }
@@ -181,8 +188,9 @@ class EvaluationResults extends Page implements HasTable
     private function calculateCourseOfferingScore(CourseOffering $co, $submissions): array
     {
         $form = $co->evaluationForm;
-        if (!$form)
+        if (! $form) {
             return ['score' => 0, 'method' => 'average'];
+        }
 
         $scoringConfig = $form->scoring_config ?? [];
         $sectionMethod = $scoringConfig['section_method'] ?? 'average';
@@ -193,7 +201,7 @@ class EvaluationResults extends Page implements HasTable
         $allRatings = [];
 
         // Group fields by section
-        $groupedFields = $ratingFields->groupBy(fn($f) => $f->section ?? 'General');
+        $groupedFields = $ratingFields->groupBy(fn ($f) => $f->section ?? 'General');
 
         // Calculate per-submission scores, then average across submissions
         $submissionScores = [];
@@ -212,7 +220,7 @@ class EvaluationResults extends Page implements HasTable
                     }
                 }
 
-                if (!empty($ratings)) {
+                if (! empty($ratings)) {
                     $sum = array_sum($ratings);
                     $count = count($ratings);
                     $sectionScores[$section] = match ($sectionMethod) {
@@ -223,11 +231,11 @@ class EvaluationResults extends Page implements HasTable
                 }
             }
 
-            if (!empty($sectionScores)) {
+            if (! empty($sectionScores)) {
                 $scores = array_values($sectionScores);
                 $subScore = match ($overallMethod) {
                     'sum' => array_sum($scores),
-                    'grand_average' => !empty($allRatings) ? array_sum($allRatings) / count($allRatings) : 0,
+                    'grand_average' => ! empty($allRatings) ? array_sum($allRatings) / count($allRatings) : 0,
                     'weighted_average' => $this->calculateWeightedAverage($sectionScores, $scoringConfig),
                     default => array_sum($scores) / count($scores),
                 };
@@ -235,7 +243,7 @@ class EvaluationResults extends Page implements HasTable
             }
         }
 
-        $finalScore = !empty($submissionScores) ? array_sum($submissionScores) / count($submissionScores) : 0;
+        $finalScore = ! empty($submissionScores) ? array_sum($submissionScores) / count($submissionScores) : 0;
 
         return [
             'score' => $finalScore,
@@ -247,7 +255,7 @@ class EvaluationResults extends Page implements HasTable
     private function calculateWeightedAverage(array $sectionScores, array $scoringConfig): float
     {
         $weights = collect($scoringConfig['section_weights'] ?? []);
-        $weightMap = $weights->pluck('weight', 'section_name')->map(fn($w) => $w / 100);
+        $weightMap = $weights->pluck('weight', 'section_name')->map(fn ($w) => $w / 100);
         $weightedSum = 0;
         $totalWeight = 0;
 
@@ -270,8 +278,9 @@ class EvaluationResults extends Page implements HasTable
             ->with(['evaluationForm.fields', 'formSubmissions'])
             ->get();
 
-        if ($courseOfferings->isEmpty())
+        if ($courseOfferings->isEmpty()) {
             return null;
+        }
 
         $coScores = [];
         foreach ($courseOfferings as $co) {
@@ -281,8 +290,9 @@ class EvaluationResults extends Page implements HasTable
             }
         }
 
-        if (empty($coScores))
+        if (empty($coScores)) {
             return null;
+        }
 
         return number_format(array_sum($coScores) / count($coScores), 2);
     }
@@ -301,8 +311,9 @@ class EvaluationResults extends Page implements HasTable
 
         foreach ($courseOfferings as $co) {
             $form = $co->evaluationForm;
-            if (!$form)
+            if (! $form) {
                 continue;
+            }
 
             $submissions = $co->formSubmissions;
             $scoringConfig = $form->scoring_config ?? [];
@@ -329,7 +340,7 @@ class EvaluationResults extends Page implements HasTable
                         $values[] = (float) $val;
                     }
                 }
-                if (!empty($values)) {
+                if (! empty($values)) {
                     $avg = array_sum($values) / count($values);
                     $fieldAverages[] = [
                         'label' => $field->label,
@@ -354,7 +365,7 @@ class EvaluationResults extends Page implements HasTable
 
             // Calculate overall score using the form's method
             $overallScore = 0;
-            if (!empty($sectionScores)) {
+            if (! empty($sectionScores)) {
                 $scores = array_values($sectionScores);
                 $overallScore = match ($overallMethod) {
                     'sum' => array_sum($scores),
@@ -376,14 +387,14 @@ class EvaluationResults extends Page implements HasTable
                 // Gather field comments
                 $fc = $subData['_field_comments'] ?? [];
                 foreach ($fc as $fieldName => $comment) {
-                    if (!empty($comment)) {
+                    if (! empty($comment)) {
                         $allFieldComments[$fieldName][] = $comment;
                     }
                 }
 
                 // Gather overall comments
                 $oc = $subData['_overall_comment'] ?? null;
-                if (!empty($oc)) {
+                if (! empty($oc)) {
                     $allOverallComments[] = $oc;
                 }
             }
@@ -416,14 +427,19 @@ class EvaluationResults extends Page implements HasTable
 
     private function getRatingLabel(float $score): string
     {
-        if ($score >= 4.5)
+        if ($score >= 4.5) {
             return 'Outstanding';
-        if ($score >= 3.5)
+        }
+        if ($score >= 3.5) {
             return 'Very Satisfactory';
-        if ($score >= 2.5)
+        }
+        if ($score >= 2.5) {
             return 'Satisfactory';
-        if ($score >= 1.5)
+        }
+        if ($score >= 1.5) {
             return 'Fair';
+        }
+
         return 'Poor';
     }
 
@@ -441,6 +457,7 @@ class EvaluationResults extends Page implements HasTable
                 return $s['label'];
             }
         }
+
         return $scale->last()['label'] ?? '—';
     }
 
@@ -457,6 +474,7 @@ class EvaluationResults extends Page implements HasTable
                 return $s['color'] ?? '#6b7280';
             }
         }
+
         return $scale->last()['color'] ?? '#6b7280';
     }
 }

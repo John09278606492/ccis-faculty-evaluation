@@ -3,8 +3,8 @@
 namespace App\Policies;
 
 use App\Models\User;
-use Rupadana\ApiService\Models\Token;
 use Illuminate\Auth\Access\HandlesAuthorization;
+use Rupadana\ApiService\Models\Token;
 
 class TokenPolicy
 {

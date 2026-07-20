@@ -3,7 +3,6 @@
 namespace App\Filament\Widgets;
 
 use App\Models\CourseOffering;
-use App\Models\FormSubmission;
 use BezhanSalleh\FilamentShield\Traits\HasWidgetShield;
 use Filament\Facades\Filament;
 use Filament\Widgets\ChartWidget;
@@ -42,11 +41,11 @@ class EvaluationCompletionChart extends ChartWidget
             ->whereNotNull('form_id');
 
         if ($tenant) {
-            $query->whereHas('semester.schoolYear', fn($q) => $q->where('campus_id', $tenant->id));
+            $query->whereHas('semester.schoolYear', fn ($q) => $q->where('campus_id', $tenant->id));
         }
 
         // Instructors see only their own course offerings
-        if (!$user->isSuperAdmin() && $user->isInstructor() && !$user->can('view_any_course::offering')) {
+        if (! $user->isSuperAdmin() && $user->isInstructor() && ! $user->can('view_any_course::offering')) {
             $query->where('user_id', $user->id);
         }
 
@@ -59,6 +58,7 @@ class EvaluationCompletionChart extends ChartWidget
         foreach ($courseOfferings as $offering) {
             if ($offering->students_count === 0) {
                 $notStarted++;
+
                 continue;
             }
 

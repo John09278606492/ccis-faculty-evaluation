@@ -5,11 +5,11 @@ namespace App\Filament\Resources\CourseOfferingResource\RelationManagers;
 use App\Models\User;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
-use Filament\Notifications\Notification;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -46,10 +46,11 @@ class StudentsRelationManager extends RelationManager
                     ->label('Evaluator')
                     ->options(function () {
                         $campusId = filament()->getTenant()?->id;
-                        return User::whereHas('campuses', fn($q) => $q->where('campus_id', $campusId))
+
+                        return User::whereHas('campuses', fn ($q) => $q->where('campus_id', $campusId))
                             ->where('is_student', true)
                             ->get()
-                            ->mapWithKeys(fn($u) => [$u->id => "{$u->student_id} - {$u->full_name}"]);
+                            ->mapWithKeys(fn ($u) => [$u->id => "{$u->student_id} - {$u->full_name}"]);
                     })
                     ->required()
                     ->searchable(),
@@ -93,10 +94,11 @@ class StudentsRelationManager extends RelationManager
                     ->preloadRecordSelect()
                     ->recordSelectOptionsQuery(function () {
                         $campusId = filament()->getTenant()?->id;
-                        return User::whereHas('campuses', fn($q) => $q->where('campus_id', $campusId))
+
+                        return User::whereHas('campuses', fn ($q) => $q->where('campus_id', $campusId))
                             ->where('is_student', true);
                     })
-                    ->recordTitle(fn(User $record) => "{$record->student_id} - {$record->full_name}")
+                    ->recordTitle(fn (User $record) => "{$record->student_id} - {$record->full_name}")
                     ->recordSelectSearchColumns(['student_id', 'name', 'email', 'first_name', 'last_name']),
 
                 // Bulk attach students
@@ -115,11 +117,11 @@ class StudentsRelationManager extends RelationManager
                                 $courseOfferingId = $this->ownerRecord->id;
 
                                 // Get students in campus that are NOT already enrolled in this course offering
-                                return User::whereHas('campuses', fn($q) => $q->where('campus_id', $campusId))
+                                return User::whereHas('campuses', fn ($q) => $q->where('campus_id', $campusId))
                                     ->where('is_student', true)
-                                    ->whereDoesntHave('enrolledCourseOfferings', fn($q) => $q->where('course_offering_id', $courseOfferingId))
+                                    ->whereDoesntHave('enrolledCourseOfferings', fn ($q) => $q->where('course_offering_id', $courseOfferingId))
                                     ->get()
-                                    ->mapWithKeys(fn($u) => [$u->id => "{$u->student_id} - {$u->name}"]);
+                                    ->mapWithKeys(fn ($u) => [$u->id => "{$u->student_id} - {$u->name}"]);
                             })
                             ->required()
                             ->helperText('Select people to assign as evaluators'),
@@ -141,7 +143,7 @@ class StudentsRelationManager extends RelationManager
 
                         $count = count($studentIds);
                         Notification::make()
-                            ->title("Successfully added {$count} " . ($count === 1 ? 'evaluator' : 'evaluators'))
+                            ->title("Successfully added {$count} ".($count === 1 ? 'evaluator' : 'evaluators'))
                             ->success()
                             ->send();
                     }),
@@ -281,11 +283,11 @@ class StudentsRelationManager extends RelationManager
         if ($notFoundCount > 0) {
             $preview = $notFound->take(10)->implode(', ');
             $body = "{$notFoundCount} ID(s) didn't match any student and were skipped: {$preview}"
-                . ($notFoundCount > 10 ? ', …' : '');
+                .($notFoundCount > 10 ? ', …' : '');
         }
 
         Notification::make()
-            ->title("Added {$attachedCount} " . ($attachedCount === 1 ? 'evaluator' : 'evaluators') . ' from the file')
+            ->title("Added {$attachedCount} ".($attachedCount === 1 ? 'evaluator' : 'evaluators').' from the file')
             ->body($body)
             ->success()
             ->send();

@@ -6,12 +6,13 @@ use Illuminate\Support\Facades\Schema;
 
 /**
  * Adds missing database indexes and constraints for data integrity and performance.
- * 
+ *
  * Addresses:
  * - Composite index on form_submissions for duplicate detection queries
  * - Unique constraint on form_fields to prevent duplicate field names per form
  */
-return new class extends Migration {
+return new class extends Migration
+{
     public function up(): void
     {
         // #14: Add composite index for the duplicate submission check query

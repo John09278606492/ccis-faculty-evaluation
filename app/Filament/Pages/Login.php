@@ -2,14 +2,14 @@
 
 namespace App\Filament\Pages;
 
+use App\Models\User;
 use DanHarrin\LivewireRateLimiting\Exceptions\TooManyRequestsException;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\Component;
 use Filament\Forms\Components\TextInput;
-use Filament\Pages\Auth\Login as BaseLogin;
-use Illuminate\Contracts\View\View;
 use Filament\Http\Responses\Auth\Contracts\LoginResponse;
 use Filament\Models\Contracts\FilamentUser;
+use Filament\Pages\Auth\Login as BaseLogin;
 use Illuminate\Validation\ValidationException;
 
 class Login extends BaseLogin
@@ -43,7 +43,7 @@ class Login extends BaseLogin
         // Resolve the typed identifier to a user by student ID first, then email,
         // so bulk-imported students can sign in with the ID number their instructor gave them.
         $login = trim($data['login']);
-        $user = \App\Models\User::where('student_id', $login)
+        $user = User::where('student_id', $login)
             ->orWhere('email', $login)
             ->first();
 

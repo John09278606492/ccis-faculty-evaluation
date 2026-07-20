@@ -2,17 +2,18 @@
 
 namespace App\Filament\Resources\UserResource\Pages;
 
-use App\Filament\Imports\StudentImporter;
 use App\Filament\Imports\InstructorImporter;
+use App\Filament\Imports\StudentImporter;
 use App\Filament\Resources\UserResource;
 use Filament\Actions;
 use Filament\Actions\ActionGroup;
 use Filament\Actions\ImportAction;
 use Filament\Resources\Pages\ListRecords;
 use Livewire\Attributes\On;
+use Maatwebsite\Excel\Excel;
+use pxlrbt\FilamentExcel\Actions\Pages\ExportAction;
 use pxlrbt\FilamentExcel\Columns\Column;
 use pxlrbt\FilamentExcel\Exports\ExcelExport;
-use pxlrbt\FilamentExcel\Actions\Pages\ExportAction;
 
 class ListUsers extends ListRecords
 {
@@ -40,14 +41,14 @@ class ListUsers extends ListRecords
                     ->icon('heroicon-o-academic-cap')
                     ->color('info')
                     ->options(['campus_id' => $campusId])
-                    ->after(fn() => $this->dispatch('importCompleted')),
+                    ->after(fn () => $this->dispatch('importCompleted')),
                 ImportAction::make('import_instructors')
                     ->importer(InstructorImporter::class)
                     ->label('Import Instructors')
                     ->icon('heroicon-o-briefcase')
                     ->color('warning')
                     ->options(['campus_id' => $campusId])
-                    ->after(fn() => $this->dispatch('importCompleted')),
+                    ->after(fn () => $this->dispatch('importCompleted')),
             ])
                 ->label('Import Users')
                 ->icon('heroicon-o-arrow-up-tray')
@@ -56,11 +57,11 @@ class ListUsers extends ListRecords
                 ->exports([
                     ExcelExport::make()
                         ->fromTable()
-                        ->withFilename(fn($resource) => $resource::getModelLabel() . '-' . date('Y-m-d'))
-                        ->withWriterType(\Maatwebsite\Excel\Excel::XLSX)
+                        ->withFilename(fn ($resource) => $resource::getModelLabel().'-'.date('Y-m-d'))
+                        ->withWriterType(Excel::XLSX)
                         ->withColumns([
                             Column::make('updated_at'),
-                        ])
+                        ]),
                 ]),
         ];
     }

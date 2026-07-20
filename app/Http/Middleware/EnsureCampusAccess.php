@@ -16,7 +16,6 @@ use Symfony\Component\HttpFoundation\Response;
  * Note: This middleware is an information provider, NOT an access enforcer.
  * Actual campus access enforcement is handled by:
  *   - Filament's multi-tenancy (User::canAccessTenant())
- *   - ApplyTenantScopes middleware (global query scoping)
  *   - Resource-level query scoping in each Filament resource
  */
 class EnsureCampusAccess
@@ -24,7 +23,7 @@ class EnsureCampusAccess
     /**
      * Handle an incoming request.
      *
-     * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
+     * @param  Closure(Request): (Response)  $next
      */
     public function handle(Request $request, Closure $next): Response
     {

@@ -52,7 +52,7 @@ class EvaluationSubmissionsChart extends ChartWidget
         }
 
         // Instructors only see their own evaluations
-        if (!$user->isSuperAdmin() && $user->isInstructor() && !$user->can('view_any_form')) {
+        if (! $user->isSuperAdmin() && $user->isInstructor() && ! $user->can('view_any_form')) {
             $query->whereHas('courseOffering', fn ($q) => $q->where('user_id', $user->id));
         }
 

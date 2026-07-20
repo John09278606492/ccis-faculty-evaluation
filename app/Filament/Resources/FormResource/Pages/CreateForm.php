@@ -12,7 +12,7 @@ class CreateForm extends CreateRecord
     protected function afterCreate(): void
     {
         // For non-super_admin, always attach the current tenant campus
-        if (!auth()->user()?->hasRole('super_admin')) {
+        if (! auth()->user()?->hasRole('super_admin')) {
             $campusId = filament()->getTenant()?->id;
             if ($campusId) {
                 $this->record->campuses()->syncWithoutDetaching([$campusId]);

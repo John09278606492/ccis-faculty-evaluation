@@ -98,7 +98,7 @@ class QuestionsRelationManager extends RelationManager
                 $key = (string) $i;
                 $options[] = ['key' => $key, 'label' => $option['label'] ?? ''];
 
-                if (!empty($option['is_correct'])) {
+                if (! empty($option['is_correct'])) {
                     $correctAnswer[] = $key;
                 }
             }
@@ -172,7 +172,7 @@ class QuestionsRelationManager extends RelationManager
 
                 Tables\Columns\TextColumn::make('options')
                     ->label('Choices')
-                    ->formatStateUsing(fn ($state) => is_array($state) ? count($state) . ' choices' : '-')
+                    ->formatStateUsing(fn ($state) => is_array($state) ? count($state).' choices' : '-')
                     ->color('gray'),
             ])
             ->filters([

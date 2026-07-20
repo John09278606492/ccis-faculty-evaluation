@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\EvaluationController;
+use App\Http\Controllers\QuizSubmissionController;
 use Illuminate\Support\Facades\Route;
 
 // Route::get('/', function () {
@@ -22,3 +23,7 @@ Route::middleware('throttle:10,1')->group(function () {
 Route::get('/form-preview/{form}', [EvaluationController::class, 'preview'])
     ->name('form.preview')
     ->middleware('auth');
+
+Route::get('/quiz-submissions/{quizAnswer}/download', [QuizSubmissionController::class, 'download'])
+    ->name('quiz-submissions.download')
+    ->middleware(['auth', 'throttle:30,1']);

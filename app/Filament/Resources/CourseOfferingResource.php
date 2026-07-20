@@ -8,15 +8,17 @@ use App\Models\Course;
 use App\Models\CourseOffering;
 use App\Models\Department;
 use App\Models\Form as FormModel;
-use App\Models\User;
+use App\Models\FormSubmission;
 use App\Models\Semester;
-use App\Models\SchoolYear;
+use App\Models\User;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
+use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
-    use Filament\Tables\Enums\FiltersLayout;
+use Illuminate\Database\Eloquent\Builder;
 
 class CourseOfferingResource extends Resource
 {
@@ -40,12 +42,12 @@ class CourseOfferingResource extends Resource
     /**
      * Manually scope the query to the current tenant's course offerings.
      */
-    public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
+    public static function getEloquentQuery(): Builder
     {
         $campusId = filament()->getTenant()?->id;
 
         return parent::getEloquentQuery()
-            ->whereHas('semester.schoolYear', fn($q) => $q->where('campus_id', $campusId));
+            ->whereHas('semester.schoolYear', fn ($q) => $q->where('campus_id', $campusId));
     }
 
     public static function form(Form $form): Form
@@ -67,7 +69,7 @@ class CourseOfferingResource extends Resource
                                 }
                             })
                             ->afterStateUpdated(function ($state, callable $set) {
-                                if (!$state) {
+                                if (! $state) {
                                     // Clear instructor-specific fields
                                     $set('department_id', null);
                                     $set('course_id', null);
@@ -81,10 +83,11 @@ class CourseOfferingResource extends Resource
                             ->label('Semester')
                             ->options(function () {
                                 $campusId = filament()->getTenant()?->id;
-                                return Semester::whereHas('schoolYear', fn($q) => $q->where('campus_id', $campusId))
+
+                                return Semester::whereHas('schoolYear', fn ($q) => $q->where('campus_id', $campusId))
                                     ->with('schoolYear')
                                     ->get()
-                                    ->mapWithKeys(fn($s) => [$s->id => "{$s->schoolYear->name} - {$s->name}"]);
+                                    ->mapWithKeys(fn ($s) => [$s->id => "{$s->schoolYear->name} - {$s->name}"]);
                             })
                             ->required()
                             ->searchable(),
@@ -94,6 +97,7 @@ class CourseOfferingResource extends Resource
                             ->label('Department')
                             ->options(function () {
                                 $campusId = filament()->getTenant()?->id;
+
                                 return Department::where('campus_id', $campusId)
                                     ->where('is_active', true)
                                     ->pluck('name', 'id');
@@ -101,7 +105,7 @@ class CourseOfferingResource extends Resource
                             ->required(fn (callable $get) => $get('is_instructor_evaluation'))
                             ->searchable()
                             ->live()
-                            ->afterStateUpdated(fn(callable $set) => $set('course_id', null) && $set('user_id', null))
+                            ->afterStateUpdated(fn (callable $set) => $set('course_id', null) && $set('user_id', null))
                             ->dehydrated(false) // Don't save to database (helper field only)
                             ->visible(fn (callable $get) => $get('is_instructor_evaluation')),
 
@@ -109,17 +113,18 @@ class CourseOfferingResource extends Resource
                             ->label('Course')
                             ->options(function (callable $get) {
                                 $departmentId = $get('department_id');
-                                if (!$departmentId) {
+                                if (! $departmentId) {
                                     return [];
                                 }
+
                                 return Course::where('department_id', $departmentId)
                                     ->where('is_active', true)
                                     ->get()
-                                    ->mapWithKeys(fn($c) => [$c->id => "{$c->code} - {$c->name}"]);
+                                    ->mapWithKeys(fn ($c) => [$c->id => "{$c->code} - {$c->name}"]);
                             })
                             ->required(fn (callable $get) => $get('is_instructor_evaluation'))
                             ->searchable()
-                            ->visible(fn(callable $get) => $get('is_instructor_evaluation') && filled($get('department_id'))),
+                            ->visible(fn (callable $get) => $get('is_instructor_evaluation') && filled($get('department_id'))),
 
                         // Evaluatee select — changes behavior based on toggle
                         Forms\Components\Select::make('user_id')
@@ -128,26 +133,28 @@ class CourseOfferingResource extends Resource
                                 if ($get('is_instructor_evaluation')) {
                                     // Instructor mode: filter by department
                                     $departmentId = $get('department_id');
-                                    if (!$departmentId) {
+                                    if (! $departmentId) {
                                         return [];
                                     }
+
                                     return User::where('instructor_department_id', $departmentId)
                                         ->get()
-                                        ->mapWithKeys(fn($u) => [$u->id => $u->full_name]);
+                                        ->mapWithKeys(fn ($u) => [$u->id => $u->full_name]);
                                 }
 
                                 // General mode: all users in the tenant
                                 $campusId = filament()->getTenant()?->id;
+
                                 return User::when($campusId, fn ($q) => $q->whereHas('campuses', fn ($sq) => $sq->where('campuses.id', $campusId)))
                                     ->orderBy('first_name')
                                     ->get()
-                                    ->mapWithKeys(fn($u) => [$u->id => $u->full_name . ($u->position ? " ({$u->position})" : '')]);
+                                    ->mapWithKeys(fn ($u) => [$u->id => $u->full_name.($u->position ? " ({$u->position})" : '')]);
                             })
                             ->required()
                             ->searchable()
                             ->live()
-                            ->visible(fn (callable $get) => !$get('is_instructor_evaluation') || filled($get('department_id')))
-                            ->helperText(fn (callable $get) => !$get('is_instructor_evaluation') ? 'Select any person to evaluate — not limited to instructors' : null),
+                            ->visible(fn (callable $get) => ! $get('is_instructor_evaluation') || filled($get('department_id')))
+                            ->helperText(fn (callable $get) => ! $get('is_instructor_evaluation') ? 'Select any person to evaluate — not limited to instructors' : null),
 
                         Forms\Components\TextInput::make('evaluatee_label')
                             ->label('Evaluatee Label')
@@ -171,7 +178,8 @@ class CourseOfferingResource extends Resource
                             ->label('Evaluation Form')
                             ->options(function () {
                                 $campusId = filament()->getTenant()?->id;
-                                return FormModel::whereHas('campuses', fn($q) => $q->where('campuses.id', $campusId))
+
+                                return FormModel::whereHas('campuses', fn ($q) => $q->where('campuses.id', $campusId))
                                     ->where('is_active', true)
                                     ->pluck('name', 'id');
                             })
@@ -239,8 +247,8 @@ class CourseOfferingResource extends Resource
 
                 Tables\Columns\TextColumn::make('evaluation_submissions_count')
                     ->label('Evaluations')
-                    ->getStateUsing(fn($record) => $record->evaluationForm
-                        ? \App\Models\FormSubmission::where('form_id', $record->form_id)
+                    ->getStateUsing(fn ($record) => $record->evaluationForm
+                        ? FormSubmission::where('form_id', $record->form_id)
                             ->where('course_offering_id', $record->id)
                             ->count()
                         : 0)
@@ -255,7 +263,7 @@ class CourseOfferingResource extends Resource
                 Tables\Filters\TernaryFilter::make('is_active'),
                 Tables\Filters\SelectFilter::make('form_id')
                     ->label('Evaluation Form')
-                    ->options(fn() => FormModel::whereHas('campuses', fn($q) => $q->where('campuses.id', filament()->getTenant()?->id))->pluck('name', 'id'))
+                    ->options(fn () => FormModel::whereHas('campuses', fn ($q) => $q->where('campuses.id', filament()->getTenant()?->id))->pluck('name', 'id'))
                     ->placeholder('All Forms'),
             ], layout: FiltersLayout::AboveContent)
             ->actions([
@@ -263,10 +271,10 @@ class CourseOfferingResource extends Resource
                     ->label('Get Link')
                     ->icon('heroicon-o-link')
                     ->color('success')
-                    ->visible(fn($record) => $record->form_id !== null)
+                    ->visible(fn ($record) => $record->form_id !== null)
                     ->action(function ($record) {
                         $url = route('evaluate.course-offering', $record);
-                        \Filament\Notifications\Notification::make()
+                        Notification::make()
                             ->title('Evaluation Link Copied!')
                             ->body($url)
                             ->success()

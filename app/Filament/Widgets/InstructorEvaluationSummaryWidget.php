@@ -5,11 +5,9 @@ namespace App\Filament\Widgets;
 use App\Models\CourseOffering;
 use App\Models\FormSubmission;
 use BezhanSalleh\FilamentShield\Traits\HasWidgetShield;
-use Filament\Facades\Filament;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Widgets\TableWidget as BaseWidget;
-use Illuminate\Database\Eloquent\Builder;
 
 class InstructorEvaluationSummaryWidget extends BaseWidget
 {
@@ -84,7 +82,8 @@ class InstructorEvaluationSummaryWidget extends BaseWidget
                             return 'N/A';
                         }
                         $rate = round(($record->form_submissions_count / $record->students_count) * 100, 1);
-                        return $rate . '%';
+
+                        return $rate.'%';
                     })
                     ->badge()
                     ->color(function (CourseOffering $record) {
@@ -92,6 +91,7 @@ class InstructorEvaluationSummaryWidget extends BaseWidget
                             return 'gray';
                         }
                         $rate = ($record->form_submissions_count / $record->students_count) * 100;
+
                         return match (true) {
                             $rate >= 100 => 'success',
                             $rate >= 50 => 'warning',
@@ -108,7 +108,8 @@ class InstructorEvaluationSummaryWidget extends BaseWidget
 
                         $scores = $submissions->map(function ($submission) {
                             $data = $submission->data ?? [];
-                            $numericValues = collect($data)->filter(fn($v) => is_numeric($v))->values();
+                            $numericValues = collect($data)->filter(fn ($v) => is_numeric($v))->values();
+
                             return $numericValues->isNotEmpty() ? $numericValues->avg() : null;
                         })->filter();
 

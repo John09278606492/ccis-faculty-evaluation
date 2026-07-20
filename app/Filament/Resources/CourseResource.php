@@ -11,6 +11,7 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class CourseResource extends Resource
 {
@@ -28,12 +29,12 @@ class CourseResource extends Resource
     /**
      * Manually scope the query to the current tenant's courses.
      */
-    public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
+    public static function getEloquentQuery(): Builder
     {
         $campusId = filament()->getTenant()?->id;
 
         return parent::getEloquentQuery()
-            ->whereHas('department', fn($q) => $q->where('campus_id', $campusId));
+            ->whereHas('department', fn ($q) => $q->where('campus_id', $campusId));
     }
 
     public static function form(Form $form): Form
@@ -44,7 +45,7 @@ class CourseResource extends Resource
                     ->schema([
                         Forms\Components\Select::make('department_id')
                             ->label('Department')
-                            ->options(fn() => Department::where('campus_id', filament()->getTenant()?->id)->pluck('name', 'id'))
+                            ->options(fn () => Department::where('campus_id', filament()->getTenant()?->id)->pluck('name', 'id'))
                             ->required()
                             ->searchable(),
 
@@ -52,7 +53,7 @@ class CourseResource extends Resource
                             ->required()
                             ->maxLength(20)
                             ->placeholder('e.g., CS101')
-                            ->unique(ignoreRecord: true, modifyRuleUsing: fn($rule) => $rule->whereIn(
+                            ->unique(ignoreRecord: true, modifyRuleUsing: fn ($rule) => $rule->whereIn(
                                 'department_id',
                                 Department::where('campus_id', filament()->getTenant()?->id)->pluck('id')
                             )),

@@ -20,7 +20,7 @@ class MyEvaluationResultsStatsOverview extends BaseWidget
 
         $totalSubmissions = FormSubmission::whereHas(
             'courseOffering',
-            fn($q) => $q->where('user_id', $user->id),
+            fn ($q) => $q->where('user_id', $user->id),
         )->count();
 
         return [

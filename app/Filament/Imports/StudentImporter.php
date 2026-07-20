@@ -2,16 +2,17 @@
 
 namespace App\Filament\Imports;
 
-use App\Models\User;
-use App\Models\Role;
 use App\Models\Department;
+use App\Models\Role;
+use App\Models\User;
 use Filament\Actions\Imports\ImportColumn;
 use Filament\Actions\Imports\Importer;
 use Filament\Actions\Imports\Models\Import;
-use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Placeholder;
-use Illuminate\Support\Facades\Hash;
+use Filament\Forms\Components\Select;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\HtmlString;
 use Illuminate\Validation\ValidationException;
 
 class StudentImporter extends Importer
@@ -28,7 +29,7 @@ class StudentImporter extends Importer
         'stud_id',
         'studid',
         'id_number',
-        'idnumber'
+        'idnumber',
     ];
 
     public static function getColumns(): array
@@ -67,7 +68,7 @@ class StudentImporter extends Importer
         return [
             Placeholder::make('file_notice')
                 ->label('📋 Required Excel Columns')
-                ->content(fn() => new \Illuminate\Support\HtmlString(
+                ->content(fn () => new HtmlString(
                     '<div class="text-sm space-y-1">
                         <p class="font-bold text-danger-600">⚠️ Your Excel file MUST have these EXACT column headers:</p>
                         <ul class="list-disc list-inside text-gray-600">
@@ -85,6 +86,7 @@ class StudentImporter extends Importer
                 ->label('Department')
                 ->options(function () {
                     $campusId = filament()->getTenant()?->id;
+
                     return Department::where('campus_id', $campusId)
                         ->where('is_active', true)
                         ->pluck('name', 'id');
@@ -147,12 +149,12 @@ class StudentImporter extends Importer
         if ($mappedColumn) {
             $mappedColumnLower = strtolower(trim($mappedColumn));
 
-            if (!in_array($mappedColumnLower, static::$validStudentIdColumns)) {
+            if (! in_array($mappedColumnLower, static::$validStudentIdColumns)) {
                 // Add a rule that will always fail with our custom message
                 $rules['_column_check'] = [
                     function ($attribute, $value, $fail) use ($mappedColumn) {
                         $fail("WRONG FILE: Column '{$mappedColumn}' is not a valid Student ID column. Use INSTRUCTOR import for 'employee_id' files.");
-                    }
+                    },
                 ];
             }
         }
@@ -176,7 +178,7 @@ class StudentImporter extends Importer
             }
             // Throw validation exception for duplicate
             throw ValidationException::withMessages([
-                'student_id' => "Student ID {$studentId} is already assigned to {$existingStudentId->email}."
+                'student_id' => "Student ID {$studentId} is already assigned to {$existingStudentId->email}.",
             ]);
         }
 
@@ -186,18 +188,19 @@ class StudentImporter extends Importer
         if ($existingEmail) {
             if ($existingEmail->is_instructor) {
                 throw ValidationException::withMessages([
-                    'email' => "Email {$email} is already registered as an instructor."
+                    'email' => "Email {$email} is already registered as an instructor.",
                 ]);
             }
+
             return $existingEmail;
         }
 
-        return new User();
+        return new User;
     }
 
     protected function beforeSave(): void
     {
-        if (!$this->record->password) {
+        if (! $this->record->password) {
             $this->record->password = Hash::make('password123');
         }
 
@@ -216,12 +219,12 @@ class StudentImporter extends Importer
 
         DB::transaction(function () use ($campusId, $roleIds) {
             // Attach to campus
-            if ($campusId && !$this->record->campuses()->where('campus_id', $campusId)->exists()) {
+            if ($campusId && ! $this->record->campuses()->where('campus_id', $campusId)->exists()) {
                 $this->record->campuses()->attach($campusId);
             }
 
             // Assign roles if selected
-            if (!empty($roleIds)) {
+            if (! empty($roleIds)) {
                 $roles = Role::whereIn('id', $roleIds)->pluck('name')->toArray();
                 $this->record->syncRoles($roles);
             }
@@ -230,10 +233,10 @@ class StudentImporter extends Importer
 
     public static function getCompletedNotificationBody(Import $import): string
     {
-        $body = 'Student import completed: ' . number_format($import->successful_rows) . ' ' . str('row')->plural($import->successful_rows) . ' imported.';
+        $body = 'Student import completed: '.number_format($import->successful_rows).' '.str('row')->plural($import->successful_rows).' imported.';
 
         if ($failedRowsCount = $import->getFailedRowsCount()) {
-            $body .= ' ' . number_format($failedRowsCount) . ' ' . str('row')->plural($failedRowsCount) . ' failed.';
+            $body .= ' '.number_format($failedRowsCount).' '.str('row')->plural($failedRowsCount).' failed.';
         }
 
         return $body;

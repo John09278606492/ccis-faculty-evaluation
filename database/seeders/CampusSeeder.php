@@ -3,9 +3,7 @@
 namespace Database\Seeders;
 
 use App\Models\Campus;
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Str;
 
 class CampusSeeder extends Seeder
 {

@@ -34,7 +34,7 @@
     @php
         $hasRatingFields = $fields->whereIn('type', ['likert_scale', 'rating'])->count() > 0;
 
-        $ratingScale = $form->rating_scale ?? [
+        $ratingScale = !empty($form->rating_scale) ? $form->rating_scale : [
             ['value' => 5, 'label' => 'Outstanding', 'description' => 'The performance almost always exceeds the job requirements.', 'color' => '#22c55e'],
             ['value' => 4, 'label' => 'Very Satisfactory', 'description' => 'The performance meets and often exceeds the job requirements.', 'color' => '#3b82f6'],
             ['value' => 3, 'label' => 'Satisfactory', 'description' => 'The performance meets job requirements.', 'color' => '#eab308'],

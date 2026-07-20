@@ -68,13 +68,13 @@ class EvaluationReportStatsOverview extends BaseWidget
                     default => 'danger',
                 }),
 
-            Stat::make('Completion Rate', $completionRate . '%')
-                ->description($totalStudents . ' total students enrolled')
+            Stat::make('Completion Rate', $completionRate.'%')
+                ->description($totalStudents.' total students enrolled')
                 ->descriptionIcon('heroicon-m-check-circle')
                 ->color($completionRate >= 80 ? 'success' : ($completionRate >= 50 ? 'warning' : 'danger')),
 
             Stat::make('Active Evaluatees', $totalEvaluatees)
-                ->description('Across ' . $totalDepartments . ' departments')
+                ->description('Across '.$totalDepartments.' departments')
                 ->descriptionIcon('heroicon-m-user-group')
                 ->color('info'),
         ];

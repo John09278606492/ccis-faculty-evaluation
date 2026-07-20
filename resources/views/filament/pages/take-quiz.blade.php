@@ -271,7 +271,7 @@
                                     <p class="mt-1 text-xs text-success-600">A file has been uploaded.</p>
                                 @endif
                             @elseif ($answers[$question->id] ?? null)
-                                <a href="{{ \Illuminate\Support\Facades\Storage::url($answers[$question->id]) }}" target="_blank" class="text-sm underline">
+                                <a href="{{ route('quiz-submissions.download', $attempt->answers->firstWhere('quiz_question_id', $question->id)) }}" class="text-sm underline">
                                     View submitted file
                                 </a>
                             @else

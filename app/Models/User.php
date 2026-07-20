@@ -4,6 +4,8 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 
+use App\Traits\NormalizesTextFields;
+use Database\Factories\UserFactory;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Models\Contracts\HasAvatar;
 use Filament\Models\Contracts\HasTenants;
@@ -20,12 +22,11 @@ use Illuminate\Support\Facades\Storage;
 use Jeffgreco13\FilamentBreezy\Traits\TwoFactorAuthenticatable;
 use Laravel\Sanctum\HasApiTokens;
 use Spatie\Permission\Traits\HasRoles;
-use App\Traits\NormalizesTextFields;
 
 class User extends Authenticatable implements FilamentUser, HasAvatar, HasTenants
 {
-    /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, Notifiable, HasRoles, TwoFactorAuthenticatable, HasApiTokens, NormalizesTextFields;
+    /** @use HasFactory<UserFactory> */
+    use HasApiTokens, HasFactory, HasRoles, NormalizesTextFields, Notifiable, TwoFactorAuthenticatable;
 
     /**
      * Boot the model.
@@ -170,8 +171,10 @@ class User extends Authenticatable implements FilamentUser, HasAvatar, HasTenant
     {
         if ($this->first_name && $this->last_name) {
             $middleName = $this->middle_name ? " {$this->middle_name} " : ' ';
+
             return "{$this->first_name}{$middleName}{$this->last_name}";
         }
+
         return $this->name;
     }
 

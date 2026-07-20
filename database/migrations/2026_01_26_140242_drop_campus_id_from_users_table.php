@@ -14,7 +14,9 @@ return new class extends Migration
         Schema::table('users', function (Blueprint $table) {
             // Drop the old campus_id column if it exists
             if (Schema::hasColumn('users', 'campus_id')) {
-                $table->dropConstrainedForeignId('campus_id');
+                $table->dropForeign(['campus_id']);
+                $table->dropIndex(['campus_id']);
+                $table->dropColumn('campus_id');
             }
         });
     }
@@ -26,7 +28,7 @@ return new class extends Migration
     {
         Schema::table('users', function (Blueprint $table) {
             // Rollback if needed
-            if (!Schema::hasColumn('users', 'campus_id')) {
+            if (! Schema::hasColumn('users', 'campus_id')) {
                 $table->foreignId('campus_id')->nullable()->constrained('campuses')->cascadeOnDelete();
             }
         });

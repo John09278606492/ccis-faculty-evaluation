@@ -4,8 +4,8 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\FormResource\Pages;
 use App\Filament\Resources\FormResource\RelationManagers;
-use App\Models\Form;
 use App\Models\Department;
+use App\Models\Form;
 use BezhanSalleh\FilamentShield\Contracts\HasShieldPermissions;
 use Filament\Forms;
 use Filament\Forms\Form as FilamentForm;
@@ -13,6 +13,9 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Str;
+use Spatie\Permission\Models\Role;
 
 class FormResource extends Resource implements HasShieldPermissions
 {
@@ -55,7 +58,7 @@ class FormResource extends Resource implements HasShieldPermissions
     /**
      * Scope forms to the current tenant campus (via pivot table).
      */
-    public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
+    public static function getEloquentQuery(): Builder
     {
         $query = parent::getEloquentQuery();
 
@@ -93,7 +96,7 @@ class FormResource extends Resource implements HasShieldPermissions
                             ->required()
                             ->searchable()
                             ->preload()
-                            ->default(fn() => filament()->getTenant() ? [filament()->getTenant()->id] : [])
+                            ->default(fn () => filament()->getTenant() ? [filament()->getTenant()->id] : [])
                             ->helperText('Select which campuses can use this form'),
                     ])
                     ->visible($isSuperAdmin)
@@ -105,34 +108,34 @@ class FormResource extends Resource implements HasShieldPermissions
                             ->required()
                             ->maxLength(255)
                             ->live(onBlur: true)
-                            ->afterStateUpdated(fn($state, $set) => $set('slug', \Illuminate\Support\Str::slug($state) . '-' . \Illuminate\Support\Str::random(6)))
-                            ->disabled(!$isSuperAdmin),
+                            ->afterStateUpdated(fn ($state, $set) => $set('slug', Str::slug($state).'-'.Str::random(6)))
+                            ->disabled(! $isSuperAdmin),
 
                         Forms\Components\TextInput::make('slug')
                             ->required()
                             ->maxLength(255)
                             ->unique(ignoreRecord: true)
                             ->helperText('Used in the form URL')
-                            ->disabled(!$isSuperAdmin),
+                            ->disabled(! $isSuperAdmin),
 
                         Forms\Components\Textarea::make('description')
                             ->rows(3)
                             ->columnSpanFull()
-                            ->disabled(!$isSuperAdmin),
+                            ->disabled(! $isSuperAdmin),
 
                         Forms\Components\Toggle::make('is_active')
                             ->label('Active')
                             ->default(true)
                             ->helperText('Only active forms can receive submissions')
-                            ->disabled(!$isSuperAdmin),
+                            ->disabled(! $isSuperAdmin),
 
                         Forms\Components\Toggle::make('requires_login')
                             ->label('Require Login')
                             ->default(false)
                             ->helperText('Users must be logged in to submit')
-                            ->disabled(!$isSuperAdmin),
+                            ->disabled(! $isSuperAdmin),
                     ])->columns(2)
-                    ->description(!$isSuperAdmin ? 'Only super admins can edit form details.' : null),
+                    ->description(! $isSuperAdmin ? 'Only super admins can edit form details.' : null),
 
                 // Department Assignment - EDITABLE for all users with permission
                 Forms\Components\Section::make('Department Assignment')
@@ -141,6 +144,7 @@ class FormResource extends Resource implements HasShieldPermissions
                             ->label('Assign to Departments')
                             ->relationship('departments', 'name', function ($query) {
                                 $campusId = filament()->getTenant()?->id;
+
                                 return $query->where('campus_id', $campusId)->where('is_active', true);
                             })
                             ->multiple()
@@ -154,15 +158,15 @@ class FormResource extends Resource implements HasShieldPermissions
                         Forms\Components\CheckboxList::make('evaluator_roles')
                             ->label('Who can access this form?')
                             ->options(function () {
-                                return \Spatie\Permission\Models\Role::query()
+                                return Role::query()
                                     ->where('name', '!=', 'super_admin')
                                     ->pluck('name', 'name')
-                                    ->mapWithKeys(fn($name, $key) => [$key => ucwords(str_replace('_', ' ', $key))])
+                                    ->mapWithKeys(fn ($name, $key) => [$key => ucwords(str_replace('_', ' ', $key))])
                                     ->toArray();
                             })
                             ->columns(3)
                             ->helperText('Select which roles can evaluate using this form. Leave empty to allow all roles.')
-                            ->disabled(!$isSuperAdmin),
+                            ->disabled(! $isSuperAdmin),
                     ])
                     ->visible($isSuperAdmin),
 
@@ -173,9 +177,9 @@ class FormResource extends Resource implements HasShieldPermissions
                             ->label('Use Custom Rating Scale')
                             ->live()
                             ->dehydrated(false)
-                            ->default(fn($record) => !empty($record?->rating_scale))
+                            ->default(fn ($record) => ! empty($record?->rating_scale))
                             ->afterStateUpdated(function ($state, Forms\Set $set) {
-                                if (!$state) {
+                                if (! $state) {
                                     $set('rating_scale', null);
                                 }
                             }),
@@ -203,7 +207,7 @@ class FormResource extends Resource implements HasShieldPermissions
                             ->addActionLabel('Add Rating')
                             ->reorderable()
                             ->defaultItems(0)
-                            ->visible(fn($get) => $get('use_custom_scale'))
+                            ->visible(fn ($get) => $get('use_custom_scale'))
                             ->helperText('Define each rating from highest to lowest'),
                     ])
                     ->collapsible()
@@ -253,12 +257,12 @@ class FormResource extends Resource implements HasShieldPermissions
                             ])
                             ->columns(2)
                             ->addActionLabel('Add Section Weight')
-                            ->visible(fn($get) => $get('scoring_config.overall_method') === 'weighted_average')
+                            ->visible(fn ($get) => $get('scoring_config.overall_method') === 'weighted_average')
                             ->helperText('Define weights for each section. Total should equal 100%.'),
                     ])
                     ->collapsible()
                     ->collapsed()
-                    ->visible(fn(Forms\Get $get): bool => $isSuperAdmin && (bool) $get('use_custom_scale')),
+                    ->visible(fn (Forms\Get $get): bool => $isSuperAdmin && (bool) $get('use_custom_scale')),
 
                 Forms\Components\Section::make('Comments Configuration')
                     ->description('Configure whether evaluators can or must leave comments.')
@@ -285,26 +289,26 @@ class FormResource extends Resource implements HasShieldPermissions
                     ])
                     ->collapsible()
                     ->collapsed()
-                    ->visible(fn(Forms\Get $get): bool => $isSuperAdmin && (bool) $get('use_custom_scale')),
+                    ->visible(fn (Forms\Get $get): bool => $isSuperAdmin && (bool) $get('use_custom_scale')),
 
                 Forms\Components\Section::make('Schedule & Limits')
                     ->schema([
                         Forms\Components\DateTimePicker::make('starts_at')
                             ->label('Start Date')
                             ->helperText('Form will be available from this date')
-                            ->disabled(!$isSuperAdmin),
+                            ->disabled(! $isSuperAdmin),
 
                         Forms\Components\DateTimePicker::make('ends_at')
                             ->label('End Date')
                             ->helperText('Form will close after this date')
-                            ->disabled(!$isSuperAdmin),
+                            ->disabled(! $isSuperAdmin),
 
                         Forms\Components\TextInput::make('max_submissions')
                             ->label('Max Submissions')
                             ->numeric()
                             ->minValue(1)
                             ->helperText('Maximum number of submissions allowed (leave empty for unlimited)')
-                            ->disabled(!$isSuperAdmin),
+                            ->disabled(! $isSuperAdmin),
                     ])->columns(3)
                     ->collapsible()
                     ->visible($isSuperAdmin),
@@ -376,7 +380,7 @@ class FormResource extends Resource implements HasShieldPermissions
                     ->label('Build')
                     ->icon('heroicon-o-squares-plus')
                     ->color('primary')
-                    ->url(fn($record) => route('filament.admin.pages.forms.{record}.builder', [
+                    ->url(fn ($record) => route('filament.admin.pages.forms.{record}.builder', [
                         'tenant' => filament()->getTenant(),
                         'record' => $record->id,
                     ])),
@@ -384,7 +388,7 @@ class FormResource extends Resource implements HasShieldPermissions
                     ->label('Preview')
                     ->icon('heroicon-o-eye')
                     ->color('warning')
-                    ->url(fn($record) => route('form.preview', $record))
+                    ->url(fn ($record) => route('form.preview', $record))
                     ->openUrlInNewTab(),
                 Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make(),
@@ -402,7 +406,7 @@ class FormResource extends Resource implements HasShieldPermissions
         $canEditFields = auth()->user()?->can('update_form') ?? false;
 
         // Without update_form, users can only view submissions, not edit form fields.
-        if (!$canEditFields) {
+        if (! $canEditFields) {
             return [
                 RelationManagers\SubmissionsRelationManager::class,
             ];

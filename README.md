@@ -1,260 +1,85 @@
-# 🚀 Kaido Kit FilamentPhp Starter Code
+# CCIS Faculty Evaluation System
 
-A powerful and opinionated FilamentPHP starter kit designed to accelerate your admin panel development. Kaido Kit provides a robust foundation with pre-configured plugins, configuration and best practices for building feature-rich admin interfaces.
+A campus-scoped Laravel and Filament application for faculty evaluations, student quizzes, class records, role-based administration, and evaluation reporting.
 
-![GitHub stars](https://img.shields.io/github/stars/siubie/kaido-kit?style=flat-square)
-![GitHub forks](https://img.shields.io/github/forks/siubie/kaido-kit?style=flat-square)
-![GitHub issues](https://img.shields.io/github/issues/siubie/kaido-kit?style=flat-square)
-![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)
-![PHP Version](https://img.shields.io/badge/PHP-8.2-blue?style=flat-square&logo=php)
-![Laravel Version](https://img.shields.io/badge/Laravel-11.0-red?style=flat-square&logo=laravel)
-![Filament Version](https://img.shields.io/badge/Filament-3.2-purple?style=flat-square)
-## Introduction Video
-[![Build FilamentPhp Apps 10x Faster | Kaido-Kit Starter Kit (Complete Demo)](https://img.youtube.com/vi/t6q1zBqaBGU/maxresdefault.jpg)](http://www.youtube.com/watch?v=t6q1zBqaBGU "Build FilamentPhp Apps 10x Faster | Kaido-Kit Starter Kit (Complete Demo)")
-## ✨ Features
+Repository: [John09278606492/ccis-faculty-evaluation](https://github.com/John09278606492/ccis-faculty-evaluation)
 
-### 🛠️ Developer Experience
+## Main capabilities
 
-- ⚡ Quick CRUD generation with customized [FilamentPHP](https://filamentphp.com/) stubs
-    - Optimized UX out of the box
-    - No need to modify generated resources
-- 🔄 Auto reload on save for rapid development
-- 📚 Easy API documentation using [Scramble](https://scramble.dedoc.co/)
-- 📤 Built-in Export and Import examples in Filament resources
+- Multi-campus administration with tenant-aware access
+- Configurable faculty evaluation forms and scoring
+- Anonymous evaluation submissions with duplicate prevention
+- Student enrollment and course-offering management
+- Quizzes, timed attempts, manual grading, and private file submissions
+- Class record imports and evaluation reports
+- Role and permission management through Filament Shield
 
-### 🔐 Authentication & Authorization
+## Requirements
 
-- 🛡️ Role-Based Access Control (RBAC) using [Filament Shield](https://filamentphp.com/plugins/bezhansalleh-shield)
-- 🔑 Enhanced login page with custom design
-- 🌐 Social login with Google via [Filament Socialite](https://filamentphp.com/plugins/dododedodonl-socialite)
-- 👤 User profile management with [Filament Breezy](https://filamentphp.com/plugins/jeffgreco-breezy)
-- 🔒 Instant 2-Factor Authentication capabilities
-- 👥 Simple user-to-role assignment
-- 🎭 User impersonation via [Filament Impersonate](https://filamentphp.com/plugins/joseph-szobody-impersonate)
+- PHP 8.2 or newer with the Laravel-required extensions
+- Composer 2
+- Node.js 20 or newer and npm
+- MySQL or MariaDB for normal use; SQLite is used by the automated tests
 
-### 📡 API & Integration
+## Local setup with Laragon
 
-- 🚀 Full API support with [Filament API Service](https://filamentphp.com/plugins/rupadana-api-service)
-    - Seamlessly integrated with Shield
-    - Ready-to-use API endpoints
-- 📨 Email integration using [Resend](https://resend.com/)
-- 📝 Auto-generated API documentation
-
-### 📁 Media & Content Management
-
-- 🖼️ Integrated [Filament Media Library](https://filamentphp.com/plugins/filament-spatie-media-library)
-    - Easy media handling process
-    - [Spatie Media Library](https://spatie.be/docs/laravel-medialibrary) support
-
-### ⚙️ Configuration & Settings
-
-- 🎛️ Dynamic plugin management via [Filament Settings](https://filamentphp.com/plugins/filament-spatie-settings)
-    - Enable/disable features on the fly
-    - [Spatie Laravel Settings](https://github.com/spatie/laravel-settings) integration
-
-## 🚀 Quick Start
-
-1. Create new project using composer
-
-    ```php
-    composer create-project siubie/kaido-kit
-    ```
-
-2. Composer install
-
-    ```php
-    composer install
-    ```
-
-3. Npm Install
-
-    ```php
-    npm install
-    ```
-
-4. Copy .env
-
-    ```php
-    cp .env.example .env
-    ```
-
-5. Configure your database in .env
-
-    ```php
-    DB_CONNECTION=mysql
-    DB_HOST=127.0.0.1
-    DB_PORT=3306
-    DB_DATABASE=kaido_kit
-    DB_USERNAME=root
-    DB_PASSWORD=
-    ```
-
-6. Configure your google sign in cliend id and secret (optional)
-
-    ```php
-    #google auth
-    GOOGLE_CLIENT_ID=
-    GOOGLE_CLIENT_SECRET=
-    GOOGLE_REDIRECT_URI=http://localhost:8000/admin/oauth/callback/google
-    ```
-
-7. Configure your resend for email sending (optional)
-
-    ```php
-    #resend
-    MAIL_MAILER=resend
-    MAIL_HOST=127.0.0.1
-    MAIL_PORT=2525
-    MAIL_USERNAME=null
-    MAIL_PASSWORD=null
-    MAIL_ENCRYPTION=null
-    RESEND_API_KEY=
-    MAIL_FROM_ADDRESS="admin@domain.com"
-    MAIL_FROM_NAME="${APP_NAME}"
-    ```
-
-8. Migrate your database
-
-    ```php
-    php artisan migrate --seed
-    ```
-
-9. Serve the Application
-
-    ```script
-    composer run dev
-    ```
-
-11. If run successfully you will get this login interface
-
-    ![image.png](.github/images/login-screen.png)
-
-12. When signed in it will show this (not much yet but it getting there :) )
-
-    ![image.png](.github/images/after-login-without-rbac.png)
-
-13. Next step is to setup the RBAC, first generate the role and permission
-
-    ```php
-    php artisan shield:generate --all
-    ```
-
-14. It will ask which panel do you want to generate permission/policies for choose the admin panel.
-15. Setup the super admin using this command
-
-    ```php
-    php artisan shield:super-admin
-    ```
-
-    ![image.png](.github/images/provide-superadmin.png)
-
-16. Choose your super admin user and login again.
-
-    ![image.png](.github/images/after-login-rbac.png)
-
-## Running on Docker with Laravel Sail
-
-1. Clone the repository
-
-```bash
-git clone https://github.com/siubie/kaido-kit.git
-```
-
-2. Copy .env.example to .env
-
-```bash
-cp .env.example .env
-```
-
-3. Install dependencies
-
-```bash
+```powershell
+git clone https://github.com/John09278606492/ccis-faculty-evaluation.git
+cd ccis-faculty-evaluation
+Copy-Item .env.example .env
 composer install
+npm install
+php artisan key:generate
 ```
 
-4. Install Laravel Sail
+Create a database named `ccis_faculty_evaluation`, update the `DB_*` values in `.env`, then run:
+
+```powershell
+php artisan migrate --seed
+php artisan shield:generate --all --panel=admin
+php artisan make:filament-user
+php artisan shield:super-admin
+npm run build
+```
+
+Point a Laragon virtual host at the project's `public` directory, or run `composer run dev` for Laravel, the queue, logs, and Vite together.
+
+## Development checks
+
+```powershell
+php artisan test
+vendor\bin\pint --test
+npm run build
+composer audit --locked
+npm audit --audit-level=high
+```
+
+GitHub Actions runs the same tests, formatting check, production asset build, and dependency audits on pushes to `main` and on pull requests.
+
+## Security and privacy
+
+- Evaluation access is checked against the form's campus, allowed roles, and student enrollment.
+- New evaluation records do not store evaluator user IDs, IP addresses, or browser user-agent strings. A keyed one-way fingerprint enforces one submission per evaluator and course offering.
+- Set a stable `EVALUATION_FINGERPRINT_KEY` in production. If omitted, the application uses `APP_KEY`; changing either key resets duplicate-recognition for future requests.
+- Quiz attachments are restricted by type and size, stored on the private disk, and downloaded only through an authorized route. Existing public-disk attachments remain downloadable through the protected route for compatibility.
+- Use HTTPS in production and set `APP_ENV=production`, `APP_DEBUG=false`, and the correct `APP_URL`.
+- Never commit `.env`, credentials, database exports, or files from `storage/app/private`.
+
+## Deployment
+
+After deploying a reviewed revision:
 
 ```bash
-composer require laravel/sail --dev
-php artisan sail:install
+composer install --no-dev --prefer-dist --optimize-autoloader
+npm ci && npm run build
+php artisan migrate --force
+php artisan optimize
+php artisan filament:cache-components
+php artisan icons:cache
 ```
 
-5. Run Sail
+Back up the database before migrations, keep `EVALUATION_FINGERPRINT_KEY` stable, and ensure the web server can write to `storage` and `bootstrap/cache`.
 
-```bash
-./vendor/bin/sail up -d
-```
+## License
 
-6. Generate App Key
-
-```bash
-./vendor/bin/sail artisan key:generate
-```
-
-7. Run migration
-
-```bash
-./vendor/bin/sail artisan migrate --seed
-```
-
-8. Next step is to setup the RBAC, first generate the role and permission
-
-```bash
-./vendor/bin/sail artisan shield:generate --all
-```
-
-9. Setup the super admin using this command
-
-```bash
-./vendor/bin/sail artisan shield:super-admin
-```
-
-10. Serve the Application
-
-```bash
-./vendor/bin/sail composer run dev
-```
-
-## Security
-Set your app Debug to false in .env file
-```php
-APP_NAME="Kaido-Kit"
-APP_ENV=local
-APP_KEY=base64:gWUd7RPrCZm6iu7qFddY3039BQLroNHJ0nqKcBr8eeA=
-APP_DEBUG=false
-APP_TIMEZONE=UTC
-APP_URL=https://localhost:8000
-```
-
-## 🤝 Contributing
-
-We welcome contributions! Please follow these steps:
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 🙏 Acknowledgments
-
-- [FilamentPHP](https://filamentphp.com/)
-- [Laravel](https://laravel.com/)
-- All our amazing contributors
-
-## 💬 Support
-
-- 🐛 [Report a bug](https://github.com/siubie/kaido-kit/issues)
-- 💡 [Request a feature](https://github.com/siubie/kaido-kit/issues)
-- 📧 [Email support](mailto:putraprima@gmail.com)
-- 💬 [Discord community](https://discord.com/invite/RwqXDUJGPg)
-- 💬 [Whatsapp community](https://chat.whatsapp.com/HJtRp9Eo5wl6NhYIJbkuZL)
-
-## ⭐ Show your support
-For Indonesian community you can get support and the recording course for how to create this kit here :
-https://www.dosenngoding.com/courses/8
-
-Give a ⭐️ if this project helped you!
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=siubie/kaido-kit&type=Date)](https://star-history.com/#siubie/kaido-kit&Date)
+This project is licensed under the MIT License.

@@ -4,12 +4,12 @@ namespace App\Services;
 
 use App\Models\Campus;
 use App\Models\User;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
 
 /**
  * Campus Service
- * 
+ *
  * Utility service for campus/tenant management operations
  */
 class CampusService
@@ -140,7 +140,7 @@ class CampusService
      */
     public static function toggleCampusStatus(Campus $campus): bool
     {
-        return $campus->update(['is_active' => !$campus->is_active]);
+        return $campus->update(['is_active' => ! $campus->is_active]);
     }
 
     /**

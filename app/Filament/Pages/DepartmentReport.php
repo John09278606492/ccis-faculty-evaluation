@@ -17,13 +17,11 @@ use Filament\Tables;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Collection;
 
-class DepartmentReport extends Page implements HasTable, HasForms
+class DepartmentReport extends Page implements HasForms, HasTable
 {
-    use InteractsWithTable;
     use InteractsWithForms;
+    use InteractsWithTable;
 
     protected static string $view = 'filament.pages.department-report';
 
@@ -75,17 +73,17 @@ class DepartmentReport extends Page implements HasTable, HasForms
                             ->with('schoolYear')
                             ->orderByDesc('start_date');
                         if ($tenant) {
-                            $query->whereHas('schoolYear', fn($q) => $q->where('campus_id', $tenant->id));
+                            $query->whereHas('schoolYear', fn ($q) => $q->where('campus_id', $tenant->id));
                         }
 
-                        return $query->get()->mapWithKeys(fn($s) => [
-                            $s->id => ($s->schoolYear?->name ?? '') . ' — ' . $s->name,
+                        return $query->get()->mapWithKeys(fn ($s) => [
+                            $s->id => ($s->schoolYear?->name ?? '').' — '.$s->name,
                         ])->toArray();
                     })
                     ->placeholder('All Semesters')
                     ->searchable()
                     ->live()
-                    ->afterStateUpdated(fn() => $this->resetTable()),
+                    ->afterStateUpdated(fn () => $this->resetTable()),
             ])
             ->columns(3)
             ->statePath(null);
@@ -151,7 +149,7 @@ class DepartmentReport extends Page implements HasTable, HasForms
                     ->numeric(2)
                     ->placeholder('—')
                     ->badge()
-                    ->color(fn($state) => match (true) {
+                    ->color(fn ($state) => match (true) {
                         $state === null => 'gray',
                         $state >= 4.5 => 'success',
                         $state >= 3.5 => 'info',
@@ -168,7 +166,7 @@ class DepartmentReport extends Page implements HasTable, HasForms
                         return $summary['rating_label'];
                     })
                     ->badge()
-                    ->color(fn($state) => match ($state) {
+                    ->color(fn ($state) => match ($state) {
                         'Outstanding' => 'success',
                         'Very Satisfactory' => 'info',
                         'Satisfactory' => 'warning',
@@ -183,7 +181,7 @@ class DepartmentReport extends Page implements HasTable, HasForms
                     ->getStateUsing(function (Department $record) use ($service) {
                         $summary = $service->getDepartmentSummary($record, $this->selectedSemester ? (int) $this->selectedSemester : null);
 
-                        return $summary['completion_rate'] . '%';
+                        return $summary['completion_rate'].'%';
                     })
                     ->alignCenter(),
             ])
@@ -217,12 +215,12 @@ class DepartmentReport extends Page implements HasTable, HasForms
                                     $summary['total_submissions'],
                                     $summary['avg_score'] ?? 'N/A',
                                     $summary['rating_label'],
-                                    $summary['completion_rate'] . '%',
+                                    $summary['completion_rate'].'%',
                                 ]);
                             }
 
                             fclose($handle);
-                        }, 'department-report-' . now()->format('Y-m-d') . '.csv');
+                        }, 'department-report-'.now()->format('Y-m-d').'.csv');
                     }),
             ])
             ->striped()
@@ -242,7 +240,7 @@ class DepartmentReport extends Page implements HasTable, HasForms
             $coQuery->where('semester_id', (int) $this->selectedSemester);
         }
         if ($tenant) {
-            $coQuery->whereHas('semester.schoolYear', fn($q) => $q->where('campus_id', $tenant->id));
+            $coQuery->whereHas('semester.schoolYear', fn ($q) => $q->where('campus_id', $tenant->id));
         }
         $coIds = $coQuery->pluck('id');
 
@@ -253,7 +251,7 @@ class DepartmentReport extends Page implements HasTable, HasForms
 
         return [
             'labels' => $categories,
-            'data' => array_map(fn($c) => $distribution[$c] ?? 0, $categories),
+            'data' => array_map(fn ($c) => $distribution[$c] ?? 0, $categories),
             'colors' => $colors,
         ];
     }
@@ -268,7 +266,7 @@ class DepartmentReport extends Page implements HasTable, HasForms
 
         $semQuery = Semester::query()->with('schoolYear')->orderBy('start_date');
         if ($tenant) {
-            $semQuery->whereHas('schoolYear', fn($q) => $q->where('campus_id', $tenant->id));
+            $semQuery->whereHas('schoolYear', fn ($q) => $q->where('campus_id', $tenant->id));
         }
         $semesters = $semQuery->limit(8)->get();
 
@@ -280,24 +278,25 @@ class DepartmentReport extends Page implements HasTable, HasForms
         $data = [];
 
         foreach ($semesters as $sem) {
-            $labels[] = ($sem->schoolYear?->name ?? '') . ' ' . $sem->name;
+            $labels[] = ($sem->schoolYear?->name ?? '').' '.$sem->name;
 
             $coQuery = CourseOffering::where('is_active', true)
                 ->whereNotNull('form_id')
                 ->where('semester_id', $sem->id);
 
             if ($tenant) {
-                $coQuery->whereHas('semester.schoolYear', fn($q) => $q->where('campus_id', $tenant->id));
+                $coQuery->whereHas('semester.schoolYear', fn ($q) => $q->where('campus_id', $tenant->id));
             }
 
             $coIds = $coQuery->pluck('id');
             if ($coIds->isEmpty()) {
                 $data[] = null;
+
                 continue;
             }
 
             $submissions = FormSubmission::whereIn('course_offering_id', $coIds)->with('form.fields')->get();
-            $scores = $submissions->map(fn($s) => $service->calculateSubmissionScore($s))->filter();
+            $scores = $submissions->map(fn ($s) => $service->calculateSubmissionScore($s))->filter();
             $data[] = $scores->isNotEmpty() ? round($scores->avg(), 2) : null;
         }
 

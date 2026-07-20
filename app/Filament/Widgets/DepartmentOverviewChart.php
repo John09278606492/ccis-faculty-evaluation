@@ -30,6 +30,7 @@ class DepartmentOverviewChart extends ChartWidget
         }
 
         $permissionName = static::getPermissionName();
+
         return $user->can($permissionName);
     }
 

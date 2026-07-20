@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\SchoolYearResource\Pages;
 
 use App\Filament\Resources\SchoolYearResource;
+use Filament\Actions\CreateAction;
 use Filament\Resources\Pages\ListRecords;
 
 class ListSchoolYears extends ListRecords
@@ -12,7 +13,7 @@ class ListSchoolYears extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
-            \Filament\Actions\CreateAction::make(),
+            CreateAction::make(),
         ];
     }
 }

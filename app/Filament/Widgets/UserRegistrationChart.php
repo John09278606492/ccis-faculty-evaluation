@@ -32,6 +32,7 @@ class UserRegistrationChart extends ChartWidget
         }
 
         $permissionName = static::getPermissionName();
+
         return $user->can($permissionName);
     }
 

@@ -46,7 +46,7 @@ class Form extends Model
 
         static::creating(function (Form $form) {
             if (empty($form->slug)) {
-                $form->slug = Str::slug($form->name) . '-' . Str::random(6);
+                $form->slug = Str::slug($form->name).'-'.Str::random(6);
             }
         });
     }
@@ -93,7 +93,7 @@ class Form extends Model
      */
     public function isAvailable(): bool
     {
-        if (!$this->is_active) {
+        if (! $this->is_active) {
             return false;
         }
 

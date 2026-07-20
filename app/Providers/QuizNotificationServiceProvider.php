@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Models\Quiz;
+use Filament\Support\Facades\FilamentView;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\ServiceProvider;
 
@@ -17,7 +18,7 @@ class QuizNotificationServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->app->booted(function () {
-            \Filament\Support\Facades\FilamentView::registerRenderHook(
+            FilamentView::registerRenderHook(
                 'panels::body.start',
                 function () {
                     $this->checkDueQuizNotifications();
@@ -31,7 +32,7 @@ class QuizNotificationServiceProvider extends ServiceProvider
     protected function checkDueQuizNotifications(): void
     {
         try {
-            if (!filament()->getTenant()) {
+            if (! filament()->getTenant()) {
                 return;
             }
 
@@ -39,7 +40,7 @@ class QuizNotificationServiceProvider extends ServiceProvider
             // here), so it's throttled to at most once every 15 seconds
             // system-wide — plenty frequent for a notification window, and it
             // stops every single request from paying for it.
-            if (!Cache::add('quiz_notifications_throttle', true, 15)) {
+            if (! Cache::add('quiz_notifications_throttle', true, 15)) {
                 return;
             }
 

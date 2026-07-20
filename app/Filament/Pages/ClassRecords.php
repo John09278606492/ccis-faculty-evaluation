@@ -19,8 +19,8 @@ use PhpOffice\PhpSpreadsheet\IOFactory;
 
 class ClassRecords extends Page implements HasTable
 {
-    use InteractsWithTable;
     use HasPageShield;
+    use InteractsWithTable;
 
     protected static ?string $navigationIcon = 'heroicon-o-table-cells';
 
@@ -105,7 +105,7 @@ class ClassRecords extends Page implements HasTable
     {
         $query = ClassRecordSheet::query()->with(['upload', 'courseOffering']);
 
-        if (!auth()->user()?->hasRole('super_admin')) {
+        if (! auth()->user()?->hasRole('super_admin')) {
             $query->whereHas('upload', fn ($q) => $q->where('uploaded_by', auth()->id()));
         }
 
@@ -129,7 +129,7 @@ class ClassRecords extends Page implements HasTable
 
         return CourseOffering::query()
             ->whereHas('semester.schoolYear', fn ($q) => $q->where('campus_id', $campusId))
-            ->when(!$isSuperAdmin, fn ($q) => $q->where('user_id', auth()->id()))
+            ->when(! $isSuperAdmin, fn ($q) => $q->where('user_id', auth()->id()))
             ->whereNotIn('id', $takenIds)
             ->with('course')
             ->get()

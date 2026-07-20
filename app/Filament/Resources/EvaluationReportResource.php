@@ -7,14 +7,15 @@ use App\Filament\Resources\EvaluationReportResource\Widgets\EvaluationReportStat
 use App\Models\CourseOffering;
 use App\Models\Department;
 use App\Models\Form;
+use App\Models\FormSubmission;
 use App\Models\Semester;
 use App\Models\User;
 use App\Services\ReportService;
 use Filament\Facades\Filament;
 use Filament\Resources\Resource;
 use Filament\Tables;
-use Filament\Tables\Table;
 use Filament\Tables\Enums\FiltersLayout;
+use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
 class EvaluationReportResource extends Resource
@@ -68,7 +69,7 @@ class EvaluationReportResource extends Resource
                     ->whereNotNull('form_id');
 
                 if ($tenant) {
-                    $q->whereHas('semester.schoolYear', fn(Builder $sq) => $sq->where('campus_id', $tenant->id));
+                    $q->whereHas('semester.schoolYear', fn (Builder $sq) => $sq->where('campus_id', $tenant->id));
                 }
             })
             ->with('evaluateeDepartment');
@@ -105,7 +106,7 @@ class EvaluationReportResource extends Resource
                     ->trueColor('primary')
                     ->falseColor('gray')
                     ->alignCenter()
-                    ->tooltip(fn($state) => $state ? 'Instructor' : 'Non-Instructor'),
+                    ->tooltip(fn ($state) => $state ? 'Instructor' : 'Non-Instructor'),
 
                 Tables\Columns\TextColumn::make('total_courses')
                     ->label('Assignments')
@@ -113,7 +114,7 @@ class EvaluationReportResource extends Resource
                         return CourseOffering::where('user_id', $record->id)
                             ->where('is_active', true)
                             ->whereNotNull('form_id')
-                            ->when($tenant, fn($q) => $q->whereHas('semester.schoolYear', fn($sq) => $sq->where('campus_id', $tenant->id)))
+                            ->when($tenant, fn ($q) => $q->whereHas('semester.schoolYear', fn ($sq) => $sq->where('campus_id', $tenant->id)))
                             ->count();
                     })
                     ->badge()
@@ -126,10 +127,10 @@ class EvaluationReportResource extends Resource
                         $coIds = CourseOffering::where('user_id', $record->id)
                             ->where('is_active', true)
                             ->whereNotNull('form_id')
-                            ->when($tenant, fn($q) => $q->whereHas('semester.schoolYear', fn($sq) => $sq->where('campus_id', $tenant->id)))
+                            ->when($tenant, fn ($q) => $q->whereHas('semester.schoolYear', fn ($sq) => $sq->where('campus_id', $tenant->id)))
                             ->pluck('id');
 
-                        return \App\Models\FormSubmission::whereIn('course_offering_id', $coIds)->count();
+                        return FormSubmission::whereIn('course_offering_id', $coIds)->count();
                     })
                     ->badge()
                     ->color('info')
@@ -145,7 +146,7 @@ class EvaluationReportResource extends Resource
                     ->numeric(2)
                     ->placeholder('—')
                     ->badge()
-                    ->color(fn($state) => match (true) {
+                    ->color(fn ($state) => match (true) {
                         $state === null => 'gray',
                         $state >= 4.5 => 'success',
                         $state >= 3.5 => 'info',
@@ -167,7 +168,7 @@ class EvaluationReportResource extends Resource
                         return $summary['rating_label'];
                     })
                     ->badge()
-                    ->color(fn($state) => match ($state) {
+                    ->color(fn ($state) => match ($state) {
                         'Outstanding' => 'success',
                         'Very Satisfactory' => 'info',
                         'Satisfactory' => 'warning',
@@ -182,7 +183,7 @@ class EvaluationReportResource extends Resource
                     ->getStateUsing(function (User $record) use ($service, $tenant) {
                         $summary = $service->getEvaluateeSummary($record, null, $tenant?->id);
 
-                        return $summary['completion_rate'] . '%';
+                        return $summary['completion_rate'].'%';
                     })
                     ->alignCenter(),
             ])
@@ -195,16 +196,16 @@ class EvaluationReportResource extends Resource
                             ->with('schoolYear')
                             ->orderByDesc('start_date');
                         if ($tenant) {
-                            $query->whereHas('schoolYear', fn($q) => $q->where('campus_id', $tenant->id));
+                            $query->whereHas('schoolYear', fn ($q) => $q->where('campus_id', $tenant->id));
                         }
 
-                        return $query->get()->mapWithKeys(fn($s) => [
-                            $s->id => ($s->schoolYear?->name ?? '') . ' — ' . $s->name,
+                        return $query->get()->mapWithKeys(fn ($s) => [
+                            $s->id => ($s->schoolYear?->name ?? '').' — '.$s->name,
                         ])->toArray();
                     })
                     ->query(function (Builder $query, array $data): Builder {
                         return $query->when($data['value'], function (Builder $q, $semesterId) {
-                            $q->whereHas('courseOfferingsAsEvaluatee', fn($sq) => $sq->where('semester_id', $semesterId)->where('is_active', true)->whereNotNull('form_id'));
+                            $q->whereHas('courseOfferingsAsEvaluatee', fn ($sq) => $sq->where('semester_id', $semesterId)->where('is_active', true)->whereNotNull('form_id'));
                         });
                     }),
 
@@ -220,7 +221,7 @@ class EvaluationReportResource extends Resource
                         return $query->pluck('name', 'id')->toArray();
                     })
                     ->query(function (Builder $query, array $data): Builder {
-                        return $query->when($data['value'], fn(Builder $q, $deptId) => $q->where('instructor_department_id', $deptId));
+                        return $query->when($data['value'], fn (Builder $q, $deptId) => $q->where('instructor_department_id', $deptId));
                     }),
 
                 Tables\Filters\SelectFilter::make('form')
@@ -229,14 +230,14 @@ class EvaluationReportResource extends Resource
                         $tenant = Filament::getTenant();
                         $query = Form::where('is_active', true)->orderBy('name');
                         if ($tenant) {
-                            $query->whereHas('campuses', fn($q) => $q->where('campuses.id', $tenant->id));
+                            $query->whereHas('campuses', fn ($q) => $q->where('campuses.id', $tenant->id));
                         }
 
                         return $query->pluck('name', 'id')->toArray();
                     })
                     ->query(function (Builder $query, array $data): Builder {
                         return $query->when($data['value'], function (Builder $q, $formId) {
-                            $q->whereHas('courseOfferingsAsEvaluatee', fn($sq) => $sq->where('form_id', $formId)->where('is_active', true));
+                            $q->whereHas('courseOfferingsAsEvaluatee', fn ($sq) => $sq->where('form_id', $formId)->where('is_active', true));
                         });
                     }),
             ], layout: FiltersLayout::AboveContent)
@@ -244,7 +245,7 @@ class EvaluationReportResource extends Resource
                 Tables\Actions\ViewAction::make()
                     ->label('View Report')
                     ->icon('heroicon-o-chart-bar-square')
-                    ->url(fn(User $record): string => static::getUrl('view', ['record' => $record])),
+                    ->url(fn (User $record): string => static::getUrl('view', ['record' => $record])),
             ])
             ->headerActions([
                 Tables\Actions\Action::make('export_csv')
@@ -268,12 +269,12 @@ class EvaluationReportResource extends Resource
                                     $summary['total_submissions'],
                                     $summary['avg_score'] ?? 'N/A',
                                     $summary['rating_label'],
-                                    $summary['completion_rate'] . '%',
+                                    $summary['completion_rate'].'%',
                                 ]);
                             }
 
                             fclose($handle);
-                        }, 'evaluation-report-' . now()->format('Y-m-d') . '.csv');
+                        }, 'evaluation-report-'.now()->format('Y-m-d').'.csv');
                     }),
             ])
             ->defaultSort('first_name')

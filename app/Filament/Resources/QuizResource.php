@@ -2,16 +2,17 @@
 
 namespace App\Filament\Resources;
 
-use App\Filament\Resources\QuizResource\Pages;
-use App\Filament\Resources\QuizResource\RelationManagers;
 use App\Filament\Pages\QuizBuilder;
 use App\Filament\Pages\TakeQuiz;
+use App\Filament\Resources\QuizResource\Pages;
+use App\Filament\Resources\QuizResource\RelationManagers;
 use App\Models\ClassRecordSheet;
 use App\Models\ClassRecordUpload;
 use App\Models\CourseOffering;
 use App\Models\Quiz;
 use App\Services\ClassRecordSyncService;
 use BezhanSalleh\FilamentShield\Contracts\HasShieldPermissions;
+use Filament\Actions\Action;
 use Filament\Forms;
 use Filament\Forms\Form as FilamentForm;
 use Filament\Notifications\Notification;
@@ -114,11 +115,11 @@ class QuizResource extends Resource implements HasShieldPermissions
             ->modalSubmitAction(false)
             ->modalCancelActionLabel('Close')
             ->form(function (Quiz $record) {
-                $inputId = 'quiz-share-link-' . $record->id;
+                $inputId = 'quiz-share-link-'.$record->id;
                 $copyScript = "let el=document.getElementById('{$inputId}');if(!el)return;el.focus();el.select();el.setSelectionRange(0,99999);"
-                    . 'let done=false;'
-                    . "if(window.isSecureContext&&navigator.clipboard){navigator.clipboard.writeText(el.value).then(()=>{}).catch(()=>{});done=true;}"
-                    . 'try{document.execCommand("copy");}catch(e){}';
+                    .'let done=false;'
+                    .'if(window.isSecureContext&&navigator.clipboard){navigator.clipboard.writeText(el.value).then(()=>{}).catch(()=>{});done=true;}'
+                    .'try{document.execCommand("copy");}catch(e){}';
 
                 return [
                     Forms\Components\TextInput::make('link')
@@ -158,14 +159,14 @@ class QuizResource extends Resource implements HasShieldPermissions
         return static::buildPreviewAction(Tables\Actions\Action::class);
     }
 
-    public static function copyLinkHeaderAction(): \Filament\Actions\Action
+    public static function copyLinkHeaderAction(): Action
     {
-        return static::buildCopyLinkAction(\Filament\Actions\Action::class);
+        return static::buildCopyLinkAction(Action::class);
     }
 
-    public static function previewHeaderAction(): \Filament\Actions\Action
+    public static function previewHeaderAction(): Action
     {
-        return static::buildPreviewAction(\Filament\Actions\Action::class);
+        return static::buildPreviewAction(Action::class);
     }
 
     /**
@@ -187,9 +188,9 @@ class QuizResource extends Resource implements HasShieldPermissions
         return static::buildBuildAction(Tables\Actions\Action::class);
     }
 
-    public static function buildHeaderAction(): \Filament\Actions\Action
+    public static function buildHeaderAction(): Action
     {
-        return static::buildBuildAction(\Filament\Actions\Action::class);
+        return static::buildBuildAction(Action::class);
     }
 
     /**
@@ -228,7 +229,7 @@ class QuizResource extends Resource implements HasShieldPermissions
                     Forms\Components\Select::make('class_record_sheet_id')
                         ->label('Which class record?')
                         ->options($sheets->mapWithKeys(fn (ClassRecordSheet $s) => [
-                            $s->id => "{$s->upload->original_filename} — {$s->sheet_name} (" . (ClassRecordUpload::PERIODS[$s->period] ?? $s->period) . ')',
+                            $s->id => "{$s->upload->original_filename} — {$s->sheet_name} (".(ClassRecordUpload::PERIODS[$s->period] ?? $s->period).')',
                         ]))
                         ->required(),
                 ];
@@ -251,7 +252,7 @@ class QuizResource extends Resource implements HasShieldPermissions
                     : $sheets->first();
 
                 try {
-                    $result = (new ClassRecordSyncService())->sync($record, $sheet);
+                    $result = (new ClassRecordSyncService)->sync($record, $sheet);
                 } catch (\Throwable $e) {
                     Notification::make()->title('Sync failed')->body($e->getMessage())->danger()->send();
 
@@ -260,14 +261,14 @@ class QuizResource extends Resource implements HasShieldPermissions
 
                 $body = "{$result['matched']} student(s) updated.";
 
-                if (!empty($result['no_score_yet'])) {
-                    $body .= ' ' . count($result['no_score_yet']) . ' enrolled student(s) have no score yet.';
+                if (! empty($result['no_score_yet'])) {
+                    $body .= ' '.count($result['no_score_yet']).' enrolled student(s) have no score yet.';
                 }
 
-                if (!empty($result['unrecognized'])) {
+                if (! empty($result['unrecognized'])) {
                     $preview = implode(', ', array_slice($result['unrecognized'], 0, 5));
-                    $body .= ' ' . count($result['unrecognized']) . " ID(s) in the sheet didn't match any enrolled student: {$preview}"
-                        . (count($result['unrecognized']) > 5 ? '…' : '');
+                    $body .= ' '.count($result['unrecognized'])." ID(s) in the sheet didn't match any enrolled student: {$preview}"
+                        .(count($result['unrecognized']) > 5 ? '…' : '');
                 }
 
                 Notification::make()
@@ -283,9 +284,9 @@ class QuizResource extends Resource implements HasShieldPermissions
         return static::buildSyncClassRecordAction(Tables\Actions\Action::class);
     }
 
-    public static function syncClassRecordHeaderAction(): \Filament\Actions\Action
+    public static function syncClassRecordHeaderAction(): Action
     {
-        return static::buildSyncClassRecordAction(\Filament\Actions\Action::class);
+        return static::buildSyncClassRecordAction(Action::class);
     }
 
     /**
@@ -333,7 +334,7 @@ class QuizResource extends Resource implements HasShieldPermissions
 
         return CourseOffering::query()
             ->whereHas('semester.schoolYear', fn ($q) => $q->where('campus_id', $campusId))
-            ->when(!$isSuperAdmin, fn ($q) => $q->where('user_id', auth()->id()))
+            ->when(! $isSuperAdmin, fn ($q) => $q->where('user_id', auth()->id()))
             ->with(['course', 'semester.schoolYear'])
             ->get()
             ->mapWithKeys(fn (CourseOffering $co) => [
@@ -416,8 +417,7 @@ class QuizResource extends Resource implements HasShieldPermissions
                             ->label(fn (Forms\Get $get) => $get('timing_mode') === 'scheduled' && $get('type') !== 'activity' ? 'Closes At' : 'Available Until')
                             ->required(fn (Forms\Get $get) => $get('timing_mode') === 'scheduled' && $get('type') !== 'activity')
                             ->helperText(fn (Forms\Get $get) => match (true) {
-                                $get('timing_mode') === 'scheduled' && $get('type') !== 'activity'
-                                    => 'Everyone is cut off and auto-submitted at this exact moment, no matter when they started.',
+                                $get('timing_mode') === 'scheduled' && $get('type') !== 'activity' => 'Everyone is cut off and auto-submitted at this exact moment, no matter when they started.',
                                 $get('type') === 'activity' => 'Deadline for submitting this activity.',
                                 default => 'Last moment a student can click Start.',
                             }),

@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\CourseOfferingResource\Pages;
 
 use App\Filament\Resources\CourseOfferingResource;
+use App\Models\Course;
 use Filament\Actions;
 use Filament\Resources\Pages\EditRecord;
 
@@ -17,7 +18,7 @@ class EditCourseOffering extends EditRecord
     {
         // Load the course to get its department_id
         if (isset($data['course_id'])) {
-            $course = \App\Models\Course::find($data['course_id']);
+            $course = Course::find($data['course_id']);
             if ($course) {
                 $data['department_id'] = $course->department_id;
             }

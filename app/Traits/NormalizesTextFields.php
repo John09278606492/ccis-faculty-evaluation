@@ -4,7 +4,7 @@ namespace App\Traits;
 
 /**
  * Trait for normalizing text fields when saving models.
- * 
+ *
  * - Title Case: first_name, middle_name, last_name, name (proper names)
  * - Lowercase: email
  * - Uppercase: code, student_id, employee_id (identifiers)

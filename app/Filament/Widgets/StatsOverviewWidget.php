@@ -70,7 +70,7 @@ class StatsOverviewWidget extends BaseWidget
 
         if ($user->isSuperAdmin() || $user->can('view_any_course')) {
             $totalCourses = $tenant
-                ? Course::whereHas('department', fn($q) => $q->where('campus_id', $tenant->id))->where('is_active', true)->count()
+                ? Course::whereHas('department', fn ($q) => $q->where('campus_id', $tenant->id))->where('is_active', true)->count()
                 : Course::where('is_active', true)->count();
 
             $stats[] = Stat::make('Courses', $totalCourses)
@@ -96,7 +96,7 @@ class StatsOverviewWidget extends BaseWidget
             $totalSubmissions = $this->getTotalSubmissions($tenant);
 
             $stats[] = Stat::make('Active Forms', $totalForms)
-                ->description($totalSubmissions . ' total submissions')
+                ->description($totalSubmissions.' total submissions')
                 ->descriptionIcon('heroicon-m-document-text')
                 ->color('primary');
         }
@@ -138,7 +138,7 @@ class StatsOverviewWidget extends BaseWidget
                 ->get()
                 ->sum('students_count');
 
-            $evaluationsReceived = FormSubmission::whereHas('courseOffering', fn($q) => $q->where('user_id', $user->id))
+            $evaluationsReceived = FormSubmission::whereHas('courseOffering', fn ($q) => $q->where('user_id', $user->id))
                 ->count();
 
             $stats[] = Stat::make('My Assignments', $myCourseOfferings)
@@ -203,7 +203,7 @@ class StatsOverviewWidget extends BaseWidget
         $query = CourseOffering::where('is_active', true);
 
         if ($tenant) {
-            $query->whereHas('semester.schoolYear', fn($q) => $q->where('campus_id', $tenant->id));
+            $query->whereHas('semester.schoolYear', fn ($q) => $q->where('campus_id', $tenant->id));
         }
 
         return $query->count();
@@ -212,7 +212,7 @@ class StatsOverviewWidget extends BaseWidget
     private function getTotalSubmissions(?object $tenant): int
     {
         if ($tenant) {
-            return FormSubmission::whereHas('form.campuses', fn($q) => $q->where('campuses.id', $tenant->id))
+            return FormSubmission::whereHas('form.campuses', fn ($q) => $q->where('campuses.id', $tenant->id))
                 ->count();
         }
 
@@ -224,7 +224,7 @@ class StatsOverviewWidget extends BaseWidget
         return $user->courseOfferings()
             ->where('is_active', true)
             ->whereNotNull('form_id')
-            ->whereDoesntHave('formSubmissions', fn($q) => $q->where('user_id', $user->id))
+            ->whereDoesntHave('formSubmissions', fn ($q) => $q->where('user_id', $user->id))
             ->count();
     }
 

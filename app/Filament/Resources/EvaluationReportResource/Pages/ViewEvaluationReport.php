@@ -5,17 +5,10 @@ namespace App\Filament\Resources\EvaluationReportResource\Pages;
 use App\Filament\Resources\EvaluationReportResource;
 use App\Models\CourseOffering;
 use App\Models\FormSubmission;
-use App\Models\User;
 use App\Services\ReportService;
 use Filament\Actions;
 use Filament\Facades\Filament;
-use Filament\Infolists\Components\Grid;
-use Filament\Infolists\Components\Group;
-use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\Section;
-use Filament\Infolists\Components\TextEntry;
-use Filament\Infolists\Components\ViewEntry;
-use Filament\Infolists\Infolist;
 use Filament\Resources\Pages\ViewRecord;
 use Illuminate\Support\Collection;
 
@@ -27,7 +20,7 @@ class ViewEvaluationReport extends ViewRecord
 
     public function getTitle(): string
     {
-        return $this->record->full_name . ' — Evaluation Report';
+        return $this->record->full_name.' — Evaluation Report';
     }
 
     protected function getHeaderActions(): array
@@ -58,7 +51,7 @@ class ViewEvaluationReport extends ViewRecord
                         }
 
                         fclose($handle);
-                    }, 'evaluatee-report-' . str($this->record->full_name)->slug() . '-' . now()->format('Y-m-d') . '.csv');
+                    }, 'evaluatee-report-'.str($this->record->full_name)->slug().'-'.now()->format('Y-m-d').'.csv');
                 }),
 
             Actions\Action::make('back')
@@ -146,9 +139,9 @@ class ViewEvaluationReport extends ViewRecord
 
             return [
                 'id' => $co->id,
-                'course' => $co->course?->code . ' — ' . $co->course?->name,
+                'course' => $co->course?->code.' — '.$co->course?->name,
                 'section' => $co->section ?? '—',
-                'semester' => ($co->semester?->schoolYear?->name ?? '') . ' ' . ($co->semester?->name ?? ''),
+                'semester' => ($co->semester?->schoolYear?->name ?? '').' '.($co->semester?->name ?? ''),
                 'submissions' => $co->form_submissions_count,
                 'students' => $co->students_count,
                 'avg_score' => $avgScore,

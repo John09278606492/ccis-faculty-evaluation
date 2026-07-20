@@ -3,14 +3,11 @@
 namespace App\Filament\Resources\FormResource\RelationManagers;
 
 use App\Models\FormSubmission;
-use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
-use Filament\Infolists;
-use Filament\Infolists\Infolist;
 
 class SubmissionsRelationManager extends RelationManager
 {
@@ -68,7 +65,7 @@ class SubmissionsRelationManager extends RelationManager
             ], layout: FiltersLayout::AboveContent)
             ->actions([
                 Tables\Actions\ViewAction::make()
-                    ->modalContent(fn(FormSubmission $record) => view('filament.resources.form-resource.modals.view-submission', [
+                    ->modalContent(fn (FormSubmission $record) => view('filament.resources.form-resource.modals.view-submission', [
                         'submission' => $record,
                         'fields' => $this->ownerRecord->fields()->orderBy('order')->get(),
                     ])),

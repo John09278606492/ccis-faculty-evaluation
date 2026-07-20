@@ -34,7 +34,7 @@ class DepartmentResource extends Resource
                         Forms\Components\TextInput::make('code')
                             ->required()
                             ->maxLength(20)
-                            ->unique(ignoreRecord: true, modifyRuleUsing: fn($rule) => $rule->where('campus_id', filament()->getTenant()?->id)),
+                            ->unique(ignoreRecord: true, modifyRuleUsing: fn ($rule) => $rule->where('campus_id', filament()->getTenant()?->id)),
 
                         Forms\Components\Textarea::make('description')
                             ->maxLength(1000)

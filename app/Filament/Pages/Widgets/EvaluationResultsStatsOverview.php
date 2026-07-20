@@ -14,15 +14,15 @@ class EvaluationResultsStatsOverview extends BaseWidget
         $campusId = filament()->getTenant()?->id;
 
         $totalEvaluatees = User::whereHas('courseOfferingsAsInstructor', function ($q) use ($campusId) {
-            $q->when($campusId, fn($query) => $query->whereHas('semester.schoolYear', fn($sy) => $sy->where('campus_id', $campusId)));
+            $q->when($campusId, fn ($query) => $query->whereHas('semester.schoolYear', fn ($sy) => $sy->where('campus_id', $campusId)));
         })->count();
 
         $evaluatedEvaluatees = User::whereHas('courseOfferingsAsInstructor', function ($q) use ($campusId) {
-            $q->when($campusId, fn($query) => $query->whereHas('semester.schoolYear', fn($sy) => $sy->where('campus_id', $campusId)));
+            $q->when($campusId, fn ($query) => $query->whereHas('semester.schoolYear', fn ($sy) => $sy->where('campus_id', $campusId)));
         })->whereHas('courseOfferingsAsInstructor.formSubmissions')->count();
 
         $totalSubmissions = FormSubmission::whereHas('courseOffering', function ($q) use ($campusId) {
-            $q->whereHas('semester.schoolYear', fn($sy) => $sy->when($campusId, fn($s) => $s->where('campus_id', $campusId)));
+            $q->whereHas('semester.schoolYear', fn ($sy) => $sy->when($campusId, fn ($s) => $s->where('campus_id', $campusId)));
         })->count();
 
         return [

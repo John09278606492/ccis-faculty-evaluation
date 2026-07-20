@@ -98,7 +98,7 @@ class StudentsRelationManager extends RelationManager
                     ->label('Assign to All Students')
                     ->icon('heroicon-o-users')
                     ->color('gray')
-                    ->visible(fn () => !$this->getQuiz()->assign_to_all)
+                    ->visible(fn () => ! $this->getQuiz()->assign_to_all)
                     ->requiresConfirmation()
                     ->modalDescription('Every student enrolled in this course offering will be able to take this quiz.')
                     ->action(function () {
@@ -152,7 +152,7 @@ class StudentsRelationManager extends RelationManager
         $lockedIds = array_values(array_filter($userIds, fn ($id) => $this->hasAttempted($id)));
         $userIds = array_values(array_diff($userIds, $lockedIds));
 
-        if (!empty($userIds)) {
+        if (! empty($userIds)) {
             if ($quiz->assign_to_all) {
                 $rosterIds = $quiz->students()->pluck('users.id')->all();
                 $quiz->update(['assign_to_all' => false]);
@@ -166,7 +166,7 @@ class StudentsRelationManager extends RelationManager
             }
         }
 
-        if (!empty($lockedIds) && empty($userIds)) {
+        if (! empty($lockedIds) && empty($userIds)) {
             Notification::make()
                 ->title('No changes made')
                 ->body('The selected student(s) have already attempted this quiz, so their assignment is locked.')
@@ -178,8 +178,8 @@ class StudentsRelationManager extends RelationManager
 
         Notification::make()
             ->title($assign ? 'Student(s) assigned' : 'Student(s) unassigned')
-            ->body(!empty($lockedIds)
-                ? count($lockedIds) . ' student(s) were skipped because they already attempted this quiz.'
+            ->body(! empty($lockedIds)
+                ? count($lockedIds).' student(s) were skipped because they already attempted this quiz.'
                 : null)
             ->success()
             ->send();
@@ -214,13 +214,13 @@ class StudentsRelationManager extends RelationManager
 
     protected function statusFor(User $student): string
     {
-        if (!$this->getQuiz()->isAssignedTo($student->id)) {
+        if (! $this->getQuiz()->isAssignedTo($student->id)) {
             return 'Not Assigned';
         }
 
         $attempt = $this->latestAttemptsByUser()->get($student->id);
 
-        if (!$attempt) {
+        if (! $attempt) {
             return 'Not Started';
         }
 

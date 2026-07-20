@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Traits\NormalizesTextFields;
+use Database\Factories\CampusFactory;
 use Filament\Models\Contracts\HasAvatar;
 use Filament\Models\Contracts\HasName;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -9,11 +11,11 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Storage;
-use App\Traits\NormalizesTextFields;
+use Spatie\Permission\Models\Role;
 
-class Campus extends Model implements HasName, HasAvatar
+class Campus extends Model implements HasAvatar, HasName
 {
-    /** @use HasFactory<\Database\Factories\CampusFactory> */
+    /** @use HasFactory<CampusFactory> */
     use HasFactory, NormalizesTextFields;
 
     protected $fillable = [
@@ -44,7 +46,8 @@ class Campus extends Model implements HasName, HasAvatar
 
         // Auto-attach all super_admin users when a new campus is created
         static::created(function (Campus $campus) {
-            $superAdmins = User::role('super_admin')->pluck('id');
+            $role = Role::query()->where('name', 'super_admin')->where('guard_name', 'web')->first();
+            $superAdmins = $role ? User::role($role)->pluck('id') : collect();
             if ($superAdmins->isNotEmpty()) {
                 $campus->users()->syncWithoutDetaching($superAdmins);
             }
@@ -74,14 +77,6 @@ class Campus extends Model implements HasName, HasAvatar
     public function contacts(): HasMany
     {
         return $this->hasMany(Contact::class);
-    }
-
-    /**
-     * Get the books for this campus.
-     */
-    public function books(): HasMany
-    {
-        return $this->hasMany(Book::class);
     }
 
     /**
@@ -142,5 +137,3 @@ class Campus extends Model implements HasName, HasAvatar
         return $this->logo_url ? Storage::url($this->logo_url) : null;
     }
 }
-
-

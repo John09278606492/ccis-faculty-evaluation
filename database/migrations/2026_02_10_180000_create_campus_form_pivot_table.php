@@ -2,10 +2,11 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration {
+return new class extends Migration
+{
     public function up(): void
     {
         // Create pivot table for many-to-many campus-form relationship
@@ -31,6 +32,7 @@ return new class extends Migration {
 
         // Drop the old campus_id column
         Schema::table('forms', function (Blueprint $table) {
+            $table->dropIndex(['campus_id', 'is_active']);
             $table->dropForeign(['campus_id']);
             $table->dropColumn('campus_id');
         });

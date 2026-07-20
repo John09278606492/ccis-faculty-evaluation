@@ -1,9 +1,15 @@
 <?php
 
+use App\Providers\AppServiceProvider;
+use App\Providers\Filament\AdminPanelProvider;
+use App\Providers\QuizNotificationServiceProvider;
+use App\Providers\SchoolYearBannerServiceProvider;
+use SocialiteProviders\Manager\ServiceProvider;
+
 return [
-    App\Providers\AppServiceProvider::class,
-    App\Providers\Filament\AdminPanelProvider::class,
-    App\Providers\SchoolYearBannerServiceProvider::class,
-    App\Providers\QuizNotificationServiceProvider::class,
-    \SocialiteProviders\Manager\ServiceProvider::class, // add
+    AppServiceProvider::class,
+    AdminPanelProvider::class,
+    SchoolYearBannerServiceProvider::class,
+    QuizNotificationServiceProvider::class,
+    ServiceProvider::class, // add
 ];

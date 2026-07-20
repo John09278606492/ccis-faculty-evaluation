@@ -7,7 +7,6 @@ use App\Models\Department;
 use App\Models\Form;
 use App\Models\FormField;
 use App\Models\FormSubmission;
-use App\Models\Semester;
 use App\Models\User;
 use Illuminate\Support\Collection;
 
@@ -20,7 +19,7 @@ class ReportService
     public function calculateSubmissionScore(FormSubmission $submission): ?float
     {
         $form = $submission->form;
-        if (!$form) {
+        if (! $form) {
             return null;
         }
 
@@ -92,7 +91,7 @@ class ReportService
         }
 
         if ($campusId) {
-            $query->whereHas('semester.schoolYear', fn($q) => $q->where('campus_id', $campusId));
+            $query->whereHas('semester.schoolYear', fn ($q) => $q->where('campus_id', $campusId));
         }
 
         $courseOfferings = $query
@@ -128,7 +127,7 @@ class ReportService
             }
         }
 
-        $avgScore = !empty($allScores) ? array_sum($allScores) / count($allScores) : null;
+        $avgScore = ! empty($allScores) ? array_sum($allScores) / count($allScores) : null;
         $ratingLabel = $avgScore !== null
             ? $this->getRatingLabel($avgScore, $courseOfferings->first()?->evaluationForm?->rating_scale)
             : '—';
@@ -178,7 +177,7 @@ class ReportService
                 }
             }
 
-            if (!empty($values)) {
+            if (! empty($values)) {
                 $breakdown[] = [
                     'field_name' => $field->name,
                     'field_label' => $field->label,
@@ -205,6 +204,7 @@ class ReportService
             ->groupBy('section')
             ->map(function ($fields, $section) {
                 $avgScores = $fields->pluck('avg');
+
                 return [
                     'section' => $section,
                     'avg' => round($avgScores->avg(), 2),
@@ -231,15 +231,15 @@ class ReportService
         foreach ($submissions as $sub) {
             $data = $sub->data ?? [];
 
-            if (!empty($data['_field_comments'])) {
+            if (! empty($data['_field_comments'])) {
                 foreach ($data['_field_comments'] as $fieldName => $comment) {
-                    if (!empty(trim($comment))) {
+                    if (! empty(trim($comment))) {
                         $fieldComments[$fieldName][] = $comment;
                     }
                 }
             }
 
-            if (!empty($data['_overall_comment'])) {
+            if (! empty($data['_overall_comment'])) {
                 $overallComments[] = $data['_overall_comment'];
             }
         }
@@ -259,7 +259,7 @@ class ReportService
     ): array {
         // Get all evaluatees in this department (instructors assigned to dept)
         // PLUS any user who has an active course offering linked to this department's courses
-        $evaluatees = User::where(function ($q) use ($department, $semesterId) {
+        $evaluatees = User::where(function ($q) use ($department) {
             // Users assigned to this department
             $q->where('instructor_department_id', $department->id);
         })
@@ -269,12 +269,12 @@ class ReportService
                     ->whereHas('courseOfferingsAsEvaluatee', function ($coq) use ($department, $semesterId) {
                         $coq->where('is_active', true)
                             ->whereNotNull('form_id')
-                            ->whereHas('semester.schoolYear', fn($sq) => $sq->where('campus_id', $department->campus_id));
+                            ->whereHas('semester.schoolYear', fn ($sq) => $sq->where('campus_id', $department->campus_id));
                         if ($semesterId) {
                             $coq->where('semester_id', $semesterId);
                         }
                         $coq->where(function ($inner) use ($department) {
-                            $inner->whereHas('course', fn($cq) => $cq->where('department_id', $department->id))
+                            $inner->whereHas('course', fn ($cq) => $cq->where('department_id', $department->id))
                                 ->orWhereNull('course_id');
                         });
                     });
@@ -306,7 +306,7 @@ class ReportService
             return ($b['summary']['avg_score'] ?? 0) <=> ($a['summary']['avg_score'] ?? 0);
         });
 
-        $avgScore = !empty($allScores) ? round(array_sum($allScores) / count($allScores), 2) : null;
+        $avgScore = ! empty($allScores) ? round(array_sum($allScores) / count($allScores), 2) : null;
         $completionRate = $totalStudents > 0 ? round(($totalSubmissions / $totalStudents) * 100, 1) : 0;
 
         return [

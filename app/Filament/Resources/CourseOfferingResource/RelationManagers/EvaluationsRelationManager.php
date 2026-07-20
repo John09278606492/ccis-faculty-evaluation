@@ -7,7 +7,6 @@ use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
-use Illuminate\Database\Eloquent\Builder;
 
 class EvaluationsRelationManager extends RelationManager
 {
@@ -41,15 +40,20 @@ class EvaluationsRelationManager extends RelationManager
                     })
                     ->badge()
                     ->color(function ($state) {
-                        if (!$state || !is_numeric($state))
+                        if (! $state || ! is_numeric($state)) {
                             return 'gray';
+                        }
                         $val = (float) $state;
-                        if ($val >= 4.5)
+                        if ($val >= 4.5) {
                             return 'success';
-                        if ($val >= 3.5)
+                        }
+                        if ($val >= 3.5) {
                             return 'info';
-                        if ($val >= 2.5)
+                        }
+                        if ($val >= 2.5) {
                             return 'warning';
+                        }
+
                         return 'danger';
                     }),
 
@@ -57,8 +61,10 @@ class EvaluationsRelationManager extends RelationManager
                     ->label('Rating')
                     ->getStateUsing(function (FormSubmission $record) {
                         $score = $this->calculateOverallScore($record);
-                        if (!$score)
+                        if (! $score) {
                             return '—';
+                        }
+
                         return $this->getRatingLabel($record, $score);
                     })
                     ->color(function ($state) {
@@ -108,8 +114,9 @@ class EvaluationsRelationManager extends RelationManager
     private function calculateOverallScore(FormSubmission $record): ?string
     {
         $form = $record->form;
-        if (!$form)
+        if (! $form) {
             return null;
+        }
 
         $data = $record->data ?? [];
         $fields = $form->fields()->whereIn('type', ['likert_scale', 'rating'])->get();
@@ -122,8 +129,9 @@ class EvaluationsRelationManager extends RelationManager
             }
         }
 
-        if (empty($ratings))
+        if (empty($ratings)) {
             return null;
+        }
 
         $scoringConfig = $form->scoring_config ?? [];
         $overallMethod = $scoringConfig['overall_method'] ?? 'average';

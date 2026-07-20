@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Filament\Pages\TakeQuiz;
+use Filament\Notifications\Actions\Action;
 use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -19,7 +21,7 @@ class Quiz extends Model
 
         // If the instructor reschedules the start time, let the alert fire again.
         static::saving(function (self $quiz) {
-            if ($quiz->isDirty('available_from') && !$quiz->isDirty('notified_at')) {
+            if ($quiz->isDirty('available_from') && ! $quiz->isDirty('notified_at')) {
                 $quiz->notified_at = null;
             }
         });
@@ -176,7 +178,7 @@ class Quiz extends Model
      */
     public function isAvailable(): bool
     {
-        return $this->is_published && $this->hasWindowOpened() && !$this->hasWindowClosed();
+        return $this->is_published && $this->hasWindowOpened() && ! $this->hasWindowClosed();
     }
 
     /**
@@ -184,7 +186,7 @@ class Quiz extends Model
      */
     public function hasWindowOpened(): bool
     {
-        return !$this->available_from || now()->gte($this->available_from);
+        return ! $this->available_from || now()->gte($this->available_from);
     }
 
     /**
@@ -205,7 +207,7 @@ class Quiz extends Model
      */
     public function isDueForStartingSoonNotification(): bool
     {
-        if (!$this->is_published || !$this->available_from || !$this->notify_minutes_before || $this->notified_at) {
+        if (! $this->is_published || ! $this->available_from || ! $this->notify_minutes_before || $this->notified_at) {
             return false;
         }
 
@@ -230,9 +232,9 @@ class Quiz extends Model
                 ->icon('heroicon-o-clock')
                 ->iconColor('warning')
                 ->actions([
-                    \Filament\Notifications\Actions\Action::make('view')
+                    Action::make('view')
                         ->label('View')
-                        ->url(\App\Filament\Pages\TakeQuiz::getUrl(['quiz' => $this->id], panel: 'admin', tenant: $this->campus)),
+                        ->url(TakeQuiz::getUrl(['quiz' => $this->id], panel: 'admin', tenant: $this->campus)),
                 ])
                 ->sendToDatabase($student);
         }

@@ -2,22 +2,23 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Pages\Dashboard;
 use App\Filament\Pages\Login;
 use App\Models\Campus;
 use App\Models\User;
 use App\Settings\KaidoSetting;
-use Filament\Http\Middleware\Authenticate;
 use BezhanSalleh\FilamentShield\FilamentShieldPlugin;
 use DutchCodingCompany\FilamentSocialite\FilamentSocialitePlugin;
 use DutchCodingCompany\FilamentSocialite\Provider;
 use Filament\Forms\Components\FileUpload;
+use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
-use Filament\Pages;
+use Filament\Navigation\NavigationGroup;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
-use Filament\Widgets;
+use Filament\Support\Enums\MaxWidth;
 use Hasnayeen\Themes\ThemesPlugin;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
@@ -25,14 +26,12 @@ use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\AuthenticateSession;
 use Illuminate\Session\Middleware\StartSession;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 use Jeffgreco13\FilamentBreezy\BreezyCore;
-use Rupadana\ApiService\ApiServicePlugin;
 use Kenepa\Banner\BannerPlugin;
 use Laravel\Socialite\Contracts\User as SocialiteUserContract;
-use Illuminate\Contracts\Auth\Authenticatable;
-use Illuminate\Support\Facades\Schema;
-use Filament\Support\Enums\MaxWidth;
+use Rupadana\ApiService\ApiServicePlugin;
 
 class AdminPanelProvider extends PanelProvider
 {
@@ -56,9 +55,9 @@ class AdminPanelProvider extends PanelProvider
             ->default()
             ->id('admin')
             ->path('')
-            ->when($this->settings?->login_enabled ?? true, fn($panel) => $panel->login(Login::class))
-            ->when($this->settings?->registration_enabled ?? true, fn($panel) => $panel->registration())
-            ->when($this->settings?->password_reset_enabled ?? true, fn($panel) => $panel->passwordReset())
+            ->when($this->settings?->login_enabled ?? true, fn ($panel) => $panel->login(Login::class))
+            ->when($this->settings?->registration_enabled ?? true, fn ($panel) => $panel->registration())
+            ->when($this->settings?->password_reset_enabled ?? true, fn ($panel) => $panel->passwordReset())
             ->emailVerification()
             ->maxContentWidth(MaxWidth::Full)
             ->colors([
@@ -73,27 +72,27 @@ class AdminPanelProvider extends PanelProvider
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
             ->pages([
-                \App\Filament\Pages\Dashboard::class,
+                Dashboard::class,
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
             ->widgets([])
             ->navigationGroups([
-                \Filament\Navigation\NavigationGroup::make('Evaluations')
+                NavigationGroup::make('Evaluations')
                     ->icon('heroicon-o-clipboard-document-list'),
-                \Filament\Navigation\NavigationGroup::make('Quizzes')
+                NavigationGroup::make('Quizzes')
                     ->icon('heroicon-o-pencil-square'),
-                \Filament\Navigation\NavigationGroup::make('Student')
+                NavigationGroup::make('Student')
                     ->icon('heroicon-o-academic-cap'),
-                \Filament\Navigation\NavigationGroup::make('Academic Management')
+                NavigationGroup::make('Academic Management')
                     ->icon('heroicon-o-building-library')
                     ->collapsed(),
-                \Filament\Navigation\NavigationGroup::make('Forms')
+                NavigationGroup::make('Forms')
                     ->icon('heroicon-o-document-text')
                     ->collapsed(),
-                \Filament\Navigation\NavigationGroup::make('User Management')
+                NavigationGroup::make('User Management')
                     ->icon('heroicon-o-users')
                     ->collapsed(),
-                \Filament\Navigation\NavigationGroup::make('Settings')
+                NavigationGroup::make('Settings')
                     ->icon('heroicon-o-cog-6-tooth')
                     ->collapsed(),
             ])
@@ -139,9 +138,9 @@ class AdminPanelProvider extends PanelProvider
                     hasAvatars: true,
                     slug: 'my-profile'
                 )
-                ->avatarUploadComponent(fn($fileUpload) => $fileUpload->disableLabel())
+                ->avatarUploadComponent(fn ($fileUpload) => $fileUpload->disableLabel())
                 ->avatarUploadComponent(
-                    fn() => FileUpload::make('avatar_url')
+                    fn () => FileUpload::make('avatar_url')
                         ->image()
                         ->disk('public')
                 )
@@ -157,7 +156,7 @@ class AdminPanelProvider extends PanelProvider
                             ->icon('fab-google')
                             ->color(Color::hex('#2f2a6b'))
                             ->outlined(true)
-                            ->stateless(false)
+                            ->stateless(false),
                     ])->registration(true)
                     ->createUserUsing(function (string $provider, SocialiteUserContract $oauthUser, FilamentSocialitePlugin $plugin) {
                         $user = User::firstOrNew([
@@ -176,6 +175,7 @@ class AdminPanelProvider extends PanelProvider
                         return $user;
                     });
         }
+
         return $plugins;
     }
 }

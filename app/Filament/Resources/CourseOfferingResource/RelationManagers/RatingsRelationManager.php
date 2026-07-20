@@ -23,10 +23,11 @@ class RatingsRelationManager extends RelationManager
                     ->label('Evaluator')
                     ->options(function () {
                         $campusId = filament()->getTenant()?->id;
-                        return User::whereHas('campuses', fn($q) => $q->where('campus_id', $campusId))
+
+                        return User::whereHas('campuses', fn ($q) => $q->where('campus_id', $campusId))
                             ->where('is_student', true)
                             ->get()
-                            ->mapWithKeys(fn($u) => [$u->id => "{$u->student_id} - {$u->full_name}"]);
+                            ->mapWithKeys(fn ($u) => [$u->id => "{$u->student_id} - {$u->full_name}"]);
                     })
                     ->required()
                     ->searchable(),
@@ -35,6 +36,7 @@ class RatingsRelationManager extends RelationManager
                     ->label('Criteria')
                     ->options(function () {
                         $campusId = filament()->getTenant()?->id;
+
                         return RatingCriteria::where('campus_id', $campusId)
                             ->where('is_active', true)
                             ->orderBy('order')
@@ -78,7 +80,7 @@ class RatingsRelationManager extends RelationManager
 
                 Tables\Columns\TextColumn::make('score')
                     ->badge()
-                    ->color(fn(int $state): string => match (true) {
+                    ->color(fn (int $state): string => match (true) {
                         $state >= 4 => 'success',
                         $state >= 3 => 'warning',
                         default => 'danger',

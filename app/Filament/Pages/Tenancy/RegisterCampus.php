@@ -3,11 +3,12 @@
 namespace App\Filament\Pages\Tenancy;
 
 use App\Models\Campus;
-use Filament\Forms\Components\TextInput;
-use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Section;
+use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
 use Filament\Forms\Form;
+use Filament\Forms\Set;
 use Filament\Pages\Tenancy\RegisterTenant;
 use Illuminate\Support\Str;
 
@@ -36,7 +37,7 @@ class RegisterCampus extends RegisterTenant
                             ->required()
                             ->maxLength(255)
                             ->live(onBlur: true)
-                            ->afterStateUpdated(fn(\Filament\Forms\Set $set, ?string $state) => $set('slug', Str::slug($state))),
+                            ->afterStateUpdated(fn (Set $set, ?string $state) => $set('slug', Str::slug($state))),
 
                         TextInput::make('slug')
                             ->required()

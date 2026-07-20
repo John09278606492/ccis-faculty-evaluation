@@ -11,7 +11,6 @@ use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\HtmlString;
 
 class AttemptsRelationManager extends RelationManager
@@ -133,7 +132,7 @@ class AttemptsRelationManager extends RelationManager
                     Forms\Components\Placeholder::make('auto_graded_summary')
                         ->label('')
                         ->content(new HtmlString(
-                            '<div class="space-y-2">' . $autoGraded->map(function (QuizAnswer $answer) {
+                            '<div class="space-y-2">'.$autoGraded->map(function (QuizAnswer $answer) {
                                 $icon = $answer->is_correct
                                     ? '<span class="text-success-600">✓</span>'
                                     : '<span class="text-danger-600">✕</span>';
@@ -141,9 +140,9 @@ class AttemptsRelationManager extends RelationManager
                                     ? e($answer->answer_text)
                                     : '<span class="text-gray-400">No answer</span>';
 
-                                return "<div class=\"text-sm\">{$icon} <strong>" . e($answer->question->question_text) . '</strong> — '
-                                    . "answered: {$given} — {$answer->points_awarded} / {$answer->question->points} pts</div>";
-                            })->implode('') . '</div>'
+                                return "<div class=\"text-sm\">{$icon} <strong>".e($answer->question->question_text).'</strong> — '
+                                    ."answered: {$given} — {$answer->points_awarded} / {$answer->question->points} pts</div>";
+                            })->implode('').'</div>'
                         )),
                 ])
                 ->collapsible();
@@ -166,7 +165,7 @@ class AttemptsRelationManager extends RelationManager
                         ->label('Submitted Answer')
                         ->content($isFile
                             ? ($answer->answer_text
-                                ? new HtmlString('<a href="' . Storage::url($answer->answer_text) . '" target="_blank" class="underline">View uploaded file</a>')
+                                ? new HtmlString('<a href="'.e(route('quiz-submissions.download', $answer)).'" class="underline">Download uploaded file</a>')
                                 : 'No file submitted')
                             : ($answer->answer_text ?: '—')),
 

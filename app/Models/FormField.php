@@ -39,19 +39,8 @@ class FormField extends Model
         'section_header' => 'Section Header',
         'text' => 'Text Input',
         'textarea' => 'Text Area',
-        'number' => 'Number',
-        'email' => 'Email',
-        'tel' => 'Phone Number',
-        'url' => 'URL',
-        'date' => 'Date',
-        'datetime' => 'Date & Time',
-        'time' => 'Time',
         'select' => 'Dropdown (Single)',
-        'multiselect' => 'Dropdown (Multiple)',
-        'checkbox' => 'Checkbox (Yes/No)',
-        'checkboxlist' => 'Checkbox List',
         'radio' => 'Radio Buttons',
-        'file' => 'File Upload',
         'rating' => 'Star Rating',
         'likert_scale' => 'Likert Scale (5-point)', // For NBC 481 style ratings
     ];
@@ -61,8 +50,6 @@ class FormField extends Model
      */
     public const TYPES_WITH_OPTIONS = [
         'select',
-        'multiselect',
-        'checkboxlist',
         'radio',
     ];
 

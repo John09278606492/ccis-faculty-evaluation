@@ -6,9 +6,11 @@ use App\Models\FormField;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\RelationManagers\RelationManager;
+use Filament\Support\Enums\FontFamily;
 use Filament\Tables;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
+use Illuminate\Support\Str;
 
 class FieldsRelationManager extends RelationManager
 {
@@ -21,7 +23,7 @@ class FieldsRelationManager extends RelationManager
     public function form(Form $form): Form
     {
         // Check if the parent form has a custom rating scale
-        $hasCustomScale = !empty($this->ownerRecord?->rating_scale);
+        $hasCustomScale = ! empty($this->ownerRecord?->rating_scale);
 
         return $form
             ->schema([
@@ -31,7 +33,7 @@ class FieldsRelationManager extends RelationManager
                             ->required()
                             ->maxLength(255)
                             ->live(onBlur: true)
-                            ->afterStateUpdated(fn($state, $set) => $set('name', \Illuminate\Support\Str::snake($state))),
+                            ->afterStateUpdated(fn ($state, $set) => $set('name', Str::snake($state))),
 
                         Forms\Components\TextInput::make('name')
                             ->required()
@@ -51,7 +53,7 @@ class FieldsRelationManager extends RelationManager
                             ->default($hasCustomScale ? 'likert_scale' : null)
                             ->disabled($hasCustomScale)
                             ->dehydrated(true)
-                            ->afterStateUpdated(fn($set) => $set('options', null))
+                            ->afterStateUpdated(fn ($set) => $set('options', null))
                             ->helperText($hasCustomScale
                                 ? 'Type is locked to Likert Scale because this form uses a custom rating scale.'
                                 : 'Select the input type for this field'),
@@ -62,7 +64,7 @@ class FieldsRelationManager extends RelationManager
 
                         Forms\Components\TextInput::make('placeholder')
                             ->maxLength(255)
-                            ->visible(fn($get) => in_array($get('type'), ['text', 'textarea', 'email', 'tel', 'url', 'number'])),
+                            ->visible(fn ($get) => in_array($get('type'), ['text', 'textarea', 'email', 'tel', 'url', 'number'])),
 
                         Forms\Components\Textarea::make('help_text')
                             ->label('Help Text')
@@ -88,11 +90,11 @@ class FieldsRelationManager extends RelationManager
                             ->collapsible()
                             ->defaultItems(2),
                     ])
-                    ->visible(fn($get) => !$hasCustomScale && in_array($get('type'), FormField::TYPES_WITH_OPTIONS))
+                    ->visible(fn ($get) => ! $hasCustomScale && in_array($get('type'), FormField::TYPES_WITH_OPTIONS))
                     ->collapsible(),
 
                 Forms\Components\Hidden::make('order')
-                    ->default(fn() => $this->ownerRecord->fields()->max('order') + 1),
+                    ->default(fn () => $this->ownerRecord->fields()->max('order') + 1),
             ]);
     }
 
@@ -118,12 +120,12 @@ class FieldsRelationManager extends RelationManager
 
                 Tables\Columns\TextColumn::make('name')
                     ->label('Field Name')
-                    ->fontFamily(\Filament\Support\Enums\FontFamily::Mono)
+                    ->fontFamily(FontFamily::Mono)
                     ->color('gray'),
 
                 Tables\Columns\TextColumn::make('type')
                     ->badge()
-                    ->formatStateUsing(fn(string $state): string => FormField::TYPES[$state] ?? $state),
+                    ->formatStateUsing(fn (string $state): string => FormField::TYPES[$state] ?? $state),
 
                 Tables\Columns\IconColumn::make('is_required')
                     ->boolean()
@@ -131,14 +133,14 @@ class FieldsRelationManager extends RelationManager
 
                 Tables\Columns\TextColumn::make('options')
                     ->label('Options')
-                    ->formatStateUsing(fn($state) => is_array($state) ? count($state) . ' options' : '-')
+                    ->formatStateUsing(fn ($state) => is_array($state) ? count($state).' options' : '-')
                     ->color('gray'),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('type')
                     ->options(collect(FormField::TYPES)->except('section_header')->toArray()),
             ], layout: FiltersLayout::AboveContent)
-            ->modifyQueryUsing(fn($query) => $query->where('type', '!=', 'section_header'))
+            ->modifyQueryUsing(fn ($query) => $query->where('type', '!=', 'section_header'))
             ->headerActions([
                 Tables\Actions\CreateAction::make()
                     ->label('Add Field'),

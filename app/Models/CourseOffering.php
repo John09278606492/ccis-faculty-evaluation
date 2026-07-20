@@ -7,8 +7,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use App\Models\Form;
-use App\Models\FormSubmission;
 
 class CourseOffering extends Model
 {
@@ -104,6 +102,7 @@ class CourseOffering extends Model
     public function getDisplayNameAttribute(): string
     {
         $section = $this->section ? " - {$this->section}" : '';
+
         return "{$this->course?->code}{$section}";
     }
 }

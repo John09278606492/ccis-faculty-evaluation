@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Models\SchoolYear;
+use Filament\Support\Facades\FilamentView;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\ServiceProvider;
 use Kenepa\Banner\Facades\BannerManager;
@@ -15,10 +16,11 @@ class SchoolYearBannerServiceProvider extends ServiceProvider
         // Register a hook that runs after Filament serves a page
         // to check if the current campus has an active school year
         $this->app->booted(function () {
-            \Filament\Support\Facades\FilamentView::registerRenderHook(
+            FilamentView::registerRenderHook(
                 'panels::body.start',
                 function () {
                     $this->syncSchoolYearBanner();
+
                     return '';
                 }
             );
@@ -33,7 +35,7 @@ class SchoolYearBannerServiceProvider extends ServiceProvider
         try {
             $tenant = filament()->getTenant();
 
-            if (!$tenant) {
+            if (! $tenant) {
                 return;
             }
 
@@ -42,14 +44,14 @@ class SchoolYearBannerServiceProvider extends ServiceProvider
             // This ran the school-year query and re-wrote the banner cache entry
             // on every single page load for every user. School year status barely
             // ever changes mid-session, so it's throttled to once a minute per campus.
-            if (!Cache::add("school_year_banner_throttle_{$campusId}", true, 60)) {
+            if (! Cache::add("school_year_banner_throttle_{$campusId}", true, 60)) {
                 return;
             }
 
-            $bannerId = 'school_year_warning_campus_' . $campusId;
+            $bannerId = 'school_year_warning_campus_'.$campusId;
             $hasActive = SchoolYear::hasActiveForCampus($campusId);
 
-            if (!$hasActive) {
+            if (! $hasActive) {
                 // Create the warning banner using BannerData::fromArray
                 $bannerData = BannerData::fromArray([
                     'id' => $bannerId,

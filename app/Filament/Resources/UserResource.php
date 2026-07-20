@@ -2,31 +2,33 @@
 
 namespace App\Filament\Resources;
 
-use App\Models\User;
-use Filament\Tables;
-use Filament\Forms\Form;
-use Filament\Tables\Table;
-    use Filament\Tables\Enums\FiltersLayout;
-use Filament\Infolists\Infolist;
-use Filament\Resources\Resource;
-use Filament\Tables\Actions\Action;
-use Filament\Forms\Components\Select;
 use App\Filament\Exports\UserExporter;
 use App\Filament\Imports\UserImporter;
+use App\Filament\Resources\UserResource\Pages;
+use App\Models\Department;
+use App\Models\User;
 use Filament\Forms\Components\Section;
-use Filament\Support\Enums\FontWeight;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
+use Filament\Forms\Form;
+use Filament\Infolists\Components\Section as InfolistSection;
+use Filament\Infolists\Components\TextEntry;
+use Filament\Infolists\Infolist;
+use Filament\Resources\Resource;
+use Filament\Support\Enums\FontWeight;
+use Filament\Tables;
+use Filament\Tables\Actions\Action;
 use Filament\Tables\Actions\ExportAction;
+use Filament\Tables\Actions\ExportBulkAction;
 use Filament\Tables\Actions\ImportAction;
+use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
-use Filament\Infolists\Components\TextEntry;
-use Filament\Tables\Actions\ExportBulkAction;
-use App\Filament\Resources\UserResource\Pages;
-use STS\FilamentImpersonate\Tables\Actions\Impersonate;
-use Filament\Infolists\Components\Section as InfolistSection;
+use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Spatie\Permission\Models\Role;
+use STS\FilamentImpersonate\Tables\Actions\Impersonate;
 
 class UserResource extends Resource
 {
@@ -44,7 +46,7 @@ class UserResource extends Resource
      * super_admin can see all users regardless of campus.
      * Non-super_admin users cannot see super_admin accounts.
      */
-    public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
+    public static function getEloquentQuery(): Builder
     {
         $currentUser = auth()->user();
 
@@ -55,7 +57,7 @@ class UserResource extends Resource
 
         // Non-super_admin users: apply tenant scoping and hide super_admin accounts
         $query = parent::getEloquentQuery();
-        $query->whereDoesntHave('roles', fn($q) => $q->where('name', 'super_admin'));
+        $query->whereDoesntHave('roles', fn ($q) => $q->where('name', 'super_admin'));
 
         return $query;
     }
@@ -65,7 +67,7 @@ class UserResource extends Resource
      */
     protected static function hasMultipleSuperAdmins(): bool
     {
-        return User::whereHas('roles', fn($q) => $q->where('name', 'super_admin'))->count() > 1;
+        return User::whereHas('roles', fn ($q) => $q->where('name', 'super_admin'))->count() > 1;
     }
 
     /**
@@ -101,8 +103,8 @@ class UserResource extends Resource
                             ->unique(ignoreRecord: true),
                         TextInput::make('password')
                             ->password()
-                            ->required(fn(string $operation): bool => $operation === 'create')
-                            ->dehydrated(fn(?string $state): bool => filled($state))
+                            ->required(fn (string $operation): bool => $operation === 'create')
+                            ->dehydrated(fn (?string $state): bool => filled($state))
                             ->maxLength(255),
                         Select::make('roles')
                             ->relationship(
@@ -117,6 +119,7 @@ class UserResource extends Resource
                                     }
 
                                     $campusId = filament()->getTenant()?->id;
+
                                     return $query->where('name', '!=', 'super_admin')
                                         ->where('team_id', $campusId);
                                 }
@@ -153,8 +156,8 @@ class UserResource extends Resource
                             ->label('Student ID')
                             ->integer()
                             ->unique(table: 'users', column: 'student_id', ignoreRecord: true)
-                            ->required(fn(callable $get) => $get('is_student'))
-                            ->visible(fn(callable $get) => $get('is_student')),
+                            ->required(fn (callable $get) => $get('is_student'))
+                            ->visible(fn (callable $get) => $get('is_student')),
                     ])->columns(2)
                     ->collapsible(),
 
@@ -181,30 +184,31 @@ class UserResource extends Resource
                             ->label('Department')
                             ->options(function () {
                                 $campusId = filament()->getTenant()?->id;
-                                return \App\Models\Department::where('campus_id', $campusId)
+
+                                return Department::where('campus_id', $campusId)
                                     ->where('is_active', true)
                                     ->pluck('name', 'id');
                             })
                             ->searchable()
                             ->preload()
-                            ->required(fn(callable $get) => $get('is_instructor'))
-                            ->visible(fn(callable $get) => $get('is_instructor')),
+                            ->required(fn (callable $get) => $get('is_instructor'))
+                            ->visible(fn (callable $get) => $get('is_instructor')),
                         TextInput::make('employee_id')
                             ->label('Employee ID')
                             ->integer()
                             ->unique(table: 'users', column: 'employee_id', ignoreRecord: true)
-                            ->required(fn(callable $get) => $get('is_instructor'))
-                            ->visible(fn(callable $get) => $get('is_instructor')),
+                            ->required(fn (callable $get) => $get('is_instructor'))
+                            ->visible(fn (callable $get) => $get('is_instructor')),
                         TextInput::make('position')
                             ->label('Position')
                             ->placeholder('e.g., Professor, Assistant Professor')
                             ->maxLength(100)
-                            ->visible(fn(callable $get) => $get('is_instructor')),
+                            ->visible(fn (callable $get) => $get('is_instructor')),
                         TextInput::make('phone')
                             ->label('Phone')
                             ->tel()
                             ->maxLength(20)
-                            ->visible(fn(callable $get) => $get('is_instructor')),
+                            ->visible(fn (callable $get) => $get('is_instructor')),
                     ])->columns(2)
                     ->collapsible(),
             ]);
@@ -219,9 +223,9 @@ class UserResource extends Resource
                         ->searchable()
                         ->circular()
                         ->grow(false)
-                        ->getStateUsing(fn($record) => $record->avatar_url
+                        ->getStateUsing(fn ($record) => $record->avatar_url
                             ? $record->avatar_url
-                            : "https://ui-avatars.com/api/?name=" . urlencode($record->name)),
+                            : 'https://ui-avatars.com/api/?name='.urlencode($record->name)),
                     Tables\Columns\Layout\Stack::make([
                         Tables\Columns\TextColumn::make('name')
                             ->searchable()
@@ -232,7 +236,7 @@ class UserResource extends Resource
                             ->icon('heroicon-o-identification')
                             ->color('gray')
                             ->size('sm')
-                            ->visible(fn($record) => $record?->is_student),
+                            ->visible(fn ($record) => $record?->is_student),
                     ]),
                     Tables\Columns\Layout\Stack::make([
                         Tables\Columns\TextColumn::make('roles.name')
@@ -301,6 +305,7 @@ class UserResource extends Resource
                                     }
 
                                     $campusId = filament()->getTenant()?->id;
+
                                     return $query->where('name', '!=', 'super_admin')
                                         ->where('team_id', $campusId);
                                 }
@@ -310,21 +315,21 @@ class UserResource extends Resource
                             ->searchable()
                             ->preload()
                             ->optionsLimit(10)
-                            ->getOptionLabelFromRecordUsing(fn($record) => $record->name),
+                            ->getOptionLabelFromRecordUsing(fn ($record) => $record->name),
                     ])
                     // Custom actions don't inherit Policy checks automatically like
                     // EditAction/DeleteAction do, so update_user is checked explicitly.
-                    ->visible(fn($record) => !static::isSuperAdmin($record) && (auth()->user()?->can('update_user') ?? false)),
+                    ->visible(fn ($record) => ! static::isSuperAdmin($record) && (auth()->user()?->can('update_user') ?? false)),
                 // Impersonate::make(),
                 Tables\Actions\DeleteAction::make()
                     // Prevent deletion of super_admin accounts
-                    ->hidden(fn($record) => static::isSuperAdmin($record)),
+                    ->hidden(fn ($record) => static::isSuperAdmin($record)),
             ])
             ->headerActions([
                 ExportAction::make()
                     ->exporter(UserExporter::class),
                 ImportAction::make()
-                    ->importer(UserImporter::class)
+                    ->importer(UserImporter::class),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
@@ -333,11 +338,11 @@ class UserResource extends Resource
                         ->deselectRecordsAfterCompletion()
                         ->before(function ($records) {
                             // Filter out super_admin users from deletion
-                            return $records->filter(fn($record) => !$record->hasRole('super_admin'));
+                            return $records->filter(fn ($record) => ! $record->hasRole('super_admin'));
                         }),
                 ]),
                 ExportBulkAction::make()
-                    ->exporter(UserExporter::class)
+                    ->exporter(UserExporter::class),
             ]);
     }
 
@@ -377,7 +382,7 @@ class UserResource extends Resource
                             ->label('Full Name'),
                     ])
                     ->columns(3)
-                    ->visible(fn($record) => $record->is_student),
+                    ->visible(fn ($record) => $record->is_student),
             ]);
     }
 }

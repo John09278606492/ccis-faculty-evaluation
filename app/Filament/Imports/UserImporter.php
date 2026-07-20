@@ -2,8 +2,8 @@
 
 namespace App\Filament\Imports;
 
-use App\Models\User;
 use App\Models\Department;
+use App\Models\User;
 use Filament\Actions\Imports\ImportColumn;
 use Filament\Actions\Imports\Importer;
 use Filament\Actions\Imports\Models\Import;
@@ -63,20 +63,21 @@ class UserImporter extends Importer
                 ])
                 ->required()
                 ->live()
-                ->afterStateUpdated(fn(callable $set) => $set('department_id', null))
+                ->afterStateUpdated(fn (callable $set) => $set('department_id', null))
                 ->helperText('Select the type of users being imported. This determines which columns are required.'),
             Select::make('department_id')
                 ->label('Department')
                 ->options(function () {
                     $campusId = filament()->getTenant()?->id;
+
                     return Department::where('campus_id', $campusId)
                         ->where('is_active', true)
                         ->pluck('name', 'id');
                 })
                 ->required()
                 ->searchable()
-                ->visible(fn(Get $get) => filled($get('profile_type')))
-                ->helperText(fn(Get $get) => match ($get('profile_type')) {
+                ->visible(fn (Get $get) => filled($get('profile_type')))
+                ->helperText(fn (Get $get) => match ($get('profile_type')) {
                     'student' => 'Department for these students (for reference)',
                     'instructor' => 'Department these instructors will be assigned to',
                     default => 'Select a department',
@@ -114,7 +115,7 @@ class UserImporter extends Importer
             return $existingUser; // Update existing user
         }
 
-        return new User();
+        return new User;
     }
 
     /**
@@ -126,7 +127,7 @@ class UserImporter extends Importer
         $departmentId = $this->options['department_id'] ?? null;
 
         // Set common fields
-        if (!$this->record->password) {
+        if (! $this->record->password) {
             // Set a default password for new users (they should reset it)
             $this->record->password = Hash::make('password123');
         }
@@ -155,17 +156,17 @@ class UserImporter extends Importer
     {
         $campusId = filament()->getTenant()?->id;
 
-        if ($campusId && !$this->record->campuses()->where('campus_id', $campusId)->exists()) {
+        if ($campusId && ! $this->record->campuses()->where('campus_id', $campusId)->exists()) {
             $this->record->campuses()->attach($campusId);
         }
     }
 
     public static function getCompletedNotificationBody(Import $import): string
     {
-        $body = 'Your user import has completed and ' . number_format($import->successful_rows) . ' ' . str('row')->plural($import->successful_rows) . ' imported.';
+        $body = 'Your user import has completed and '.number_format($import->successful_rows).' '.str('row')->plural($import->successful_rows).' imported.';
 
         if ($failedRowsCount = $import->getFailedRowsCount()) {
-            $body .= ' ' . number_format($failedRowsCount) . ' ' . str('row')->plural($failedRowsCount) . ' failed to import.';
+            $body .= ' '.number_format($failedRowsCount).' '.str('row')->plural($failedRowsCount).' failed to import.';
         }
 
         return $body;

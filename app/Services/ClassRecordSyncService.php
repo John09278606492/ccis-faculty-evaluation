@@ -7,6 +7,7 @@ use App\Models\ClassRecordSheet;
 use App\Models\Quiz;
 use App\Models\QuizAttempt;
 use Illuminate\Support\Facades\Storage;
+use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
@@ -36,7 +37,7 @@ class ClassRecordSyncService
         $spreadsheet = IOFactory::load($fullPath);
         $sheet = $spreadsheet->getSheetByName($recordSheet->sheet_name);
 
-        if (!$sheet) {
+        if (! $sheet) {
             throw new \RuntimeException("Sheet \"{$recordSheet->sheet_name}\" no longer exists in this file.");
         }
 
@@ -50,7 +51,7 @@ class ClassRecordSyncService
 
         $studentIdColumn = $this->locateColumnByHeader($sheet, $recordSheet->student_id_header);
 
-        if (!$studentIdColumn) {
+        if (! $studentIdColumn) {
             throw new \RuntimeException(
                 "Could not find a column headed \"{$recordSheet->student_id_header}\" in this sheet."
             );
@@ -112,7 +113,7 @@ class ClassRecordSyncService
         [$groupStartCol, $groupEndCol] = $this->locateQuizzesGroupRange($sheet);
         $totalScoreCol = $this->locateColumnInRange($sheet, $groupStartCol, $groupEndCol, self::HEADER_ROW, 'total score');
 
-        if (!$totalScoreCol) {
+        if (! $totalScoreCol) {
             throw new \RuntimeException('Could not find the "Total Score" column in the Quizzes & Topic Analysis group.');
         }
 
@@ -131,7 +132,7 @@ class ClassRecordSyncService
         $newColumn = $totalScoreCol; // the freshly inserted (now-empty) column occupies the old Total Score letter
         $newTotalScoreCol = $this->shiftColumn($totalScoreCol, 1);
 
-        $sheet->setCellValue("{$newColumn}" . self::HEADER_ROW, $quiz->title);
+        $sheet->setCellValue("{$newColumn}".self::HEADER_ROW, $quiz->title);
 
         $this->extendTotalScoreFormulas($sheet, $groupStartCol, $newTotalScoreCol);
 
@@ -278,11 +279,11 @@ class ClassRecordSyncService
 
     protected function columnIndex(string $column): int
     {
-        return \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($column);
+        return Coordinate::columnIndexFromString($column);
     }
 
     protected function shiftColumn(string $column, int $by): string
     {
-        return \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($this->columnIndex($column) + $by);
+        return Coordinate::stringFromColumnIndex($this->columnIndex($column) + $by);
     }
 }

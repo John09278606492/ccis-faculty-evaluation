@@ -32,7 +32,7 @@ class SchoolYearResource extends Resource
                             ->required()
                             ->maxLength(50)
                             ->placeholder('e.g., 2025-2026')
-                            ->unique(ignoreRecord: true, modifyRuleUsing: fn($rule) => $rule->where('campus_id', filament()->getTenant()?->id)),
+                            ->unique(ignoreRecord: true, modifyRuleUsing: fn ($rule) => $rule->where('campus_id', filament()->getTenant()?->id)),
 
                         Forms\Components\DatePicker::make('start_date')
                             ->required()

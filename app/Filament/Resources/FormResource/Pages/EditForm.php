@@ -17,7 +17,7 @@ class EditForm extends EditRecord
      */
     protected function mutateFormDataBeforeSave(array $data): array
     {
-        if (!array_key_exists('rating_scale', $data)) {
+        if (! array_key_exists('rating_scale', $data)) {
             $data['rating_scale'] = null;
         }
 
@@ -36,7 +36,7 @@ class EditForm extends EditRecord
                 ->label('Build Form')
                 ->icon('heroicon-o-squares-plus')
                 ->color('primary')
-                ->url(fn() => route('filament.admin.pages.forms.{record}.builder', [
+                ->url(fn () => route('filament.admin.pages.forms.{record}.builder', [
                     'tenant' => filament()->getTenant(),
                     'record' => $this->record->id,
                 ])),
@@ -44,7 +44,7 @@ class EditForm extends EditRecord
                 ->label('Preview Form')
                 ->icon('heroicon-o-eye')
                 ->color('warning')
-                ->url(fn() => route('form.preview', $this->record))
+                ->url(fn () => route('form.preview', $this->record))
                 ->openUrlInNewTab(),
             Actions\DeleteAction::make(),
         ];

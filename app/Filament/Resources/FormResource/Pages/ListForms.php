@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\FormResource\Pages;
 
 use App\Filament\Resources\FormResource;
+use Filament\Actions\CreateAction;
 use Filament\Resources\Pages\ListRecords;
 
 class ListForms extends ListRecords
@@ -12,7 +13,7 @@ class ListForms extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
-            \Filament\Actions\CreateAction::make(),
+            CreateAction::make(),
         ];
     }
 }

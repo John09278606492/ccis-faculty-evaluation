@@ -68,7 +68,7 @@ class QuizQuestion extends Model
      */
     public function grade(?string $answer): ?bool
     {
-        if (!$this->isAutoGraded() || $answer === null) {
+        if (! $this->isAutoGraded() || $answer === null) {
             return $this->isAutoGraded() ? false : null;
         }
 

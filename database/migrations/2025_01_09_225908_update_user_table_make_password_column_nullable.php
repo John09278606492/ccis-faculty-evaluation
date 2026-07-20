@@ -11,9 +11,9 @@ return new class extends Migration
      */
     public function up(): void
     {
-        //alter table user
+        // alter table user
         Schema::table('users', function (Blueprint $table) {
-            //change password column to nullable
+            // change password column to nullable
             $table->string('password')->nullable(true)->change();
         });
     }
@@ -24,7 +24,7 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            //opposite of up
+            // opposite of up
             $table->string('password')->nullable(false)->change();
         });
     }

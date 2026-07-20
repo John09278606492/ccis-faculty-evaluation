@@ -28,6 +28,7 @@ class LatestUsersWidget extends BaseWidget
         }
 
         $permissionName = static::getPermissionName();
+
         return $user->can($permissionName);
     }
 
@@ -36,7 +37,7 @@ class LatestUsersWidget extends BaseWidget
         $tenant = Filament::getTenant();
 
         $query = $tenant
-            ? User::whereHas('campuses', fn($q) => $q->where('campuses.id', $tenant->id))->latest()
+            ? User::whereHas('campuses', fn ($q) => $q->where('campuses.id', $tenant->id))->latest()
             : User::latest();
 
         return $table
@@ -47,7 +48,7 @@ class LatestUsersWidget extends BaseWidget
                 Tables\Columns\ImageColumn::make('avatar_url')
                     ->label('Avatar')
                     ->circular()
-                    ->defaultImageUrl(fn(User $record) => 'https://ui-avatars.com/api/?name=' . urlencode($record->name) . '&color=7F9CF5&background=EBF4FF'),
+                    ->defaultImageUrl(fn (User $record) => 'https://ui-avatars.com/api/?name='.urlencode($record->name).'&color=7F9CF5&background=EBF4FF'),
                 Tables\Columns\TextColumn::make('name')
                     ->searchable()
                     ->sortable(),
@@ -57,7 +58,7 @@ class LatestUsersWidget extends BaseWidget
                 Tables\Columns\TextColumn::make('roles.name')
                     ->label('Roles')
                     ->badge()
-                    ->color(fn(string $state): string => match ($state) {
+                    ->color(fn (string $state): string => match ($state) {
                         'super_admin' => 'danger',
                         'panel_user' => 'gray',
                         'student' => 'info',

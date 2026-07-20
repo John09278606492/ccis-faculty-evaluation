@@ -23,17 +23,17 @@ class Dashboard extends BaseDashboard
     protected function getDefaultWidgetOrder(): array
     {
         return [
-                // 1. Stats overview (full width)
+            // 1. Stats overview (full width)
             StatsOverviewWidget::class,
-                // 2-3. Role-specific tables (full width, shown based on role)
+            // 2-3. Role-specific tables (full width, shown based on role)
             StudentPendingEvaluationsWidget::class,
             InstructorEvaluationSummaryWidget::class,
-                // 4-5. Evaluation charts (side-by-side, half width each)
+            // 4-5. Evaluation charts (side-by-side, half width each)
             EvaluationSubmissionsChart::class,
             EvaluationCompletionChart::class,
-                // 6. Latest users table (full width, admin only)
+            // 6. Latest users table (full width, admin only)
             LatestUsersWidget::class,
-                // 7-8. Admin charts (side-by-side, half width each)
+            // 7-8. Admin charts (side-by-side, half width each)
             DepartmentOverviewChart::class,
             UserRegistrationChart::class,
         ];
@@ -53,13 +53,14 @@ class Dashboard extends BaseDashboard
             if (method_exists($widgetClass, 'canView')) {
                 return $widgetClass::canView();
             }
+
             return true;
         })->values()->all();
 
         // Apply user's saved order if available
         $savedOrder = $user->widget_order ?? [];
 
-        if (!empty($savedOrder)) {
+        if (! empty($savedOrder)) {
             // Build lookup: class name => class
             $classMap = [];
             foreach ($visible as $class) {
