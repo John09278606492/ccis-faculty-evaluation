@@ -59,6 +59,9 @@ class QuizQuestion extends Model
                 $issues[] = 'The starter files are malformed.';
             }
             array_push($issues, ...CodeProject::issues($this->starterFiles()));
+            if (mb_strlen($this->databaseStarterSql()) > CodeProject::MAX_LENGTH) {
+                $issues[] = 'The starter SQL may not exceed '.number_format(CodeProject::MAX_LENGTH).' characters.';
+            }
             if ($this->referenceFiles() && ($referenceIssues = CodeProject::issues($this->referenceFiles()))) {
                 $issues[] = 'Reference solution: '.implode(' ', $referenceIssues);
             }
@@ -168,6 +171,14 @@ class QuizQuestion extends Model
     }
 
     /**
+     * Starter files plus any empty starter folders, as stored project JSON.
+     */
+    public function starterProject(): string
+    {
+        return CodeProject::encode($this->starterFiles(), $this->options['folders'] ?? []);
+    }
+
+    /**
      * Reference solution files (empty when the instructor gave none).
      *
      * @return list<array{name: string, content: string}>
@@ -192,9 +203,42 @@ class QuizQuestion extends Model
         return CodeProject::decode($answer, $this->starterFiles());
     }
 
+    /**
+     * Whether each student gets their own MySQL database (used through phpMyAdmin)
+     * for this code question.
+     */
+    public function hasDatabase(): bool
+    {
+        return $this->type === 'code' && (bool) ($this->options['database']['enabled'] ?? false);
+    }
+
+    /**
+     * SQL loaded into each student's database when it is created.
+     */
+    public function databaseStarterSql(): string
+    {
+        return (string) ($this->options['database']['starter_sql'] ?? '');
+    }
+
     public function codeRunner(): ?string
     {
         return CodeProject::runner($this->starterFiles());
+    }
+
+    /**
+     * Whether students may add, rename and delete files and folders in their workspace.
+     */
+    public function studentsCanManageFiles(): bool
+    {
+        return (bool) ($this->options['allow_student_files'] ?? false);
+    }
+
+    /**
+     * Whether the editor offers code suggestions (autocomplete) for this question.
+     */
+    public function allowsAutocomplete(): bool
+    {
+        return (bool) ($this->options['autocomplete'] ?? false);
     }
 
     public function studentsCanRunCode(): bool
@@ -203,8 +247,9 @@ class QuizQuestion extends Model
     }
 
     /**
-     * Keep only the question's own files from a submitted answer, in starter order.
-     * Returns null when the answer is not a valid file list for this question.
+     * Keep only the question's own files from a submitted answer, in starter order,
+     * unless students may manage files. Returns null when the answer is not a valid
+     * file list for this question.
      */
     public function normalizeCodeAnswer(string $answer): ?string
     {
@@ -212,6 +257,12 @@ class QuizQuestion extends Model
         $submitted = CodeProject::normalize(is_array($decoded) ? ($decoded['files'] ?? null) : null);
         if ($submitted === null) {
             return null;
+        }
+        if ($this->studentsCanManageFiles()) {
+            // The student shapes the workspace: any valid set of files and folders.
+            return CodeProject::issues($submitted) === []
+                ? CodeProject::encode($submitted, CodeProject::decodeFolders($answer))
+                : null;
         }
         $byName = array_column($submitted, 'content', 'name');
         $files = array_map(

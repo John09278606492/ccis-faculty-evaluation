@@ -29,11 +29,17 @@ class QuizResource extends Resource implements HasShieldPermissions
 
     protected static ?string $navigationIcon = 'heroicon-o-pencil-square';
 
-    protected static ?string $navigationGroup = 'Quizzes';
+    protected static ?string $navigationGroup = 'Assessments';
+
+    protected static ?string $slug = 'assessments';
+
+    protected static ?string $modelLabel = 'assessment';
+
+    protected static ?string $pluralModelLabel = 'assessments';
 
     protected static ?int $navigationSort = 1;
 
-    protected static ?string $navigationLabel = 'Quizzes & Activities';
+    protected static ?string $navigationLabel = 'Assessments';
 
     // We scope manually via the course offering -> semester -> school year -> campus chain.
     protected static bool $isScopedToTenant = false;
@@ -111,7 +117,7 @@ class QuizResource extends Resource implements HasShieldPermissions
             ->icon('heroicon-o-link')
             ->color('gray')
             ->visible(fn (Quiz $record) => auth()->user()?->can('update', $record) ?? false)
-            ->modalHeading('Share this quiz with your students')
+            ->modalHeading(fn (Quiz $record) => 'Share this '.strtolower($record->kindLabel()).' with your students')
             ->modalDescription('Anyone with this link who isn\'t signed in yet will be asked to log in first, then sent straight here. Already signed in as an instructor/admin in this browser? You\'ll see the Preview instead — open the link in a private/incognito window (or log out first) to see the student login.')
             ->modalSubmitAction(false)
             ->modalCancelActionLabel('Close')
@@ -369,7 +375,7 @@ class QuizResource extends Resource implements HasShieldPermissions
     {
         return $form
             ->schema([
-                Forms\Components\Section::make('Quiz Details')
+                Forms\Components\Section::make('Assessment Details')
                     ->schema([
                         Forms\Components\Select::make('course_offering_id')
                             ->label('Course and section')
@@ -476,7 +482,7 @@ class QuizResource extends Resource implements HasShieldPermissions
                         Forms\Components\Toggle::make('is_published')
                             ->label('Published (visible to students)')
                             ->disabled(fn (?Quiz $record) => ! $record)
-                            ->helperText('Save a draft, add questions and answer keys, then publish. Incomplete quizzes cannot be published.')
+                            ->helperText('Save a draft, add questions and answer keys, then publish. Incomplete assessments cannot be published.')
                             ->default(false),
                     ])->columns(2),
             ]);
@@ -554,7 +560,7 @@ class QuizResource extends Resource implements HasShieldPermissions
                 ])->label('More')->button(),
             ])
             ->defaultSort('created_at', 'desc')
-            ->emptyStateHeading('Create your first quiz')
+            ->emptyStateHeading('Create your first assessment')
             ->emptyStateDescription('Save a draft, add questions, preview it, then publish for your students.')
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([

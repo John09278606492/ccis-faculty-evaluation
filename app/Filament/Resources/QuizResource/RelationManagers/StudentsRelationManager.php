@@ -42,7 +42,7 @@ class StudentsRelationManager extends RelationManager
 
         return $table
             ->heading('Students & Eligibility')
-            ->description('Control who this quiz is assigned to, and see who has not attempted it yet.')
+            ->description('Control who this assessment is assigned to, and see who has not attempted it yet.')
             ->columns([
                 Tables\Columns\TextColumn::make('student_id')
                     ->label('Student ID')
@@ -53,7 +53,7 @@ class StudentsRelationManager extends RelationManager
                     ->searchable(['first_name', 'last_name']),
 
                 Tables\Columns\ToggleColumn::make('assigned')
-                    ->label('Can Take Quiz')
+                    ->label('Can Take It')
                     ->getStateUsing(fn (User $record) => $this->getQuiz()->isAssignedTo($record->id))
                     ->updateStateUsing(fn (User $record, $state) => $this->setAssignment([$record->id], (bool) $state))
                     // Once a student has started/submitted an attempt, their assignment
@@ -82,7 +82,7 @@ class StudentsRelationManager extends RelationManager
                     ->query(fn (Builder $query) => $query->whereDoesntHave('quizAttempts', fn ($q) => $q->where('quiz_id', $this->getQuiz()->id)))
                     ->toggle(),
                 Tables\Filters\Filter::make('not_assigned')
-                    ->label('Not assigned this quiz')
+                    ->label('Not assigned')
                     ->query(function (Builder $query) {
                         if ($this->getQuiz()->assign_to_all) {
                             // Everyone's assigned — nothing matches.
@@ -100,7 +100,7 @@ class StudentsRelationManager extends RelationManager
                     ->color('gray')
                     ->visible(fn () => ! $this->getQuiz()->assign_to_all)
                     ->requiresConfirmation()
-                    ->modalDescription('Every student enrolled in this course offering will be able to take this quiz.')
+                    ->modalDescription('Every student enrolled in this course offering will be able to take this assessment.')
                     ->action(function () {
                         $quiz = $this->getQuiz();
                         $quiz->update(['assign_to_all' => true]);
@@ -169,7 +169,7 @@ class StudentsRelationManager extends RelationManager
         if (! empty($lockedIds) && empty($userIds)) {
             Notification::make()
                 ->title('No changes made')
-                ->body('The selected student(s) have already attempted this quiz, so their assignment is locked.')
+                ->body('The selected student(s) have already attempted this assessment, so their assignment is locked.')
                 ->warning()
                 ->send();
 
@@ -179,7 +179,7 @@ class StudentsRelationManager extends RelationManager
         Notification::make()
             ->title($assign ? 'Student(s) assigned' : 'Student(s) unassigned')
             ->body(! empty($lockedIds)
-                ? count($lockedIds).' student(s) were skipped because they already attempted this quiz.'
+                ? count($lockedIds).' student(s) were skipped because they already attempted this assessment.'
                 : null)
             ->success()
             ->send();

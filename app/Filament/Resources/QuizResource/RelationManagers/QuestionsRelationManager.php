@@ -104,6 +104,18 @@ class QuestionsRelationManager extends RelationManager
                     ->columnSpanFull()
                     ->visible(fn (Forms\Get $get) => $get('type') === 'code'),
 
+                Forms\Components\Toggle::make('allow_student_files')
+                    ->label('Students can create files and folders')
+                    ->helperText('Like a VS Code workspace: students add, rename and delete files and folders. Otherwise they edit exactly your starter files.')
+                    ->columnSpanFull()
+                    ->visible(fn (Forms\Get $get) => $get('type') === 'code'),
+
+                Forms\Components\Toggle::make('autocomplete')
+                    ->label('Code suggestions (autocomplete)')
+                    ->helperText('Shows keyword and tag suggestions while typing. Leave off when the exam tests what students remember.')
+                    ->columnSpanFull()
+                    ->visible(fn (Forms\Get $get) => $get('type') === 'code'),
+
                 CodeEditor::make('starter_files')
                     ->label('Starter files')
                     ->helperText('Students get exactly these files. Double-click a tab to rename it.')
@@ -112,6 +124,20 @@ class QuestionsRelationManager extends RelationManager
                     ->canRun()
                     ->columnSpanFull()
                     ->visible(fn (Forms\Get $get) => $get('type') === 'code'),
+
+                Forms\Components\Toggle::make('database_enabled')
+                    ->label('Give each student a MySQL database (phpMyAdmin)')
+                    ->helperText('Students open phpMyAdmin from the assessment and work in their own database on the separate student server. It is exported with their answer when they submit.')
+                    ->live()
+                    ->columnSpanFull()
+                    ->visible(fn (Forms\Get $get) => $get('type') === 'code'),
+
+                CodeEditor::make('database_starter')
+                    ->label('Starter SQL')
+                    ->helperText("Optional. Runs in each student's new database, for example to create tables and sample rows.")
+                    ->starterFiles([['name' => 'setup.sql', 'content' => '']])
+                    ->columnSpanFull()
+                    ->visible(fn (Forms\Get $get) => $get('type') === 'code' && $get('database_enabled')),
 
                 CodeEditor::make('reference_files')
                     ->label('Reference solution')
@@ -159,7 +185,14 @@ class QuestionsRelationManager extends RelationManager
             $data['options'] = [
                 'language' => $data['code_language'] ?? 'plaintext',
                 'files' => CodeProject::decode($data['starter_files'] ?? null, []),
+                'folders' => CodeProject::decodeFolders($data['starter_files'] ?? null),
                 'allow_run' => (bool) ($data['allow_run'] ?? true),
+                'allow_student_files' => (bool) ($data['allow_student_files'] ?? false),
+                'autocomplete' => (bool) ($data['autocomplete'] ?? false),
+                'database' => [
+                    'enabled' => (bool) ($data['database_enabled'] ?? false),
+                    'starter_sql' => CodeProject::decode($data['database_starter'] ?? null, [['name' => 'setup.sql', 'content' => '']])[0]['content'],
+                ],
             ];
             $reference = filled($data['reference_files'] ?? null) ? CodeProject::decode($data['reference_files'], []) : [];
             $data['correct_answer'] = CodeProject::length($reference) > 0 ? ['files' => $reference] : null;
@@ -174,7 +207,7 @@ class QuestionsRelationManager extends RelationManager
         if ($issues = (new QuizQuestion($data))->validationIssues()) {
             throw ValidationException::withMessages(['mountedTableActionsData.0.options' => implode(' ', $issues)]);
         }
-        unset($data['true_false_correct'], $data['code_language'], $data['allow_run'], $data['starter_files'], $data['reference_files']);
+        unset($data['true_false_correct'], $data['code_language'], $data['allow_run'], $data['starter_files'], $data['reference_files'], $data['database_enabled'], $data['database_starter'], $data['allow_student_files'], $data['autocomplete']);
 
         return $data;
     }
@@ -203,7 +236,11 @@ class QuestionsRelationManager extends RelationManager
             $question = new QuizQuestion($data);
             $data['code_language'] = $question->codeLanguage();
             $data['allow_run'] = $question->options['allow_run'] ?? true;
-            $data['starter_files'] = CodeProject::encode($question->starterFiles());
+            $data['database_enabled'] = $question->hasDatabase();
+            $data['database_starter'] = CodeProject::encode([['name' => 'setup.sql', 'content' => $question->databaseStarterSql()]]);
+            $data['starter_files'] = $question->starterProject();
+            $data['allow_student_files'] = $question->studentsCanManageFiles();
+            $data['autocomplete'] = $question->allowsAutocomplete();
             $data['reference_files'] = $question->referenceFiles() ? CodeProject::encode($question->referenceFiles()) : null;
         }
 

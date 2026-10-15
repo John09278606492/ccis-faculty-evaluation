@@ -61,7 +61,7 @@ class QuizBuilder extends Page
             $user->hasRole('super_admin')
                 || ($user->can('update_quiz') && $this->quizRecord->courseOffering->user_id === $user->id),
             403,
-            'You do not have permission to edit this quiz.'
+            'You do not have permission to edit this assessment.'
         );
         abort_unless((int) $this->quizRecord->campus?->id === (int) filament()->getTenant()?->id, 403);
         $this->loadQuestions();
@@ -71,7 +71,7 @@ class QuizBuilder extends Page
     {
         abort_unless(auth()->user()->can('update', $this->quizRecord), 403);
         if ($this->quizRecord->attempts()->exists()) {
-            throw ValidationException::withMessages(['selectedQuestionData' => 'Students have already started this quiz. Duplicate the quiz to change its questions without affecting their grades.']);
+            throw ValidationException::withMessages(['selectedQuestionData' => 'Students have already started this assessment. Duplicate it to change its questions without affecting their grades.']);
         }
     }
 
@@ -170,9 +170,13 @@ class QuizBuilder extends Page
             'correct_answer' => $question->type === 'short_answer' ? ($question->correct_answer ?? []) : [],
             'true_false_correct' => $question->type === 'true_false' ? ($question->correct_answer[0] ?? 'true') : 'true',
             'code_language' => $question->type === 'code' ? $question->codeLanguage() : 'web',
-            'starter_files' => $question->type === 'code' ? CodeProject::encode($question->starterFiles()) : '',
+            'starter_files' => $question->type === 'code' ? $question->starterProject() : '',
+            'allow_student_files' => $question->type === 'code' && $question->studentsCanManageFiles(),
+            'autocomplete' => $question->type === 'code' && $question->allowsAutocomplete(),
             'reference_files' => $question->type === 'code' && $question->referenceFiles() ? CodeProject::encode($question->referenceFiles()) : '',
             'allow_run' => $question->type !== 'code' || ($question->options['allow_run'] ?? true),
+            'database_enabled' => $question->hasDatabase(),
+            'database_starter' => CodeProject::encode([['name' => 'setup.sql', 'content' => $question->databaseStarterSql()]]),
         ];
         $this->savedQuestionData = $this->selectedQuestionData;
         $this->showProperties = true;
@@ -211,6 +215,7 @@ class QuizBuilder extends Page
             'selectedQuestionData.points' => ['required', 'integer', 'min:1', 'max:10000'],
             'selectedQuestionData.starter_files' => ['nullable', 'string', 'json'],
             'selectedQuestionData.reference_files' => ['nullable', 'string', 'json'],
+            'selectedQuestionData.database_starter' => ['nullable', 'string', 'json'],
         ]);
         if (! $this->selectedQuestionId) {
             return;
@@ -246,7 +251,14 @@ class QuizBuilder extends Page
             $data['options'] = [
                 'language' => (string) ($this->selectedQuestionData['code_language'] ?? 'plaintext'),
                 'files' => $this->decodeFiles($this->selectedQuestionData['starter_files'] ?? null) ?? [],
+                'folders' => CodeProject::decodeFolders($this->selectedQuestionData['starter_files'] ?? null),
                 'allow_run' => (bool) ($this->selectedQuestionData['allow_run'] ?? true),
+                'allow_student_files' => (bool) ($this->selectedQuestionData['allow_student_files'] ?? false),
+                'autocomplete' => (bool) ($this->selectedQuestionData['autocomplete'] ?? false),
+                'database' => [
+                    'enabled' => (bool) ($this->selectedQuestionData['database_enabled'] ?? false),
+                    'starter_sql' => $this->decodeFiles($this->selectedQuestionData['database_starter'] ?? null)[0]['content'] ?? '',
+                ],
             ];
             $reference = $this->decodeFiles($this->selectedQuestionData['reference_files'] ?? null);
             $data['correct_answer'] = $reference && CodeProject::length($reference) > 0 ? ['files' => $reference] : null;
@@ -388,16 +400,16 @@ class QuizBuilder extends Page
 
     public function getTitle(): string
     {
-        return 'Quiz Builder — '.($this->quizRecord->title ?? 'Untitled');
+        return ($this->quizRecord?->kindLabel() ?? 'Assessment').' Builder — '.($this->quizRecord->title ?? 'Untitled');
     }
 
     public static function getRoutePath(): string
     {
-        return '/quizzes/{record}/builder';
+        return '/assessments/{record}/builder';
     }
 
     public static function getSlug(): string
     {
-        return 'quizzes/{record}/builder';
+        return 'assessments/{record}/builder';
     }
 }

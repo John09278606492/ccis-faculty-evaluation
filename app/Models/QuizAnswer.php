@@ -17,6 +17,8 @@ class QuizAnswer extends Model
         'is_correct',
         'points_awarded',
         'feedback',
+        'database_name',
+        'database_export',
     ];
 
     protected $casts = [

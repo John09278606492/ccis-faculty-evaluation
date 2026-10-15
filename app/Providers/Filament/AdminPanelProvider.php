@@ -79,7 +79,7 @@ class AdminPanelProvider extends PanelProvider
             ->navigationGroups([
                 NavigationGroup::make('Evaluations')
                     ->icon('heroicon-o-clipboard-document-list'),
-                NavigationGroup::make('Quizzes')
+                NavigationGroup::make('Assessments')
                     ->icon('heroicon-o-pencil-square'),
                 NavigationGroup::make('Student')
                     ->icon('heroicon-o-academic-cap'),

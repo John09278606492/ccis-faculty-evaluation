@@ -165,7 +165,7 @@
                         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
                         </svg>
-                        Quiz settings
+                        Settings
                     </a>
                     <a href="{{ \App\Filament\Resources\QuizResource::shareUrl($quizRecord) }}" target="_blank" class="qb-btn qb-btn-outline">
                         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -179,9 +179,9 @@
 
             <div class="qb-guidance">
                 @if ($questionsLocked)
-                    Students have started this quiz. Questions are locked; duplicate the quiz to make a revised version.
+                    Students have started this {{ strtolower($quizRecord->kindLabel()) }}. Questions are locked; duplicate it to make a revised version.
                 @else
-                    {{ $quizRecord->is_published ? 'Published' : 'Draft' }} · Edit a question, save its answer key, then preview. Publish from Quiz settings when ready.
+                    {{ $quizRecord->is_published ? 'Published' : 'Draft' }} · Edit a question, save its answer key, then preview. Publish from Settings when ready.
                 @endif
                 <span x-show="dirty" x-cloak role="status"> You have unsaved changes.</span>
             </div>
@@ -369,11 +369,43 @@
                             <span class="qb-prop-help">HTML, CSS, JavaScript, PHP and SQL run in each student's own browser, never on this server. Other languages can only be written.</span>
                         </div>
                         <div class="qb-prop-group">
+                            <label class="qb-tf-option">
+                                <input @disabled($questionsLocked) type="checkbox" wire:model="selectedQuestionData.allow_student_files">
+                                <span>Students can create files and folders</span>
+                            </label>
+                            <span class="qb-prop-help">Like a VS Code workspace: students add, rename and delete files and folders. Otherwise they edit exactly your starter files.</span>
+                        </div>
+                        <div class="qb-prop-group">
+                            <label class="qb-tf-option">
+                                <input @disabled($questionsLocked) type="checkbox" wire:model="selectedQuestionData.autocomplete">
+                                <span>Code suggestions (autocomplete)</span>
+                            </label>
+                            <span class="qb-prop-help">Shows keyword and tag suggestions while typing. Leave off when the exam tests what students remember.</span>
+                        </div>
+                        <div class="qb-prop-group">
+                            <label class="qb-tf-option">
+                                <input @disabled($questionsLocked) type="checkbox" wire:model.live="selectedQuestionData.database_enabled">
+                                <span>Give each student a MySQL database (phpMyAdmin)</span>
+                            </label>
+                            <span class="qb-prop-help">Students open phpMyAdmin from the {{ strtolower($quizRecord->kindLabel()) }} and work in their own database on a separate student server, never your system's database. It is exported with their answer when they submit.</span>
+                            @if (($selectedQuestionData['database_enabled'] ?? false) && ! app(\App\Services\StudentDatabase\StudentDbServer::class)->isInstalled())
+                                <span class="qb-prop-help" style="color:#b45309">Not set up on this computer yet. Run <code>php artisan classroom:student-db install</code> once.</span>
+                            @endif
+                        </div>
+                        @if ($selectedQuestionData['database_enabled'] ?? false)
+                            <div class="qb-prop-group">
+                                <span class="qb-prop-label">Starter SQL</span>
+                                <span class="qb-prop-help">Optional. Runs in each student's new database, for example to create tables and sample rows.</span>
+                                <x-code-editor state-path="selectedQuestionData.database_starter" :read-only="$questionsLocked"
+                                    min-height="6rem" max-height="16rem" wire:key="database-starter-{{ $selectedQuestionId }}" />
+                            </div>
+                        @endif
+                        <div class="qb-prop-group">
                             <span class="qb-prop-label">Starter Files</span>
                             <span class="qb-prop-help">Students get exactly these files and edit them; they cannot add or remove files.</span>
                             <x-code-editor state-path="selectedQuestionData.starter_files"
-                                :read-only="$questionsLocked" :can-manage-files="! $questionsLocked" can-run
-                                min-height="8rem" max-height="20rem"
+                                :read-only="$questionsLocked" :can-manage-files="! $questionsLocked" can-run autocomplete
+                                min-height="8rem" max-height="24rem"
                                 wire:key="starter-{{ $selectedQuestionId }}-{{ $codeLanguage }}" />
                         </div>
                         <div class="qb-prop-group">
@@ -381,8 +413,8 @@
                             <span class="qb-prop-help">Optional. Only you see this, next to each student's code while grading.</span>
                             <x-code-editor state-path="selectedQuestionData.reference_files"
                                 :starter-files="\App\Support\CodeProject::decode($selectedQuestionData['starter_files'] ?? null, [])"
-                                :read-only="$questionsLocked" :can-manage-files="! $questionsLocked" can-run
-                                min-height="8rem" max-height="20rem"
+                                :read-only="$questionsLocked" :can-manage-files="! $questionsLocked" can-run autocomplete
+                                min-height="8rem" max-height="24rem"
                                 wire:key="reference-{{ $selectedQuestionId }}-{{ $codeLanguage }}" />
                         </div>
                     @else

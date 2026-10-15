@@ -4,19 +4,23 @@ namespace App\Support;
 
 /**
  * The files of a code question — starter files, a reference solution or a
- * student's answer — stored as {"files": [{"name": ..., "content": ...}]}.
+ * student's answer — stored as {"files": [{"name": ..., "content": ...}], "folders": [...]}.
+ * Names are paths such as css/style.css; "folders" keeps folders that have no files yet.
  *
  * resources/js/components/code-editor.js mirrors the file name, language and
  * runner rules below; keep the two in sync.
  */
 class CodeProject
 {
-    public const MAX_FILES = 10;
+    public const MAX_FILES = 30;
+
+    public const MAX_DEPTH = 4;
 
     /** Longest combined content of all files in one project. */
     public const MAX_LENGTH = 50_000;
 
-    public const FILE_NAME_PATTERN = '/^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*\.[A-Za-z0-9]+$/';
+    /** One folder or file name: letters, digits, - and _, dot-separated parts. */
+    public const SEGMENT_PATTERN = '/^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*$/';
 
     /** Editor language per file extension. */
     public const EXTENSIONS = [
@@ -105,9 +109,52 @@ class CodeProject
     /**
      * @param  list<array{name: string, content: string}>  $files
      */
-    public static function encode(array $files): string
+    /**
+     * @param  list<array{name: string, content: string}>  $files
+     * @param  list<string>  $folders  folders that have no files yet
+     */
+    public static function encode(array $files, array $folders = []): string
     {
-        return json_encode(['files' => array_values($files)], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $project = ['files' => array_values($files)];
+        if ($folders = self::emptyFolders($files, $folders)) {
+            $project['folders'] = $folders;
+        }
+
+        return json_encode($project, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    /**
+     * Valid folder paths from stored JSON that no file lives in.
+     *
+     * @return list<string>
+     */
+    public static function decodeFolders(?string $stored): array
+    {
+        $decoded = json_decode((string) $stored, true);
+
+        return is_array($decoded['folders'] ?? null)
+            ? array_values(array_filter($decoded['folders'], fn ($folder) => is_string($folder) && self::isValidFolder($folder)))
+            : [];
+    }
+
+    /**
+     * @param  list<array{name: string, content: string}>  $files
+     * @param  list<string>  $folders
+     * @return list<string>
+     */
+    protected static function emptyFolders(array $files, array $folders): array
+    {
+        $used = [];
+        foreach ($files as $file) {
+            $parts = explode('/', $file['name']);
+            array_pop($parts);
+            while ($parts) {
+                $used[implode('/', $parts)] = true;
+                array_pop($parts);
+            }
+        }
+
+        return array_values(array_unique(array_filter($folders, fn (string $folder) => ! isset($used[$folder]) && self::isValidFolder($folder))));
     }
 
     /**
@@ -123,7 +170,7 @@ class CodeProject
         $names = array_column($files, 'name');
         foreach ($names as $name) {
             if (! self::isValidName($name)) {
-                $issues[] = "\"{$name}\" is not a valid file name. Use letters, numbers, - or _ and an extension such as .html, .css, .js, .php or .sql.";
+                $issues[] = "\"{$name}\" is not a valid file name. Use letters, numbers, - or _, folders separated by /, and an extension such as .html, .css, .js, .php or .sql.";
             }
         }
         if (count(array_unique(array_map('strtolower', $names))) !== count($names)) {
@@ -138,9 +185,20 @@ class CodeProject
 
     public static function isValidName(string $name): bool
     {
-        return strlen($name) <= 64
-            && preg_match(self::FILE_NAME_PATTERN, $name) === 1
+        $basename = basename(str_replace('\\', '/', $name));
+
+        return self::isValidFolder($name)
+            && str_contains($basename, '.')
             && array_key_exists(self::extension($name), self::EXTENSIONS);
+    }
+
+    public static function isValidFolder(string $path): bool
+    {
+        $segments = explode('/', $path);
+
+        return strlen($path) <= 120
+            && count($segments) <= self::MAX_DEPTH
+            && collect($segments)->every(fn (string $segment) => strlen($segment) <= 64 && preg_match(self::SEGMENT_PATTERN, $segment) === 1);
     }
 
     /**

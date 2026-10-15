@@ -140,7 +140,26 @@ export async function runSql(baseUrl, files) {
 
 const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
-const projectPath = (href) => href.replace(/^\.\//, '').split(/[?#]/)[0]
+/**
+ * A link's target inside the project, resolved from the page it appears on:
+ * from pages/about.html, "../css/site.css" is css/site.css. Null for links
+ * that leave the project (other sites, mailto:, #anchors).
+ *
+ * @returns {{ path: string, query: string } | null}
+ */
+export function resolveProjectHref(href, fromFile = '') {
+    if (! href || href.startsWith('#') || /^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('//')) {
+        return null
+    }
+    const base = new URL(fromFile || 'index.html', 'http://project.invalid/')
+    const url = new URL(href, base)
+
+    return url.origin === 'http://project.invalid'
+        ? { path: decodeURIComponent(url.pathname.slice(1)), query: url.search.slice(1) }
+        : null
+}
+
+const projectPath = (href, fromFile) => resolveProjectHref(href, fromFile)?.path
 
 /**
  * Inline the project's own stylesheets and scripts (the preview has no server
@@ -154,19 +173,19 @@ export function buildDocument(html, files, nonce, pageName = null) {
 
     html = html.replace(/<link\b[^>]*>/gi, (tag) => {
         const href = tag.match(/\bhref\s*=\s*["']([^"']+)["']/i)?.[1]
-        const css = href && /\brel\s*=\s*["']?stylesheet/i.test(tag) ? byName.get(projectPath(href)) : undefined
+        const css = href && /\brel\s*=\s*["']?stylesheet/i.test(tag) ? byName.get(projectPath(href, pageName)) : undefined
 
         // CSS never depends on line breaks, so one line keeps the page's line numbers.
         return css === undefined ? tag : `<style>${css.replace(/<\/style/gi, '<\/style').replace(/\r?\n/g, ' ')}</style>`
     })
     html = html.replace(/<script\b([^>]*)\bsrc\s*=\s*["']([^"']+)["']([^>]*)>\s*<\/script>/gi, (tag, before, src, after) => {
-        const js = byName.get(projectPath(src))
+        const js = byName.get(projectPath(src, pageName))
         if (js === undefined) {
             return tag
         }
         // A data: URL is a separate script, so its errors count lines within the file.
         const url = `data:text/javascript;charset=utf-8,${encodeURIComponent(js)}`
-        scriptNames[url] = projectPath(src)
+        scriptNames[url] = projectPath(src, pageName)
 
         return `<script${before} src="${url}"${after}></script>`
     })
@@ -191,13 +210,6 @@ export function shellDocument(files) {
     return `<!DOCTYPE html><html><head><meta charset="utf-8">${styles}</head><body>${scripts}</body></html>`
 }
 
-export function resolveProjectHref(href) {
-    if (! href || href.startsWith('#') || /^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('//')) {
-        return null
-    }
-
-    return href.replace(/^\.?\//, '')
-}
 
 function bridgeSource(nonce, scriptNames, pageName) {
     // Runs first inside the sandboxed preview. Kept in ES5 so it works whatever

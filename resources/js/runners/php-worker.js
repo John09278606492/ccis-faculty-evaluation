@@ -60,7 +60,9 @@ async function writeProject(requestHandler, files) {
     }
     php.mkdir(DOCUMENT_ROOT)
     for (const file of files) {
-        php.writeFile(`${DOCUMENT_ROOT}/${file.name}`, file.content ?? '')
+        const path = `${DOCUMENT_ROOT}/${file.name}`
+        php.mkdir(path.slice(0, path.lastIndexOf('/')))
+        php.writeFile(path, file.content ?? '')
     }
 }
 

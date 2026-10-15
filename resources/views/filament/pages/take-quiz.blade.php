@@ -24,11 +24,11 @@
                 <x-heroicon-o-shield-exclamation class="h-8 w-8" />
             </div>
             <div>
-                <h2 class="text-lg font-bold">You can't access this quiz</h2>
+                <h2 class="text-lg font-bold">You can't access this {{ strtolower($quiz->kindLabel()) }}</h2>
                 <p class="mt-2 max-w-md text-sm text-gray-500">{{ $accessDeniedMessage }}</p>
             </div>
             <a href="{{ \App\Filament\Pages\MyQuizzes::getUrl(panel: 'admin', tenant: $quiz->campus) }}" class="fi-btn fi-btn-size-md fi-color-primary fi-btn-color-primary inline-flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white">
-                Back to My Quizzes
+                Back to My Assessments
             </a>
         </div>
     @elseif ($waitingForStart)
@@ -79,7 +79,7 @@
                 or check back once you get notified.
             </p>
             <a href="{{ \App\Filament\Pages\MyQuizzes::getUrl(panel: 'admin', tenant: $quiz->campus) }}" class="fi-btn fi-btn-size-md fi-color-primary fi-btn-color-primary inline-flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white">
-                Back to My Quizzes
+                Back to My Assessments
             </a>
         </div>
     @elseif ($readyToStart)
@@ -99,7 +99,7 @@
                 <p class="text-sm text-gray-500">Your attempt begins only when you press Start. Once started, the timer keeps running even if you leave this page.</p>
                 <div class="flex flex-wrap gap-3">
                     <x-filament::button wire:click="beginAttempt" wire:loading.attr="disabled">Start attempt</x-filament::button>
-                    <x-filament::button color="gray" tag="a" href="{{ \App\Filament\Pages\MyQuizzes::getUrl(panel: 'admin', tenant: $quiz->campus) }}">Back to My Quizzes</x-filament::button>
+                    <x-filament::button color="gray" tag="a" href="{{ \App\Filament\Pages\MyQuizzes::getUrl(panel: 'admin', tenant: $quiz->campus) }}">Back to My Assessments</x-filament::button>
                 </div>
             </div>
         </x-filament::section>
@@ -294,17 +294,43 @@
                             ></textarea>
                         @elseif ($question->type === 'code')
                             @if ($reviewMode && blank($answers[$question->id] ?? null))
-                                <p class="text-sm text-gray-400">No code submitted.</p>
+                                <p class="text-sm text-gray-400">No code files were changed.</p>
                             @else
                                 <x-code-editor
                                     state-path="answers.{{ $question->id }}"
-                                    :starter-files="$question->starterFiles()"
+                                    :starter-files="$question->starterProject()"
                                     :read-only="$reviewMode"
+                                    :can-manage-files="$question->studentsCanManageFiles()"
+                                    :autocomplete="$question->allowsAutocomplete()"
                                     :can-run="$question->studentsCanRunCode()"
                                     :commit-debounce="$reviewMode ? null : 750"
                                     placeholder="Write your code here..."
                                     wire:key="code-{{ $question->id }}-{{ $reviewMode ? 'review' : 'edit' }}"
                                 />
+                            @endif
+                            @if ($question->hasDatabase() && ! $reviewMode)
+                                @php($databaseAnswer = $attempt->answers->firstWhere('quiz_question_id', $question->id))
+                                <div class="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 px-3 py-2 text-sm dark:border-gray-700">
+                                    <x-heroicon-o-circle-stack class="h-5 w-5 shrink-0 text-primary-600" />
+                                    <span class="flex-1">This question gives you your own MySQL database. Work on it in phpMyAdmin; it is saved with your answer when you submit.</span>
+                                    @if ($previewMode || ! $databaseAnswer)
+                                        <span class="text-xs text-gray-400">Each student gets their own database here.</span>
+                                    @else
+                                        <x-filament::button tag="a" size="sm" target="_blank" icon="heroicon-o-arrow-top-right-on-square"
+                                            href="{{ route('student-databases.open', $databaseAnswer) }}">
+                                            Open phpMyAdmin
+                                        </x-filament::button>
+                                    @endif
+                                </div>
+                            @elseif ($question->hasDatabase() && $savedAnswer)
+                                <p class="mt-3 flex items-center gap-2 text-sm text-gray-500">
+                                    <x-heroicon-o-circle-stack class="h-4 w-4 shrink-0" />
+                                    {{ match (true) {
+                                        filled($savedAnswer->database_export) => 'Your database was saved with this answer when you submitted.',
+                                        filled($savedAnswer->database_name) => 'Your database is kept for your instructor to review.',
+                                        default => 'You did not open your database for this question.',
+                                    } }}
+                                </p>
                             @endif
                         @elseif ($question->type === 'file_upload')
                             @if (!$reviewMode)
@@ -341,7 +367,7 @@
 
         @if ($reviewMode)
             <div class="mt-6 flex flex-wrap gap-3">
-                <x-filament::button tag="a" color="gray" href="{{ \App\Filament\Pages\MyQuizzes::getUrl(panel: 'admin', tenant: $quiz->campus) }}">Back to My Quizzes</x-filament::button>
+                <x-filament::button tag="a" color="gray" href="{{ \App\Filament\Pages\MyQuizzes::getUrl(panel: 'admin', tenant: $quiz->campus) }}">Back to My Assessments</x-filament::button>
                 @if ($quiz->isAvailable() && $attempt->attempt_number < $quiz->max_attempts)
                     <x-filament::button wire:click="beginAttempt" wire:confirm="Start another attempt? The timer will begin immediately." wire:loading.attr="disabled">Start another attempt</x-filament::button>
                 @endif

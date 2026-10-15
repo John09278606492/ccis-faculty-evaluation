@@ -25,9 +25,11 @@ class MyQuizzes extends Page implements HasTable
 
     protected static string $view = 'filament.pages.my-quizzes';
 
-    protected static ?string $navigationLabel = 'My Quizzes';
+    protected static ?string $navigationLabel = 'My Assessments';
 
-    protected static ?string $title = 'My Quizzes & Activities';
+    protected static ?string $slug = 'my-assessments';
+
+    protected static ?string $title = 'My Assessments';
 
     protected static ?int $navigationSort = 2;
 
@@ -75,7 +77,7 @@ class MyQuizzes extends Page implements HasTable
                     ->visible(fn (Quiz $record) => $this->actionLabelFor($record) !== null)
                     ->url(fn (Quiz $record) => TakeQuiz::getUrl(['quiz' => $record->id], panel: 'admin', tenant: $record->campus)),
             ])
-            ->emptyStateHeading('No Quizzes Yet')
+            ->emptyStateHeading('No assessments yet')
             ->emptyStateDescription('Your instructors have not published any quizzes, exams, or activities for your courses.')
             ->emptyStateIcon('heroicon-o-pencil-square');
     }

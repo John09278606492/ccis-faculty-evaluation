@@ -13,6 +13,9 @@ use App\Models\QuizAttempt;
 use App\Models\User;
 use App\Services\ClassRecordSyncService;
 use App\Services\WorkbookPreviewService;
+use App\Services\StudentDatabase\MySqlStudentDatabases;
+use App\Services\StudentDatabase\StudentDatabases;
+use App\Services\StudentDatabase\StudentDbServer;
 use App\Support\CodeProject;
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\DB;
@@ -643,4 +646,137 @@ it('grades a code answer from the attempts tab next to the reference solution', 
         ->setTableActionData(['awards' => [$answer->id => ['points' => 3, 'feedback' => 'Off by one.']]])->callMountedTableAction()
         ->assertHasNoTableActionErrors();
     expect($attempt->refresh()->status)->toBe('graded')->and((float) $attempt->score)->toBe(13.0);
+});
+
+/**
+ * Student database workspaces without a MySQL server: records what was asked.
+ */
+function fakeStudentDatabases(bool $available = true): object
+{
+    $fake = new class($available) implements StudentDatabases
+    {
+        public array $workspaces = [];
+
+        public function __construct(public bool $isAvailable) {}
+
+        public function available(): bool
+        {
+            return $this->isAvailable;
+        }
+
+        public function workspace(App\Models\QuizAnswer $answer): array
+        {
+            $database = MySqlStudentDatabases::databaseName($answer);
+            $answer->update(['database_name' => $database]);
+            $this->workspaces[] = [$database, $answer->question->databaseStarterSql()];
+
+            return ['user' => "stu{$answer->attempt->user_id}", 'password' => 'secret', 'database' => $database];
+        }
+
+        public function export(App\Models\QuizAnswer $answer): ?string
+        {
+            return $answer->database_name ? "CREATE TABLE `{$answer->database_name}`;" : null;
+        }
+
+        public function drop(string $database): void {}
+    };
+    app()->instance(StudentDatabases::class, $fake);
+    config(['classroom.student_db.path' => sys_get_temp_dir().DIRECTORY_SEPARATOR.'student-db-test-'.getmypid()]);
+
+    return $fake;
+}
+
+function databaseQuestionAttempt(array $fixture): array
+{
+    $code = $fixture['quiz']->questions()->create(['type' => 'code', 'question_text' => 'Create the tables', 'points' => 5, 'order' => 2, 'options' => [
+        'language' => 'sql', 'files' => [['name' => 'query.sql', 'content' => '']],
+        'database' => ['enabled' => true, 'starter_sql' => 'CREATE TABLE students (id INT);'],
+    ]]);
+    test()->actingAs($fixture['student']);
+    $page = Livewire::test(TakeQuiz::class, ['quiz' => $fixture['quiz']])->call('beginAttempt')->assertSee('Open phpMyAdmin');
+    $attempt = $fixture['quiz']->attempts()->firstOrFail();
+
+    return [$code, $page, $attempt, $attempt->answers()->where('quiz_question_id', $code->id)->firstOrFail()];
+}
+
+it('signs a student in to phpMyAdmin with their own database loaded from the starter SQL', function () {
+    $fixture = quizWorkflowFixture();
+    $fake = fakeStudentDatabases();
+    [$code, , $attempt, $answer] = databaseQuestionAttempt($fixture);
+    $response = $this->get(route('student-databases.open', $answer));
+    $database = "stu{$fixture['student']->id}_a{$attempt->id}_q{$code->id}";
+    $response->assertRedirectContains('/phpmyadmin/signon.php?token=');
+    expect($fake->workspaces)->toBe([[$database, 'CREATE TABLE students (id INT);']])
+        ->and($answer->refresh()->database_name)->toBe($database);
+    $token = str($response->headers->get('Location'))->after('token=')->toString();
+    $issued = json_decode(file_get_contents(app(StudentDbServer::class)->path("tokens/{$token}.json")), true);
+    expect($issued['user'])->toBe("stu{$fixture['student']->id}")->and($issued['database'])->toBe($database)
+        ->and($issued['expires'])->toBeLessThanOrEqual(time() + 60);
+});
+
+it('keeps student databases private and closes them when the attempt ends', function () {
+    $fixture = quizWorkflowFixture();
+    fakeStudentDatabases();
+    [, $page, , $answer] = databaseQuestionAttempt($fixture);
+    $classmate = User::factory()->create();
+    $fixture['offering']->students()->attach($classmate);
+    $this->actingAs($classmate)->get(route('student-databases.open', $answer))->assertForbidden();
+    $this->actingAs($fixture['student']);
+    $page->set('answers.'.$fixture['question']->id, 'echo')->call('submit');
+    $this->get(route('student-databases.open', $answer))->assertForbidden();
+    $this->actingAs($fixture['instructor'])->get(route('student-databases.open', $answer))->assertForbidden();
+});
+
+it('exports the student database with the answer on submit and lets the instructor open it', function () {
+    $fixture = quizWorkflowFixture();
+    fakeStudentDatabases();
+    [, $page, $attempt, $answer] = databaseQuestionAttempt($fixture);
+    $this->get(route('student-databases.open', $answer))->assertRedirect();
+    $this->actingAs($fixture['student']);
+    $page->set('answers.'.$fixture['question']->id, 'echo')->call('submit')
+        ->assertSee('Your database was saved with this answer when you submitted.');
+    $answer->refresh();
+    expect($attempt->refresh()->status)->toBe('submitted')
+        ->and($answer->database_export)->toBe("CREATE TABLE `{$answer->database_name}`;");
+    $this->actingAs($fixture['instructor'])->get(route('student-databases.open', $answer))->assertRedirectContains('signon.php');
+    Livewire::test(AttemptsRelationManager::class, ['ownerRecord' => $fixture['quiz'], 'pageClass' => EditQuiz::class])
+        ->mountTableAction('grade', $attempt)->assertSee('Student database (exported when submitted)')->assertSee('Open in phpMyAdmin');
+});
+
+it('explains when the student database server is not running', function () {
+    $fixture = quizWorkflowFixture();
+    fakeStudentDatabases(available: false);
+    [, , , $answer] = databaseQuestionAttempt($fixture);
+    $this->get(route('student-databases.open', $answer))->assertStatus(503);
+});
+
+it('turns on a student database with starter SQL in the quiz builder', function () {
+    extract(quizWorkflowFixture());
+    $this->actingAs($instructor);
+    $page = Livewire::test(QuizBuilder::class, ['record' => $quiz->id])->call('addQuestion', 'code')
+        ->set('selectedQuestionData.database_enabled', true)
+        ->set('selectedQuestionData.database_starter', CodeProject::encode([['name' => 'setup.sql', 'content' => 'CREATE TABLE t (id INT);']]))
+        ->call('saveQuestionProperties')->assertHasNoErrors();
+    $code = $quiz->questions()->where('type', 'code')->firstOrFail();
+    expect($code->hasDatabase())->toBeTrue()->and($code->databaseStarterSql())->toBe('CREATE TABLE t (id INT);');
+});
+
+it('limits each student MySQL account to its own databases', function () {
+    $pdo = new PDO('sqlite::memory:');
+    $statements = MySqlStudentDatabases::accountStatements('stu12', 'pa55', $pdo);
+    expect($statements[0])->toContain("CREATE USER IF NOT EXISTS 'stu12'@'%'")->toContain('MAX_USER_CONNECTIONS')
+        ->and($statements[2])->toBe("GRANT ALL PRIVILEGES ON `stu12\\_%`.* TO 'stu12'@'%'")
+        ->and(implode(' ', $statements))->not->toContain('*.*')->not->toContain('GRANT OPTION');
+});
+
+it('ignores live updates that reach a lazy table before it has loaded', function () {
+    extract(quizWorkflowFixture());
+    gradedAttempt($quiz, $student, status: 'submitted');
+    $this->actingAs($instructor);
+    Livewire::test(AttemptsRelationManager::class, ['ownerRecord' => $quiz, 'pageClass' => EditQuiz::class, 'lazy' => true])
+        ->dispatch('classroom-push', kind: 'reconnected')
+        ->assertOk();
+    Livewire::test(AttemptsRelationManager::class, ['ownerRecord' => $quiz, 'pageClass' => EditQuiz::class])
+        ->dispatch('classroom-push', kind: 'attempt', quizId: $quiz->id)
+        ->assertOk()->assertSee('Submitted');
 });

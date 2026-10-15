@@ -19,8 +19,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
         parent::register();
+        $this->app->singleton(\App\Services\StudentDatabase\StudentDbServer::class);
+        $this->app->bind(\App\Services\StudentDatabase\StudentDatabases::class, \App\Services\StudentDatabase\MySqlStudentDatabases::class);
     }
 
     /**

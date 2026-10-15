@@ -6,6 +6,7 @@ use App\Models\Quiz;
 use App\Models\QuizAnswer;
 use App\Models\QuizAttempt;
 use App\Models\QuizQuestion;
+use App\Services\StudentDatabase\StudentDatabases;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Support\Enums\MaxWidth;
@@ -23,7 +24,7 @@ class TakeQuiz extends Page
 {
     use WithFileUploads;
 
-    protected static ?string $slug = 'take-quiz/{quiz}';
+    protected static ?string $slug = 'take-assessment/{quiz}';
 
     protected static bool $shouldRegisterNavigation = false;
 
@@ -37,8 +38,11 @@ class TakeQuiz extends Page
 
     protected function getLayoutData(): array
     {
+        // Coding assessments get room for the workspace's Explorer and editor side by side.
+        $hasCode = isset($this->quiz) && $this->quiz->questions->contains('type', 'code');
+
         return [
-            'maxWidth' => MaxWidth::FourExtraLarge,
+            'maxWidth' => $hasCode ? MaxWidth::SevenExtraLarge : MaxWidth::FourExtraLarge,
         ];
     }
 
@@ -133,7 +137,7 @@ class TakeQuiz extends Page
         $this->quiz->refresh();
         $this->accessDenied = false;
         if (! $this->quiz->courseOffering->students()->where('users.id', auth()->id())->exists() || ! $this->quiz->isAssignedTo(auth()->id())) {
-            $this->denyAccess('You are no longer assigned to this quiz. Contact your instructor.');
+            $this->denyAccess('You are no longer assigned to this '.$this->kindNoun().'. Contact your instructor.');
 
             return;
         }
@@ -202,7 +206,7 @@ class TakeQuiz extends Page
 
             return;
         }
-        abort_unless(static::canManage(Auth::user(), $quiz), 403, 'You do not manage this quiz.');
+        abort_unless(static::canManage(Auth::user(), $quiz), 403, 'You do not manage this assessment.');
         $this->mountPreview($quiz);
     }
 
@@ -261,7 +265,7 @@ class TakeQuiz extends Page
 
                 return;
             } else {
-                $this->denyAccess('This quiz is not ready to start. Check its opening time or contact your instructor.');
+                $this->denyAccess('This '.$this->kindNoun().' is not ready to start. Check its opening time or contact your instructor.');
 
                 return;
             }
@@ -279,7 +283,7 @@ class TakeQuiz extends Page
             && $this->quiz->isAssignedTo(auth()->id()), 403);
         if (! $this->quiz->isAvailable() || ! $this->quiz->questions()->exists()) {
             $this->readyToStart = false;
-            $this->denyAccess('This quiz is no longer available. Return to My Quizzes for the latest schedule.');
+            $this->denyAccess('This '.$this->kindNoun().' is no longer available. Return to My Assessments for the latest schedule.');
 
             return;
         }
@@ -288,6 +292,16 @@ class TakeQuiz extends Page
         $this->reviewMode = false;
         $this->answers = [];
         $this->loadAnswersIntoState();
+    }
+
+    public function getTitle(): string
+    {
+        return isset($this->quiz) ? 'Take '.$this->quiz->kindLabel() : 'Take Assessment';
+    }
+
+    protected function kindNoun(): string
+    {
+        return strtolower($this->quiz->kindLabel());
     }
 
     protected function denyAccess(string $message): void
@@ -508,11 +522,33 @@ class TakeQuiz extends Page
         $this->finalizeAttempt();
     }
 
+    /**
+     * Save a SQL export of each student database with its answer, so grading
+     * sees the database as it was at submission. A stopped student database
+     * server never blocks submitting; the instructor can still open it later.
+     */
+    protected function exportStudentDatabases(): void
+    {
+        $answers = $this->attempt->answers()->whereNotNull('database_name')->get();
+        if ($answers->isEmpty()) {
+            return;
+        }
+        $databases = app(StudentDatabases::class);
+        foreach ($answers as $answer) {
+            try {
+                $answer->update(['database_export' => $databases->export($answer)]);
+            } catch (\Throwable $error) {
+                report($error);
+            }
+        }
+    }
+
     protected function finalizeAttempt(): void
     {
         if ($this->previewMode || ! $this->attempt || $this->attempt->status !== 'in_progress') {
             return;
         }
+        $this->exportStudentDatabases();
         DB::transaction(function (): void {
             $attempt = QuizAttempt::query()->lockForUpdate()->findOrFail($this->attempt->id);
             if ($attempt->status !== 'in_progress') {

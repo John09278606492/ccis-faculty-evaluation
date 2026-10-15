@@ -36,7 +36,7 @@ class ClassRecords extends Page implements HasTable
 
     protected static ?string $title = 'Class Records';
 
-    protected static ?string $navigationGroup = 'Quizzes';
+    protected static ?string $navigationGroup = 'Assessments';
 
     protected static ?int $navigationSort = 2;
 
@@ -45,7 +45,7 @@ class ClassRecords extends Page implements HasTable
         return $table
             ->query($this->getTableQuery())
             ->heading('Your class record sheets')
-            ->description('Upload → map each sheet → preview and sync final quiz scores. Download the workbook when ready.')
+            ->description('Upload → map each sheet → preview and sync final scores. Download the workbook when ready.')
             ->defaultSort('created_at', 'desc')
             ->columns([
                 Tables\Columns\TextColumn::make('sheet_name')->label('Worksheet')->searchable()->weight('semibold')
@@ -60,7 +60,7 @@ class ClassRecords extends Page implements HasTable
                 Tables\Columns\TextColumn::make('mapping_status')->label('Setup')->badge()
                     ->state(fn (ClassRecordSheet $record) => $record->course_offering_id && filled($record->student_id_header) ? 'Mapped' : 'Needs mapping')
                     ->color(fn (string $state) => $state === 'Mapped' ? 'success' : 'warning'),
-                Tables\Columns\TextColumn::make('quiz_columns_count')->counts('quizColumns')->label('Linked quizzes')->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\TextColumn::make('quiz_columns_count')->counts('quizColumns')->label('Linked assessments')->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('period')->options(ClassRecordUpload::PERIODS),
@@ -128,7 +128,7 @@ class ClassRecords extends Page implements HasTable
                         ->action(fn (ClassRecordSheet $record) => response()->download(Storage::disk('local')->path($record->upload->file_path.'.before-sync'), 'before-sync-'.$record->upload->original_filename)),
                     Tables\Actions\DeleteAction::make()->label('Remove worksheet entry')
                         ->visible(fn (ClassRecordSheet $record) => ! $record->quizColumns()->exists())
-                        ->modalDescription('This removes the worksheet from this list. The uploaded workbook is kept. Sheets with synced quiz columns cannot be removed.'),
+                        ->modalDescription('This removes the worksheet from this list. The uploaded workbook is kept. Sheets with synced assessment columns cannot be removed.'),
                 ]),
             ])
             ->emptyStateHeading('Start with your class record workbook')
@@ -193,7 +193,7 @@ class ClassRecords extends Page implements HasTable
         } catch (\Throwable $e) {
             throw ValidationException::withMessages(['mountedTableActionsData.0.student_id_header' => $e instanceof QueryException ? 'This course was just mapped to another sheet. Refresh and choose another course.' : $e->getMessage()]);
         }
-        Notification::make()->title('Mapping saved')->body('Open the quiz and choose Sync to Class Record to preview final scores.')->success()->send();
+        Notification::make()->title('Mapping saved')->body('Open the assessment and choose Sync to Class Record to preview final scores.')->success()->send();
     }
 
     protected function handleUpload(array $data): void

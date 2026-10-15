@@ -107,6 +107,14 @@ class Quiz extends Model
     ];
 
     /**
+     * What students and instructors call this assessment: Quiz, Exam or Activity.
+     */
+    public function kindLabel(): string
+    {
+        return ['quiz' => 'Quiz', 'exam' => 'Exam', 'activity' => 'Activity'][$this->type] ?? 'Assessment';
+    }
+
+    /**
      * How the timer works.
      */
     public const TIMING_MODES = [

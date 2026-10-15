@@ -9,6 +9,10 @@ const [project, php, rawPort, statusFile] = process.argv.slice(2);
 const port = Number(rawPort);
 const wsPort = port + 7;
 const workerPorts = [8, 9, 10, 11].map(offset => port + offset);
+// phpMyAdmin for student database workspaces, when the project has them installed.
+const phpMyAdminPorts = [12, 13].map(offset => port + offset);
+let studentDb = null;
+let nextPhpMyAdmin = 0;
 const children = [];
 let stopping = false;
 let gateway;
@@ -36,6 +40,8 @@ function stop(message, failed = false) {
     stopping = true;
     status(failed ? 'error' : 'stopped', message);
     gateway?.close();
+    // Let the student MySQL server shut down cleanly before its process tree is ended.
+    if (studentDb) spawnSync(php, ['-d', 'opcache.enable_cli=0', 'artisan', 'classroom:student-db', 'stop'], { cwd: project, env, windowsHide: true, timeout: 15000, stdio: 'ignore' });
     for (const child of children) {
         if (!child.pid) continue;
         if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
@@ -77,11 +83,30 @@ async function main() {
     for (const value of [wsPort, ...workerPorts]) await checkPort(value);
     const probe = spawnSync(php, ['-d', 'opcache.enable_cli=0', '-r', "require 'vendor/autoload.php'; $app = require 'bootstrap/app.php'; $app->make(Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap(); try { Illuminate\\Support\\Facades\\DB::connection()->getPdo(); } catch (Throwable $e) { exit(2); }"], { cwd: project, env, windowsHide: true, timeout: 15000, stdio: 'ignore' });
     if (probe.status !== 0) throw new Error('The classroom database is unavailable. Start MySQL on this computer, then try again.');
+    const studentDbConfig = spawnSync(php, ['-d', 'opcache.enable_cli=0', 'artisan', 'classroom:student-db', 'host-config'], { cwd: project, env, windowsHide: true, timeout: 15000, encoding: 'utf8' });
+    try { studentDb = JSON.parse(studentDbConfig.stdout.trim().split('\n').pop()); } catch { studentDb = null; }
+    if (!studentDb?.installed) studentDb = null;
+    if (studentDb) {
+        for (const value of [studentDb.mysql_port, ...phpMyAdminPorts]) await checkPort(value);
+        launch(['artisan', 'classroom:student-db', 'serve'], project);
+        const webRoot = studentDb.phpmyadmin_arguments[studentDb.phpmyadmin_arguments.indexOf('-t') + 1];
+        for (const value of phpMyAdminPorts) {
+            launch(studentDb.phpmyadmin_arguments.map(argument => argument === '127.0.0.1:0' ? `127.0.0.1:${value}` : argument), webRoot);
+        }
+    }
     launch(['artisan', 'reverb:start', '--host=127.0.0.1', `--port=${wsPort}`], project);
     for (const value of workerPorts) launch(['-S', `127.0.0.1:${value}`, path.join(project, 'vendor/laravel/framework/src/Illuminate/Foundation/resources/server.php')], path.join(project, 'public'));
-    await Promise.all([wsPort, ...workerPorts].map(waitReady));
+    await Promise.all([wsPort, ...workerPorts, ...(studentDb ? [studentDb.mysql_port, ...phpMyAdminPorts] : [])].map(waitReady));
     gateway = http.createServer((req, res) => {
-        const target = workerPorts[nextWorker++ % workerPorts.length];
+        const toPhpMyAdmin = studentDb && /^\/phpmyadmin(\/|$|\?)/.test(req.url);
+        if (toPhpMyAdmin && req.url.split('?')[0] === '/phpmyadmin') {
+            res.writeHead(301, { Location: '/phpmyadmin/' });
+            res.end();
+            return;
+        }
+        const target = toPhpMyAdmin
+            ? phpMyAdminPorts[nextPhpMyAdmin++ % phpMyAdminPorts.length]
+            : workerPorts[nextWorker++ % workerPorts.length];
         const upstream = http.request({ hostname: '127.0.0.1', port: target, method: req.method, path: req.url, headers: req.headers }, response => {
             res.writeHead(response.statusCode, response.headers);
             response.pipe(res);
@@ -102,7 +127,8 @@ async function main() {
         socket.on('close', () => upstream.destroy());
     });
     gateway.on('error', error => stop(error.code === 'EADDRINUSE' ? 'This sharing port is already in use. Choose another port in Settings.' : 'The sharing server could not start.', true));
-    gateway.listen(port, '0.0.0.0', () => status('running', 'Ready. Devices on the same Wi-Fi can open the link below.'));
+    gateway.listen(port, '0.0.0.0', () => status('running', 'Ready. Devices on the same Wi-Fi can open the link below.'
+        + (studentDb ? ' Student databases (phpMyAdmin) are running too.' : '')));
 }
 process.on('SIGTERM', () => stop('Server stopped.'));
 process.on('SIGINT', () => stop('Server stopped.'));

@@ -10,6 +10,10 @@ Keep the desktop app open, the computer awake, and MySQL running. A wired host c
 
 This controller uses the existing classroom project at `C:\dev\laravel projects\ccis-faculty-evaluation`, PHP at `C:\php\php.exe`, and that project's MySQL database and workbook storage. It does not transfer those records or install MySQL on another computer. Stop the server before changing paths, the sharing port or automatic startup under **Server settings**.
 
+## Student databases
+
+Code questions can give each student their own MySQL database, used through phpMyAdmin. Set it up once in the classroom project with `php artisan classroom:student-db install`; it uses the MySQL and phpMyAdmin from Laragon and keeps its data in `storage/app/student-db`. From then on the desktop host starts that separate MySQL server (127.0.0.1:3307, never the classroom database) and serves phpMyAdmin at `/phpmyadmin` on the sharing port. Students reach it only through one-time sign-on links from their quiz. After grading, `php artisan classroom:student-db prune` drops graded workspaces; their SQL exports stay with the answers.
+
 ## Operation
 
 The public gateway shares HTTP and WebSockets on port 8088. Four PHP workers and Reverb run on loopback behind it. NativePHP's desktop controls stay private to the host. Closing the desktop app stops its managed process tree. Startup checks the database and ports without killing unrelated applications. NativePHP's environment is stripped before launching the classroom workers so its SQLite settings and encryption key cannot override the classroom configuration.

@@ -187,6 +187,22 @@ class AttemptsRelationManager extends RelationManager
                             default => $answer->answer_text ?: '—',
                         }),
 
+                    Forms\Components\Placeholder::make("database_{$answer->id}")
+                        ->label('Student database (exported when submitted)')
+                        ->content(fn () => match (true) {
+                            filled($answer->database_export) => $this->codeBlock([['name' => "{$answer->database_name}.sql", 'content' => $answer->database_export]], canRun: false),
+                            filled($answer->database_name) => 'Not exported: the student database server was not running at submission. Open the live database below.',
+                            default => 'The student never opened their database.',
+                        })
+                        ->hintAction(
+                            Forms\Components\Actions\Action::make("open_database_{$answer->id}")
+                                ->label('Open in phpMyAdmin')
+                                ->icon('heroicon-o-arrow-top-right-on-square')
+                                ->url(fn () => $answer->database_name ? route('student-databases.open', $answer) : null, shouldOpenInNewTab: true)
+                                ->visible(fn () => filled($answer->database_name)),
+                        )
+                        ->visible($question->hasDatabase()),
+
                     Forms\Components\Placeholder::make("reference_{$answer->id}")
                         ->label('Your Reference Solution')
                         ->content(fn () => $this->codeBlock($question->referenceFiles()))
@@ -217,11 +233,11 @@ class AttemptsRelationManager extends RelationManager
      *
      * @param  list<array{name: string, content: string}>  $files
      */
-    protected function codeBlock(array $files): HtmlString
+    protected function codeBlock(array $files, bool $canRun = true): HtmlString
     {
         return new HtmlString(Blade::render(
-            '<x-code-editor :value="$files" read-only can-run min-height="4rem" max-height="24rem" />',
-            ['files' => $files],
+            '<x-code-editor :value="$files" read-only :can-run="$canRun" min-height="4rem" max-height="24rem" />',
+            ['files' => $files, 'canRun' => $canRun],
         ));
     }
 

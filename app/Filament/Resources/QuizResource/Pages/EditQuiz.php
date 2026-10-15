@@ -45,7 +45,7 @@ class EditQuiz extends EditRecord
     {
         $this->checkRemoteChanges();
         if ($this->changedElsewhere) {
-            throw ValidationException::withMessages(['data.title' => 'This quiz changed on another device. Copy any unsaved edits, then reload the page before saving.']);
+            throw ValidationException::withMessages(['data.title' => 'This assessment changed on another device. Copy any unsaved edits, then reload the page before saving.']);
         }
     }
 

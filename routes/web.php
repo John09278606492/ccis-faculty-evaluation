@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\EvaluationController;
 use App\Http\Controllers\QuizSubmissionController;
+use App\Http\Controllers\StudentDatabaseController;
 use Illuminate\Support\Facades\Route;
 
 // Route::get('/', function () {
@@ -27,3 +28,14 @@ Route::get('/form-preview/{form}', [EvaluationController::class, 'preview'])
 Route::get('/quiz-submissions/{quizAnswer}/download', [QuizSubmissionController::class, 'download'])
     ->name('quiz-submissions.download')
     ->middleware(['auth', 'throttle:30,1']);
+
+Route::get('/student-databases/{quizAnswer}/open', [StudentDatabaseController::class, 'open'])
+    ->name('student-databases.open')
+    ->middleware(['auth', 'throttle:20,1']);
+
+// Assessments used to live under quiz URLs; keep links students already have working.
+$toAssessments = fn (string $path) => redirect($path.(request()->getQueryString() ? '?'.request()->getQueryString() : ''), 301);
+Route::get('/{tenant}/take-quiz/{quiz}', fn (string $tenant, string $quiz) => $toAssessments("/{$tenant}/take-assessment/{$quiz}"));
+Route::get('/{tenant}/my-quizzes', fn (string $tenant) => $toAssessments("/{$tenant}/my-assessments"));
+Route::get('/{tenant}/quizzes/{rest?}', fn (string $tenant, ?string $rest = null) => $toAssessments("/{$tenant}/assessments".($rest ? "/{$rest}" : '')))
+    ->where('rest', '.*');
