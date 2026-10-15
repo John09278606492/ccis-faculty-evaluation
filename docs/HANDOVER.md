@@ -12,8 +12,8 @@ or the internet at exam time.
 
 ## 0. Do this first
 
-1. Everything is committed on `main` (latest feature commit `560a2d4`). Only `.playwright-cli/`
-   (browser debug logs) is left out on purpose. Nothing has been pushed to GitHub.
+1. Everything is committed on `main` (latest feature commit `560a2d4`) and pushed to GitHub. Only
+   `.playwright-cli/` (browser debug logs) is left out on purpose.
 2. After cloning or creating the worktree, install and build:
    ```bash
    composer install
@@ -117,7 +117,7 @@ Internally everything is still named "quiz" (tables, models, classes). Only the 
 
 One row per student: `user_id`, `mysql_user` (`stu{userId}`), `password` (encrypted with `APP_KEY`).
 
-### Rules (`app/Support/CodeProject.php`, mirrored in `resources/js/components/code-editor.js`)
+### Rules (`app/Support/CodeProject.php`, mirrored in `resources/js/components/code-editor.js`; the runner rule is `runnerFor()` in `code-runner.js`)
 
 - Path segments use `[A-Za-z0-9_-]` with dot-separated parts. At most 4 levels deep, 120 chars per path,
   30 files, 50,000 characters in total. Extensions are listed in `CodeProject::EXTENSIONS`.
@@ -301,7 +301,9 @@ their own database, opened from the exam with **Open phpMyAdmin**. No passwords 
 
 ## 7. Tests
 
-- `php -d opcache.enable_cli=0 vendor/bin/pest` → **56 passed** at handover.
+- `php -d opcache.enable_cli=0 vendor/bin/pest` → **57 passed** (56 at handover, plus
+  `tests/Unit/EnvExampleTest.php`, which checks that `.env.example` parses: Windows paths there must be
+  single-quoted, because `\l` inside double quotes is an invalid escape for phpdotenv).
 - The code/database tests are at the end of `tests/Feature/QuizWorkflowTest.php`. They rely on its
   helper functions (`quizWorkflowFixture`, `gradedAttempt`, `fakeStudentDatabases`,
   `databaseQuestionAttempt`) and on `tests/Support/EvaluationFixture.php`.
@@ -355,15 +357,14 @@ hosts keep separate sessions. The demo server is single-threaded, so it is slow 
 
 ## 9. Open items / next steps
 
-1. **Push** `main` to GitHub when ready (nothing has been pushed).
-2. **Fix Laragon** (gotcha 6.2), then run `php -d opcache.enable_cli=0 artisan migrate` on the real
+1. **Fix Laragon** (gotcha 6.2), then run `php -d opcache.enable_cli=0 artisan migrate` on the real
    database (the new migration has not been run there).
-3. **Verify the desktop host end to end** with the real database:
+2. **Verify the desktop host end to end** with the real database:
    - Start CCIS Classroom Server and open `http://<LAN-IP>:8088` from a second device.
    - Check that phpMyAdmin works at `/phpmyadmin`.
    - Check that Stop shuts the student MySQL down cleanly.
-4. After grading, use `classroom:student-db prune` to remove graded workspaces.
-5. **Requested by the instructor but not built:** exam supervision, i.e. a log of when students leave
+3. After grading, use `classroom:student-db prune` to remove graded workspaces.
+4. **Requested by the instructor but not built:** exam supervision, i.e. a log of when students leave
    the exam tab, with notifications. The previous assistant could not build this part in its session
    (its responses on this topic were stopped by an automated safety check), so nothing for it exists in
    the code. The instructor's stated scope: only during an exam, only on the exam page at the classroom
@@ -378,7 +379,7 @@ hosts keep separate sessions. The demo server is single-threaded, so it is slow 
      checks SEB's request headers). The instructor found per-laptop installation too slow; the
      proposed mitigation was hosting the SEB installer on the laptop server plus a one-click
      "Open in Safe Exam Browser" link.
-6. Possible improvements, not requested:
+5. Possible improvements, not requested:
    - a resizable output panel
    - Python/Java/C++ execution (would need a server-side sandbox such as Piston in Docker/WSL2;
      the laptop has no Docker and only ~21 GB free)
