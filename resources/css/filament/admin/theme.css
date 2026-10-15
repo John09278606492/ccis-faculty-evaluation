@@ -147,3 +147,87 @@
     .dark .fi-ta-table:has([data-mobile-label]) .fi-ta-selection-cell > div::after { color: rgb(148 163 184); }
     .dark .fi-ta-table:has([data-mobile-label]) > thead [role="button"] { border-color: rgb(51 65 85); }
 }
+
+/* Code question editor (resources/views/components/code-editor.blade.php). */
+.cq-editor {
+    @apply overflow-hidden rounded-lg border border-gray-300 bg-white dark:border-gray-600 dark:bg-gray-900;
+}
+.cq-toolbar {
+    @apply flex flex-wrap items-center gap-2 border-b border-gray-200 bg-gray-50 px-2 py-1 text-xs text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300;
+}
+.cq-tabs {
+    @apply flex min-w-0 flex-1 flex-wrap items-center gap-1;
+}
+.cq-tab {
+    @apply flex items-center rounded-md border border-transparent font-mono;
+}
+.cq-tab > button:first-child {
+    @apply px-2 py-1;
+}
+.cq-tab-active {
+    @apply border-gray-300 bg-white font-semibold text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-white;
+}
+.cq-tab-new button {
+    @apply px-2 py-1 text-primary-600 dark:text-primary-400;
+}
+.cq-tab-remove {
+    @apply px-1.5 text-gray-400 hover:text-danger-600;
+}
+.cq-name-input {
+    @apply w-32 rounded border border-gray-300 bg-white px-1.5 py-0.5 font-mono text-xs dark:border-gray-600 dark:bg-gray-900;
+}
+.cq-hint {
+    @apply hidden text-gray-400 sm:inline;
+}
+.cq-run {
+    @apply rounded-md bg-success-600 px-3 py-1 font-semibold text-white hover:bg-success-500 disabled:opacity-60;
+}
+.cq-file-error {
+    @apply border-b border-danger-200 bg-danger-50 px-3 py-1 text-xs text-danger-700 dark:border-danger-500/30 dark:bg-danger-500/10 dark:text-danger-400;
+}
+.cq-output {
+    @apply border-t border-gray-200 dark:border-gray-700;
+}
+.cq-output-bar {
+    @apply flex flex-wrap items-center gap-2 bg-gray-50 px-3 py-1.5 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-300;
+}
+.cq-output-bar select {
+    @apply rounded border-gray-300 py-0 pl-2 pr-7 text-xs dark:border-gray-600 dark:bg-gray-900;
+}
+.cq-output-bar > button {
+    @apply ml-auto px-1 text-base leading-none text-gray-400 hover:text-gray-700 dark:hover:text-gray-200;
+}
+.cq-status {
+    @apply text-gray-500 dark:text-gray-400;
+}
+.cq-preview {
+    @apply block h-80 w-full border-0 bg-white;
+}
+.cq-table-wrap {
+    @apply max-h-80 overflow-auto p-2;
+}
+.cq-table {
+    @apply w-auto border-collapse font-mono text-xs;
+}
+.cq-table th,
+.cq-table td {
+    @apply border border-gray-200 px-2 py-1 text-left dark:border-gray-700;
+}
+.cq-table th {
+    @apply bg-gray-50 dark:bg-gray-800;
+}
+.cq-console {
+    @apply max-h-48 overflow-auto border-t border-gray-200 bg-gray-950 px-3 py-2 font-mono text-xs text-gray-100 dark:border-gray-700;
+}
+.cq-console li {
+    @apply whitespace-pre-wrap py-0.5;
+}
+.cq-console-warn {
+    @apply text-warning-400;
+}
+.cq-console-error {
+    @apply text-danger-400;
+}
+.cq-console-info {
+    @apply text-info-300;
+}

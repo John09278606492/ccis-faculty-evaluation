@@ -7,7 +7,8 @@ use Filament\Forms\Components\Concerns\HasPlaceholder;
 use Filament\Forms\Components\Field;
 
 /**
- * Syntax-highlighted code field backed by the self-hosted CodeMirror bundle.
+ * Multi-file code field backed by the self-hosted CodeMirror bundle. Its state
+ * is the {"files": [...]} JSON described in App\Support\CodeProject.
  */
 class CodeEditor extends Field
 {
@@ -15,17 +16,50 @@ class CodeEditor extends Field
 
     protected string $view = 'filament.forms.components.code-editor';
 
-    protected string|Closure $language = 'plaintext';
+    protected bool|Closure $canManageFiles = false;
 
-    public function language(string|Closure $language): static
+    protected bool|Closure $canRun = false;
+
+    protected array|Closure $starterFiles = [];
+
+    public function canManageFiles(bool|Closure $condition = true): static
     {
-        $this->language = $language;
+        $this->canManageFiles = $condition;
 
         return $this;
     }
 
-    public function getLanguage(): string
+    public function canRun(bool|Closure $condition = true): static
     {
-        return $this->evaluate($this->language) ?: 'plaintext';
+        $this->canRun = $condition;
+
+        return $this;
+    }
+
+    /**
+     * Files shown while the field is still empty.
+     *
+     * @param  array<int, array{name: string, content: string}>|Closure  $files
+     */
+    public function starterFiles(array|Closure $files): static
+    {
+        $this->starterFiles = $files;
+
+        return $this;
+    }
+
+    public function getCanManageFiles(): bool
+    {
+        return (bool) $this->evaluate($this->canManageFiles);
+    }
+
+    public function getCanRun(): bool
+    {
+        return (bool) $this->evaluate($this->canRun);
+    }
+
+    public function getStarterFiles(): array
+    {
+        return $this->evaluate($this->starterFiles) ?? [];
     }
 }

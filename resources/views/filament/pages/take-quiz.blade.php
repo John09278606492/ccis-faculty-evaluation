@@ -298,9 +298,9 @@
                             @else
                                 <x-code-editor
                                     state-path="answers.{{ $question->id }}"
-                                    :initial-value="$reviewMode ? '' : $question->starterCode()"
-                                    :language="$question->codeLanguage()"
+                                    :starter-files="$question->starterFiles()"
                                     :read-only="$reviewMode"
+                                    :can-run="$question->studentsCanRunCode()"
                                     :commit-debounce="$reviewMode ? null : 750"
                                     placeholder="Write your code here..."
                                     wire:key="code-{{ $question->id }}-{{ $reviewMode ? 'review' : 'edit' }}"

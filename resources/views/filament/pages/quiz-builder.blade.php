@@ -350,7 +350,7 @@
                             </button>
                         </div>
                     @elseif (($selectedQuestionData['type'] ?? '') === 'code')
-                        @php($codeLanguage = $selectedQuestionData['code_language'] ?? 'python')
+                        @php($codeLanguage = $selectedQuestionData['code_language'] ?? 'web')
                         <div class="qb-prop-group">
                             <label class="qb-prop-label" for="prop-code-language">Language</label>
                             <select @disabled($questionsLocked) id="prop-code-language" class="qb-prop-input"
@@ -359,20 +359,30 @@
                                     <option value="{{ $languageKey }}">{{ $languageLabel }}</option>
                                 @endforeach
                             </select>
-                            <span class="qb-prop-help">Sets highlighting and indentation. Code is never run; you grade it in the quiz's Attempts tab.</span>
+                            <span class="qb-prop-help">Picks the starter files. Add, rename (double-click) or delete files below; each file is highlighted by its extension.</span>
                         </div>
                         <div class="qb-prop-group">
-                            <span class="qb-prop-label">Starter Code</span>
-                            <span class="qb-prop-help">Optional. Students start from this instead of an empty editor.</span>
-                            <x-code-editor state-path="selectedQuestionData.starter_code" :language="$codeLanguage"
-                                :read-only="$questionsLocked" min-height="8rem" max-height="20rem"
+                            <label class="qb-tf-option">
+                                <input @disabled($questionsLocked) type="checkbox" wire:model="selectedQuestionData.allow_run">
+                                <span>Students can run their code</span>
+                            </label>
+                            <span class="qb-prop-help">HTML, CSS, JavaScript, PHP and SQL run in each student's own browser, never on this server. Other languages can only be written.</span>
+                        </div>
+                        <div class="qb-prop-group">
+                            <span class="qb-prop-label">Starter Files</span>
+                            <span class="qb-prop-help">Students get exactly these files and edit them; they cannot add or remove files.</span>
+                            <x-code-editor state-path="selectedQuestionData.starter_files"
+                                :read-only="$questionsLocked" :can-manage-files="! $questionsLocked" can-run
+                                min-height="8rem" max-height="20rem"
                                 wire:key="starter-{{ $selectedQuestionId }}-{{ $codeLanguage }}" />
                         </div>
                         <div class="qb-prop-group">
                             <span class="qb-prop-label">Reference Solution</span>
                             <span class="qb-prop-help">Optional. Only you see this, next to each student's code while grading.</span>
-                            <x-code-editor state-path="selectedQuestionData.reference_solution" :language="$codeLanguage"
-                                :read-only="$questionsLocked" min-height="8rem" max-height="20rem"
+                            <x-code-editor state-path="selectedQuestionData.reference_files"
+                                :starter-files="\App\Support\CodeProject::decode($selectedQuestionData['starter_files'] ?? null, [])"
+                                :read-only="$questionsLocked" :can-manage-files="! $questionsLocked" can-run
+                                min-height="8rem" max-height="20rem"
                                 wire:key="reference-{{ $selectedQuestionId }}-{{ $codeLanguage }}" />
                         </div>
                     @else

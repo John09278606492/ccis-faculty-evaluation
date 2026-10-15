@@ -182,15 +182,15 @@ class AttemptsRelationManager extends RelationManager
                                 ? new HtmlString('<a href="'.e(route('quiz-submissions.download', $answer)).'" class="underline">Download uploaded file</a>')
                                 : 'No file submitted',
                             'code' => filled($answer->answer_text)
-                                ? $this->codeBlock($answer->answer_text, $question->codeLanguage())
+                                ? $this->codeBlock($question->answerFiles($answer->answer_text))
                                 : 'No code submitted',
                             default => $answer->answer_text ?: '—',
                         }),
 
                     Forms\Components\Placeholder::make("reference_{$answer->id}")
                         ->label('Your Reference Solution')
-                        ->content(fn () => $this->codeBlock($question->referenceSolution(), $question->codeLanguage()))
-                        ->visible($question->type === 'code' && filled($question->referenceSolution())),
+                        ->content(fn () => $this->codeBlock($question->referenceFiles()))
+                        ->visible($question->type === 'code' && $question->referenceFiles() !== []),
 
                     Forms\Components\TextInput::make("awards.{$answer->id}.points")
                         ->label('Points Awarded')
@@ -211,11 +211,17 @@ class AttemptsRelationManager extends RelationManager
         return [...$schema, ...$manualSections];
     }
 
-    protected function codeBlock(string $code, string $language): HtmlString
+    /**
+     * Read-only code with a Run button, so the instructor sees the page or
+     * output the student's code produces, not only its source.
+     *
+     * @param  list<array{name: string, content: string}>  $files
+     */
+    protected function codeBlock(array $files): HtmlString
     {
         return new HtmlString(Blade::render(
-            '<x-code-editor :value="$code" :language="$language" read-only min-height="4rem" max-height="24rem" />',
-            ['code' => $code, 'language' => $language],
+            '<x-code-editor :value="$files" read-only can-run min-height="4rem" max-height="24rem" />',
+            ['files' => $files],
         ));
     }
 

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\CodeProject;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -49,8 +50,18 @@ class QuizQuestion extends Model
         if ($this->type === 'short_answer' && collect($this->correct_answer ?? [])->filter(fn ($answer) => filled($answer))->isEmpty()) {
             $issues[] = 'Add at least one accepted answer.';
         }
-        if ($this->type === 'code' && ! array_key_exists($this->codeLanguage(), self::CODE_LANGUAGES)) {
-            $issues[] = 'Choose a programming language for the code editor.';
+        if ($this->type === 'code') {
+            if (! array_key_exists($this->codeLanguage(), self::CODE_LANGUAGES)) {
+                $issues[] = 'Choose a programming language for the code editor.';
+            }
+            $files = CodeProject::normalize($this->options['files'] ?? null);
+            if (isset($this->options['files']) && $files === null) {
+                $issues[] = 'The starter files are malformed.';
+            }
+            array_push($issues, ...CodeProject::issues($this->starterFiles()));
+            if ($this->referenceFiles() && ($referenceIssues = CodeProject::issues($this->referenceFiles()))) {
+                $issues[] = 'Reference solution: '.implode(' ', $referenceIssues);
+            }
         }
 
         return $issues;
@@ -86,10 +97,12 @@ class QuizQuestion extends Model
     ];
 
     /**
-     * Languages the code editor can highlight. Code answers are never executed;
-     * the language only controls syntax highlighting and indentation.
+     * Language presets for code questions. The preset picks the starter files;
+     * each file is highlighted by its own extension. Web, PHP and SQL projects
+     * can run in the student's browser (see CodeProject::runner()).
      */
     public const CODE_LANGUAGES = [
+        'web' => 'Web page (HTML + CSS + JS)',
         'python' => 'Python',
         'java' => 'Java',
         'c' => 'C',
@@ -113,7 +126,7 @@ class QuizQuestion extends Model
     ];
 
     /** Longest code a student answer, starter code or reference solution may be. */
-    public const MAX_CODE_LENGTH = 50_000;
+    public const MAX_CODE_LENGTH = CodeProject::MAX_LENGTH;
 
     /**
      * Types the instructor grades by hand in the Attempts tab.
@@ -135,22 +148,78 @@ class QuizQuestion extends Model
     }
 
     /**
-     * Code questions keep their editor settings in `options` and the
-     * instructor-only reference solution in `correct_answer`.
+     * Code questions keep their language preset, starter files and run setting in
+     * `options`, and the instructor-only reference solution in `correct_answer`.
+     * Single-file questions saved before file tabs existed used `starter_code`
+     * and `reference` strings instead; those still load as one file.
      */
     public function codeLanguage(): string
     {
         return $this->options['language'] ?? 'plaintext';
     }
 
-    public function starterCode(): string
+    /**
+     * @return list<array{name: string, content: string}>
+     */
+    public function starterFiles(): array
     {
-        return (string) ($this->options['starter_code'] ?? '');
+        return CodeProject::normalize($this->options['files'] ?? null)
+            ?? CodeProject::preset($this->codeLanguage(), (string) ($this->options['starter_code'] ?? ''));
     }
 
-    public function referenceSolution(): string
+    /**
+     * Reference solution files (empty when the instructor gave none).
+     *
+     * @return list<array{name: string, content: string}>
+     */
+    public function referenceFiles(): array
     {
-        return (string) ($this->correct_answer['reference'] ?? '');
+        if (($files = CodeProject::normalize($this->correct_answer['files'] ?? null)) !== null) {
+            return $files;
+        }
+        $legacy = (string) ($this->correct_answer['reference'] ?? '');
+
+        return $legacy === '' ? [] : CodeProject::decode($legacy, $this->starterFiles());
+    }
+
+    /**
+     * A student's saved answer as files; unanswered questions show the starter files.
+     *
+     * @return list<array{name: string, content: string}>
+     */
+    public function answerFiles(?string $answer): array
+    {
+        return CodeProject::decode($answer, $this->starterFiles());
+    }
+
+    public function codeRunner(): ?string
+    {
+        return CodeProject::runner($this->starterFiles());
+    }
+
+    public function studentsCanRunCode(): bool
+    {
+        return ($this->options['allow_run'] ?? true) && $this->codeRunner() !== null;
+    }
+
+    /**
+     * Keep only the question's own files from a submitted answer, in starter order.
+     * Returns null when the answer is not a valid file list for this question.
+     */
+    public function normalizeCodeAnswer(string $answer): ?string
+    {
+        $decoded = json_decode($answer, true);
+        $submitted = CodeProject::normalize(is_array($decoded) ? ($decoded['files'] ?? null) : null);
+        if ($submitted === null) {
+            return null;
+        }
+        $byName = array_column($submitted, 'content', 'name');
+        $files = array_map(
+            fn (array $file) => ['name' => $file['name'], 'content' => $byName[$file['name']] ?? $file['content']],
+            $this->starterFiles(),
+        );
+
+        return CodeProject::length($files) <= CodeProject::MAX_LENGTH ? CodeProject::encode($files) : null;
     }
 
     public function isAutoGraded(): bool

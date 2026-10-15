@@ -13,6 +13,7 @@ use App\Models\QuizAttempt;
 use App\Models\User;
 use App\Services\ClassRecordSyncService;
 use App\Services\WorkbookPreviewService;
+use App\Support\CodeProject;
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -558,44 +559,84 @@ it('pushes roster and individual assignment changes including removals', functio
     \Illuminate\Support\Facades\Event::assertDispatched(\App\Events\ClassroomChanged::class, fn ($event) => $event->kind === 'enrollment' && $event->courseId === $offering->id);
 });
 
-it('builds a code question with a language, starter code and a reference solution', function () {
+it('builds a multi-file code question with starter files, a reference solution and a run setting', function () {
     extract(quizWorkflowFixture());
     $this->actingAs($instructor);
     $page = Livewire::test(QuizBuilder::class, ['record' => $quiz->id])->call('addQuestion', 'code');
     $code = $quiz->questions()->where('type', 'code')->firstOrFail();
-    expect($code->codeLanguage())->toBe('python');
-    $page->set('selectedQuestionData.code_language', 'java')
-        ->set('selectedQuestionData.starter_code', 'class Main {}')
-        ->set('selectedQuestionData.reference_solution', 'class Main { }')
+    expect(array_column($code->starterFiles(), 'name'))->toBe(['index.html', 'style.css', 'app.js'])
+        ->and($code->codeRunner())->toBe('web');
+    $page->set('selectedQuestionData.code_language', 'php')
+        ->assertSet('selectedQuestionData.starter_files', CodeProject::encode(CodeProject::preset('php')))
+        ->set('selectedQuestionData.starter_files', CodeProject::encode([
+            ['name' => 'index.php', 'content' => '<?php require "lib.php";'],
+            ['name' => 'lib.php', 'content' => '<?php'],
+        ]))
+        ->set('selectedQuestionData.reference_files', CodeProject::encode([
+            ['name' => 'index.php', 'content' => '<?php require "lib.php"; echo greet();'],
+            ['name' => 'lib.php', 'content' => '<?php function greet() { return "hi"; }'],
+        ]))
+        ->set('selectedQuestionData.allow_run', false)
         ->call('saveQuestionProperties')->assertHasNoErrors();
     $code->refresh();
-    expect($code->codeLanguage())->toBe('java')->and($code->starterCode())->toBe('class Main {}')
-        ->and($code->referenceSolution())->toBe('class Main { }');
-    $page->set('selectedQuestionData.code_language', 'cobol')->call('saveQuestionProperties')->assertHasErrors('selectedQuestionData');
-    expect($code->refresh()->codeLanguage())->toBe('java');
+    expect($code->codeLanguage())->toBe('php')->and(array_column($code->starterFiles(), 'name'))->toBe(['index.php', 'lib.php'])
+        ->and($code->referenceFiles()[0]['content'])->toContain('greet()')
+        ->and($code->codeRunner())->toBe('php')->and($code->studentsCanRunCode())->toBeFalse();
+    $page->set('selectedQuestionData.starter_files', CodeProject::encode([['name' => '../evil.php', 'content' => '']]))
+        ->call('saveQuestionProperties')->assertHasErrors('selectedQuestionData');
+    expect($code->refresh()->starterFiles()[1]['name'])->toBe('lib.php');
 });
 
-it('saves a student code answer and leaves the attempt for manual grading', function () {
+it('saves only the question files from a student answer and leaves it for manual grading', function () {
     extract(quizWorkflowFixture());
-    $code = $quiz->questions()->create(['type' => 'code', 'question_text' => 'Write solve()', 'points' => 5, 'order' => 2, 'options' => ['language' => 'python', 'starter_code' => 'def solve():']]);
+    $code = $quiz->questions()->create(['type' => 'code', 'question_text' => 'Build a page', 'points' => 5, 'order' => 2, 'options' => [
+        'language' => 'web',
+        'files' => [['name' => 'index.html', 'content' => '<h1>Start</h1>'], ['name' => 'style.css', 'content' => '']],
+    ]]);
     $this->actingAs($student);
-    $source = "def solve():\n    return 42\n".str_repeat('# padding line for a long program', 400);
-    expect(mb_strlen($source))->toBeGreaterThan(10_000);
-    Livewire::test(TakeQuiz::class, ['quiz' => $quiz])->call('beginAttempt')->assertSee('def solve():')
-        ->set('answers.'.$question->id, 'echo')->set('answers.'.$code->id, $source)->assertHasNoErrors()
-        ->call('submit')->assertSet('reviewMode', true);
+    $page = Livewire::test(TakeQuiz::class, ['quiz' => $quiz])->call('beginAttempt')->assertSee('index.html');
+    $page->set('answers.'.$code->id, json_encode(['files' => [
+        ['name' => 'index.html', 'content' => '<h1>Done</h1>'],
+        ['name' => 'extra.php', 'content' => '<?php system("dir");'],
+    ]]))->assertHasNoErrors();
+    $page->set('answers.'.$code->id, json_encode(['files' => [['name' => 'index.html', 'content' => str_repeat('x', CodeProject::MAX_LENGTH + 1)]]]))
+        ->assertHasErrors('answers.'.$code->id);
+    $page->set('answers.'.$question->id, 'echo')->call('submit')->assertSet('reviewMode', true);
     $attempt = $quiz->attempts()->firstOrFail();
+    $saved = $code->answerFiles($attempt->answers()->where('quiz_question_id', $code->id)->value('answer_text'));
     expect($attempt->status)->toBe('submitted')->and((float) $attempt->score)->toBe(10.0)
-        ->and($attempt->answers()->where('quiz_question_id', $code->id)->value('answer_text'))->toBe($source);
+        ->and($saved)->toBe([['name' => 'index.html', 'content' => '<h1>Done</h1>'], ['name' => 'style.css', 'content' => '']]);
 });
 
-it('grades a code answer from the attempts tab', function () {
+it('loads single-file code questions and answers saved before file tabs', function () {
     extract(quizWorkflowFixture());
-    $code = $quiz->questions()->create(['type' => 'code', 'question_text' => 'Write solve()', 'points' => 5, 'order' => 2, 'options' => ['language' => 'cpp', 'starter_code' => ''], 'correct_answer' => ['reference' => 'int solve() { return 42; }']]);
+    $code = $quiz->questions()->create(['type' => 'code', 'question_text' => 'Write solve()', 'points' => 5, 'order' => 2,
+        'options' => ['language' => 'python', 'starter_code' => 'def solve():'], 'correct_answer' => ['reference' => 'def solve(): return 42']]);
+    expect($code->starterFiles())->toBe([['name' => 'main.py', 'content' => 'def solve():']])
+        ->and($code->referenceFiles())->toBe([['name' => 'main.py', 'content' => 'def solve(): return 42']])
+        ->and($code->answerFiles("def solve():\n    return 41"))->toBe([['name' => 'main.py', 'content' => "def solve():\n    return 41"]])
+        ->and($code->codeRunner())->toBeNull()->and($code->studentsCanRunCode())->toBeFalse();
+});
+
+it('picks the in-browser runner from the project files', function () {
+    $files = fn (string ...$names) => array_map(fn ($name) => ['name' => $name, 'content' => ''], $names);
+    expect(CodeProject::runner($files('index.html', 'style.css', 'app.js')))->toBe('web')
+        ->and(CodeProject::runner($files('index.php', 'style.css')))->toBe('php')
+        ->and(CodeProject::runner($files('schema.sql')))->toBe('sql')
+        ->and(CodeProject::runner($files('Main.java')))->toBeNull()
+        ->and(CodeProject::issues($files('index.html', 'INDEX.html')))->toContain('File names must be unique.')
+        ->and(CodeProject::issues($files('run.exe')))->not->toBeEmpty();
+});
+
+it('grades a code answer from the attempts tab next to the reference solution', function () {
+    extract(quizWorkflowFixture());
+    $code = $quiz->questions()->create(['type' => 'code', 'question_text' => 'Write solve()', 'points' => 5, 'order' => 2,
+        'options' => ['language' => 'php', 'files' => [['name' => 'index.php', 'content' => '']]],
+        'correct_answer' => ['files' => [['name' => 'index.php', 'content' => '<?php echo 42;']]]]);
     $attempt = gradedAttempt($quiz, $student, status: 'submitted', score: 10);
     $attempt->update(['max_score' => 15]);
     $attempt->answers()->create(['quiz_question_id' => $question->id, 'answer_text' => 'echo', 'points_awarded' => 10, 'is_correct' => true]);
-    $answer = $attempt->answers()->create(['quiz_question_id' => $code->id, 'answer_text' => 'int solve() { return 41; }']);
+    $answer = $attempt->answers()->create(['quiz_question_id' => $code->id, 'answer_text' => CodeProject::encode([['name' => 'index.php', 'content' => '<?php echo 41;']])]);
     $this->actingAs($instructor);
     Livewire::test(AttemptsRelationManager::class, ['ownerRecord' => $quiz, 'pageClass' => EditQuiz::class])
         ->mountTableAction('grade', $attempt)->assertSee('Your Reference Solution')

@@ -1,0 +1,261 @@
+/**
+ * Runs a code question's files in the student's own browser, never on the server:
+ *
+ *  - web: HTML/CSS/JS rendered in a sandboxed iframe (no same-origin access)
+ *  - php: PHP 8.3 compiled to WebAssembly, in a Web Worker (public/code-runner/php-worker.js)
+ *  - sql: SQLite compiled to WebAssembly, in a Web Worker (public/code-runner/sql/)
+ *
+ * Workers are shared by every editor on the page and restarted after a timeout,
+ * so an infinite loop only stops that run.
+ */
+
+export const RUN_TIMEOUT_MS = 10_000
+
+const extensionOf = (name) => (name.split('.').pop() || '').toLowerCase()
+
+/** Same rules as App\Support\CodeProject::runner(). */
+export function runnerFor(files) {
+    const extensions = files.map((file) => extensionOf(file.name))
+
+    if (extensions.includes('php')) {
+        return 'php'
+    }
+    if (extensions.some((extension) => ['html', 'htm', 'css', 'js'].includes(extension))) {
+        return 'web'
+    }
+
+    return extensions.includes('sql') ? 'sql' : null
+}
+
+/** Files that can be opened as a page in the preview, entry page first. */
+export function pagesFor(files, runner) {
+    const pageExtensions = runner === 'php' ? ['php', 'html', 'htm'] : ['html', 'htm']
+    const pages = files.map((file) => file.name).filter((name) => pageExtensions.includes(extensionOf(name)))
+    const entry = ['index.php', 'index.html', 'index.htm'].find((name) => pages.includes(name))
+
+    return entry ? [entry, ...pages.filter((name) => name !== entry)] : pages
+}
+
+class WorkerPool {
+    constructor(url, type) {
+        this.url = url
+        this.type = type
+        this.worker = null
+        this.nextId = 0
+        this.pending = new Map()
+    }
+
+    start() {
+        if (this.worker) {
+            return
+        }
+        this.worker = new Worker(this.url, { type: this.type })
+        this.worker.addEventListener('message', ({ data }) => {
+            this.pending.get(data.id)?.resolve(data)
+            this.pending.delete(data.id)
+        })
+        this.worker.addEventListener('error', (event) => {
+            this.reset(new Error(event.message || 'The code runner failed to load.'))
+        })
+    }
+
+    call(message, timeoutMs = RUN_TIMEOUT_MS) {
+        this.start()
+        const id = ++this.nextId
+
+        return new Promise((resolve, reject) => {
+            const timer = setTimeout(() => {
+                this.reset(new Error(`Stopped after ${timeoutMs / 1000} seconds. Check for an infinite loop.`))
+            }, timeoutMs)
+            this.pending.set(id, {
+                resolve: (data) => {
+                    clearTimeout(timer)
+                    resolve(data)
+                },
+                reject: (error) => {
+                    clearTimeout(timer)
+                    reject(error)
+                },
+            })
+            this.worker.postMessage({ ...message, id })
+        })
+    }
+
+    reset(error) {
+        this.worker?.terminate()
+        this.worker = null
+        for (const { reject } of this.pending.values()) {
+            reject(error)
+        }
+        this.pending.clear()
+    }
+}
+
+const pools = new Map()
+
+function pool(url, type = 'module') {
+    if (! pools.has(url)) {
+        pools.set(url, new WorkerPool(url, type))
+    }
+
+    return pools.get(url)
+}
+
+/**
+ * @returns {Promise<{ status: number, body: string, location: string|null }>}
+ */
+export async function runPhp(baseUrl, files, request) {
+    // The first run downloads PHP (~18 MB), so it gets extra time.
+    const phpPool = pool(`${baseUrl}/php-worker.js`)
+    const timeout = phpPool.worker ? RUN_TIMEOUT_MS : RUN_TIMEOUT_MS * 6
+    const result = await phpPool.call({ files, request }, timeout)
+    if (! result.ok) {
+        throw new Error(result.error)
+    }
+
+    return {
+        status: result.status,
+        body: result.body,
+        location: result.headers?.location?.[0] ?? null,
+    }
+}
+
+/**
+ * Runs every .sql file in order against a fresh in-memory SQLite database.
+ *
+ * @returns {Promise<Array<{ columns: string[], values: any[][] }>>}
+ */
+export async function runSql(baseUrl, files) {
+    // sql.js ships a classic (non-module) worker script.
+    const sqlPool = pool(`${baseUrl}/sql/worker.sql-wasm.js`, 'classic')
+    const sql = files.filter((file) => extensionOf(file.name) === 'sql').map((file) => file.content).join('\n;\n')
+    await sqlPool.call({ action: 'open' })
+    const result = await sqlPool.call({ action: 'exec', sql })
+    if (result.error) {
+        throw new Error(result.error)
+    }
+
+    return result.results ?? []
+}
+
+const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+const projectPath = (href) => href.replace(/^\.\//, '').split(/[?#]/)[0]
+
+/**
+ * Inline the project's own stylesheets and scripts (the preview has no server
+ * to fetch them from) and add the bridge that reports console output, link
+ * clicks and form submissions back to the editor. Nothing here adds lines, so
+ * errors keep the line numbers of the student's own files.
+ */
+export function buildDocument(html, files, nonce, pageName = null) {
+    const byName = new Map(files.map((file) => [file.name, file.content]))
+    const scriptNames = {}
+
+    html = html.replace(/<link\b[^>]*>/gi, (tag) => {
+        const href = tag.match(/\bhref\s*=\s*["']([^"']+)["']/i)?.[1]
+        const css = href && /\brel\s*=\s*["']?stylesheet/i.test(tag) ? byName.get(projectPath(href)) : undefined
+
+        // CSS never depends on line breaks, so one line keeps the page's line numbers.
+        return css === undefined ? tag : `<style>${css.replace(/<\/style/gi, '<\/style').replace(/\r?\n/g, ' ')}</style>`
+    })
+    html = html.replace(/<script\b([^>]*)\bsrc\s*=\s*["']([^"']+)["']([^>]*)>\s*<\/script>/gi, (tag, before, src, after) => {
+        const js = byName.get(projectPath(src))
+        if (js === undefined) {
+            return tag
+        }
+        // A data: URL is a separate script, so its errors count lines within the file.
+        const url = `data:text/javascript;charset=utf-8,${encodeURIComponent(js)}`
+        scriptNames[url] = projectPath(src)
+
+        return `<script${before} src="${url}"${after}></script>`
+    })
+
+    const bridge = `<script>${bridgeSource(nonce, scriptNames, pageName).replace(/\n\s*/g, ' ')}</script>`
+    for (const pattern of [/<head\b[^>]*>/i, /<html\b[^>]*>/i, /<!doctype[^>]*>/i]) {
+        if (pattern.test(html)) {
+            return html.replace(pattern, (match) => match + bridge)
+        }
+    }
+
+    return bridge + html
+}
+
+/** A page for projects without an HTML file: their CSS and JS on an empty body. */
+export function shellDocument(files) {
+    const styles = files.filter((file) => extensionOf(file.name) === 'css')
+        .map((file) => `<link rel="stylesheet" href="${file.name}">`).join('')
+    const scripts = files.filter((file) => extensionOf(file.name) === 'js')
+        .map((file) => `<script src="${file.name}"></script>`).join('')
+
+    return `<!DOCTYPE html><html><head><meta charset="utf-8">${styles}</head><body>${scripts}</body></html>`
+}
+
+export function resolveProjectHref(href) {
+    if (! href || href.startsWith('#') || /^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('//')) {
+        return null
+    }
+
+    return href.replace(/^\.?\//, '')
+}
+
+function bridgeSource(nonce, scriptNames, pageName) {
+    // Runs first inside the sandboxed preview. Kept in ES5 so it works whatever
+    // the student's own code does.
+    return `(function () {
+    var nonce = ${JSON.stringify(nonce)};
+    var scriptNames = ${JSON.stringify(scriptNames)};
+    var pageName = ${JSON.stringify(pageName)};
+    function send(message) { message.nonce = nonce; parent.postMessage(message, '*'); }
+    function format(value) {
+        if (typeof value === 'string') return value;
+        if (value instanceof Error) return value.name + ': ' + value.message;
+        try { return JSON.stringify(value); } catch (e) { return String(value); }
+    }
+    ['log', 'info', 'warn', 'error', 'debug'].forEach(function (level) {
+        var original = console[level];
+        console[level] = function () {
+            try { send({ type: 'console', level: level, text: Array.prototype.map.call(arguments, format).join(' ') }); } catch (e) {}
+            if (original) original.apply(console, arguments);
+        };
+    });
+    window.addEventListener('error', function (event) {
+        var file = scriptNames[event.filename] || pageName;
+        var where = event.lineno ? ' (' + (file ? file + ', ' : '') + 'line ' + event.lineno + ')' : '';
+        send({ type: 'console', level: 'error', text: event.message + where });
+    });
+    window.addEventListener('unhandledrejection', function (event) {
+        send({ type: 'console', level: 'error', text: 'Uncaught (in promise) ' + format(event.reason) });
+    });
+    ['localStorage', 'sessionStorage'].forEach(function (name) {
+        try { window[name].length; } catch (e) {
+            var data = {};
+            Object.defineProperty(window, name, { value: {
+                getItem: function (key) { return Object.prototype.hasOwnProperty.call(data, key) ? data[key] : null; },
+                setItem: function (key, value) { data[key] = String(value); },
+                removeItem: function (key) { delete data[key]; },
+                clear: function () { data = {}; },
+                key: function (index) { return Object.keys(data)[index] || null; },
+                get length() { return Object.keys(data).length; }
+            } });
+        }
+    });
+    document.addEventListener('click', function (event) {
+        var link = event.target.closest && event.target.closest('a[href]');
+        if (! link) return;
+        var href = link.getAttribute('href');
+        if (href.charAt(0) === '#') return;
+        event.preventDefault();
+        send({ type: 'navigate', href: href });
+    }, true);
+    document.addEventListener('submit', function (event) {
+        var form = event.target;
+        event.preventDefault();
+        var fields = [];
+        new FormData(form, event.submitter).forEach(function (value, key) {
+            if (typeof value === 'string') fields.push([key, value]);
+        });
+        send({ type: 'submit', method: (form.getAttribute('method') || 'GET').toUpperCase(), action: form.getAttribute('action') || '', fields: fields });
+    }, true);
+})();`
+}

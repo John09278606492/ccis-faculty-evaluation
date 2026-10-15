@@ -4,6 +4,7 @@ namespace App\Filament\Pages;
 
 use App\Models\Quiz;
 use App\Models\QuizQuestion;
+use App\Support\CodeProject;
 use Filament\Pages\Page;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Locked;
@@ -132,7 +133,7 @@ class QuizBuilder extends Page
                 'correct_answer' => ['true'],
             ],
             'code' => [
-                'options' => ['language' => 'python', 'starter_code' => ''],
+                'options' => ['language' => 'web', 'files' => CodeProject::preset('web'), 'allow_run' => true],
                 'correct_answer' => null,
             ],
             default => ['options' => null, 'correct_answer' => null],
@@ -168,9 +169,10 @@ class QuizBuilder extends Page
             'options' => $this->optionsForEditing($question),
             'correct_answer' => $question->type === 'short_answer' ? ($question->correct_answer ?? []) : [],
             'true_false_correct' => $question->type === 'true_false' ? ($question->correct_answer[0] ?? 'true') : 'true',
-            'code_language' => $question->type === 'code' ? $question->codeLanguage() : 'python',
-            'starter_code' => $question->type === 'code' ? $question->starterCode() : '',
-            'reference_solution' => $question->type === 'code' ? $question->referenceSolution() : '',
+            'code_language' => $question->type === 'code' ? $question->codeLanguage() : 'web',
+            'starter_files' => $question->type === 'code' ? CodeProject::encode($question->starterFiles()) : '',
+            'reference_files' => $question->type === 'code' && $question->referenceFiles() ? CodeProject::encode($question->referenceFiles()) : '',
+            'allow_run' => $question->type !== 'code' || ($question->options['allow_run'] ?? true),
         ];
         $this->savedQuestionData = $this->selectedQuestionData;
         $this->showProperties = true;
@@ -207,8 +209,8 @@ class QuizBuilder extends Page
         $this->validate([
             'selectedQuestionData.question_text' => ['required', 'string', 'max:10000'],
             'selectedQuestionData.points' => ['required', 'integer', 'min:1', 'max:10000'],
-            'selectedQuestionData.starter_code' => ['nullable', 'string', 'max:'.QuizQuestion::MAX_CODE_LENGTH],
-            'selectedQuestionData.reference_solution' => ['nullable', 'string', 'max:'.QuizQuestion::MAX_CODE_LENGTH],
+            'selectedQuestionData.starter_files' => ['nullable', 'string', 'json'],
+            'selectedQuestionData.reference_files' => ['nullable', 'string', 'json'],
         ]);
         if (! $this->selectedQuestionId) {
             return;
@@ -243,10 +245,11 @@ class QuizBuilder extends Page
         } elseif ($question->type === 'code') {
             $data['options'] = [
                 'language' => (string) ($this->selectedQuestionData['code_language'] ?? 'plaintext'),
-                'starter_code' => (string) ($this->selectedQuestionData['starter_code'] ?? ''),
+                'files' => $this->decodeFiles($this->selectedQuestionData['starter_files'] ?? null) ?? [],
+                'allow_run' => (bool) ($this->selectedQuestionData['allow_run'] ?? true),
             ];
-            $reference = (string) ($this->selectedQuestionData['reference_solution'] ?? '');
-            $data['correct_answer'] = $reference !== '' ? ['reference' => $reference] : null;
+            $reference = $this->decodeFiles($this->selectedQuestionData['reference_files'] ?? null);
+            $data['correct_answer'] = $reference && CodeProject::length($reference) > 0 ? ['files' => $reference] : null;
         }
         $candidate = new QuizQuestion(['type' => $question->type, ...$data]);
         if ($issues = $candidate->validationIssues()) {
@@ -258,6 +261,29 @@ class QuizBuilder extends Page
         $this->dispatch('question-saved');
         $this->loadQuestions();
         $this->dispatch('notify', message: 'Question saved');
+    }
+
+    /**
+     * Picking another language preset swaps in its starter files, unless the
+     * instructor already wrote something in the current ones.
+     */
+    public function updatedSelectedQuestionData(mixed $value, string $key): void
+    {
+        if ($key !== 'code_language' || ! array_key_exists((string) $value, QuizQuestion::CODE_LANGUAGES)) {
+            return;
+        }
+        $files = $this->decodeFiles($this->selectedQuestionData['starter_files'] ?? null) ?? [];
+        if (CodeProject::length($files) === 0) {
+            $this->selectedQuestionData['starter_files'] = CodeProject::encode(CodeProject::preset($value));
+        }
+    }
+
+    /**
+     * @return list<array{name: string, content: string}>|null
+     */
+    protected function decodeFiles(?string $json): ?array
+    {
+        return blank($json) ? null : CodeProject::normalize(json_decode($json, true)['files'] ?? null);
     }
 
     /**

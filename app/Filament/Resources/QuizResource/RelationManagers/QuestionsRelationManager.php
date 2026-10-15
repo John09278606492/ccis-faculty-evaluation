@@ -4,6 +4,7 @@ namespace App\Filament\Resources\QuizResource\RelationManagers;
 
 use App\Filament\Forms\Components\CodeEditor;
 use App\Models\QuizQuestion;
+use App\Support\CodeProject;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\RelationManagers\RelationManager;
@@ -80,29 +81,44 @@ class QuestionsRelationManager extends RelationManager
                     ->visible(fn (Forms\Get $get) => $get('type') === 'short_answer')
                     ->required(fn (Forms\Get $get) => $get('type') === 'short_answer'),
 
-                // Code: editor language, optional starter code, and a reference solution for grading.
+                // Code: language preset, starter files, run setting and a reference solution for grading.
                 Forms\Components\Select::make('code_language')
                     ->label('Language')
                     ->options(QuizQuestion::CODE_LANGUAGES)
-                    ->default('python')
+                    ->default('web')
                     ->live()
+                    ->afterStateUpdated(function (Forms\Get $get, Forms\Set $set, ?string $state) {
+                        $files = CodeProject::decode($get('starter_files'), []);
+                        if ($state && CodeProject::length($files) === 0) {
+                            $set('starter_files', CodeProject::encode(CodeProject::preset($state)));
+                        }
+                    })
                     ->columnSpanFull()
                     ->visible(fn (Forms\Get $get) => $get('type') === 'code')
                     ->required(fn (Forms\Get $get) => $get('type') === 'code'),
 
-                CodeEditor::make('starter_code')
-                    ->label('Starter code')
-                    ->helperText('Optional. Students start from this code instead of an empty editor.')
-                    ->language(fn (Forms\Get $get) => $get('code_language'))
-                    ->rules(['nullable', 'string', 'max:'.QuizQuestion::MAX_CODE_LENGTH])
+                Forms\Components\Toggle::make('allow_run')
+                    ->label('Students can run their code')
+                    ->helperText("HTML, CSS, JavaScript, PHP and SQL run in each student's own browser, never on this server.")
+                    ->default(true)
                     ->columnSpanFull()
                     ->visible(fn (Forms\Get $get) => $get('type') === 'code'),
 
-                CodeEditor::make('reference_solution')
+                CodeEditor::make('starter_files')
+                    ->label('Starter files')
+                    ->helperText('Students get exactly these files. Double-click a tab to rename it.')
+                    ->default(CodeProject::encode(CodeProject::preset('web')))
+                    ->canManageFiles()
+                    ->canRun()
+                    ->columnSpanFull()
+                    ->visible(fn (Forms\Get $get) => $get('type') === 'code'),
+
+                CodeEditor::make('reference_files')
                     ->label('Reference solution')
                     ->helperText("Optional. Only you see this, next to each student's code when grading.")
-                    ->language(fn (Forms\Get $get) => $get('code_language'))
-                    ->rules(['nullable', 'string', 'max:'.QuizQuestion::MAX_CODE_LENGTH])
+                    ->starterFiles(fn (Forms\Get $get) => CodeProject::decode($get('starter_files'), []))
+                    ->canManageFiles()
+                    ->canRun()
                     ->columnSpanFull()
                     ->visible(fn (Forms\Get $get) => $get('type') === 'code'),
 
@@ -142,11 +158,11 @@ class QuestionsRelationManager extends RelationManager
         } elseif ($data['type'] === 'code') {
             $data['options'] = [
                 'language' => $data['code_language'] ?? 'plaintext',
-                'starter_code' => (string) ($data['starter_code'] ?? ''),
+                'files' => CodeProject::decode($data['starter_files'] ?? null, []),
+                'allow_run' => (bool) ($data['allow_run'] ?? true),
             ];
-            $data['correct_answer'] = filled($data['reference_solution'] ?? null)
-                ? ['reference' => $data['reference_solution']]
-                : null;
+            $reference = filled($data['reference_files'] ?? null) ? CodeProject::decode($data['reference_files'], []) : [];
+            $data['correct_answer'] = CodeProject::length($reference) > 0 ? ['files' => $reference] : null;
         } else {
             $data['options'] = null;
 
@@ -158,7 +174,7 @@ class QuestionsRelationManager extends RelationManager
         if ($issues = (new QuizQuestion($data))->validationIssues()) {
             throw ValidationException::withMessages(['mountedTableActionsData.0.options' => implode(' ', $issues)]);
         }
-        unset($data['true_false_correct'], $data['code_language'], $data['starter_code'], $data['reference_solution']);
+        unset($data['true_false_correct'], $data['code_language'], $data['allow_run'], $data['starter_files'], $data['reference_files']);
 
         return $data;
     }
@@ -186,8 +202,9 @@ class QuestionsRelationManager extends RelationManager
         if (($data['type'] ?? null) === 'code') {
             $question = new QuizQuestion($data);
             $data['code_language'] = $question->codeLanguage();
-            $data['starter_code'] = $question->starterCode();
-            $data['reference_solution'] = $question->referenceSolution();
+            $data['allow_run'] = $question->options['allow_run'] ?? true;
+            $data['starter_files'] = CodeProject::encode($question->starterFiles());
+            $data['reference_files'] = $question->referenceFiles() ? CodeProject::encode($question->referenceFiles()) : null;
         }
 
         return $data;
