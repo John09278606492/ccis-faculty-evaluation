@@ -2,7 +2,7 @@
  * Builds the quiz code editor and its in-browser runners into local files so
  * code questions work on a classroom LAN without internet:
  *
- *  - resources/js/dist/components/code-editor.js  (Filament publishes it to public/js/app)
+ *  - resources/js/dist/components/{code-editor,exam-supervision}.js  (Filament publishes them to public/js/app)
  *  - public/code-runner/php-worker.js + 8_3_33/php_8_3.wasm  (PHP 8.3 as WebAssembly)
  *  - public/code-runner/sql/  (SQLite as WebAssembly)
  *
@@ -17,14 +17,16 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const runnerDir = join(root, 'public/code-runner')
 const phpBuildDir = join(root, 'node_modules/@php-wasm/web-8-3/asyncify')
 
-await build({
-    entryPoints: [join(root, 'resources/js/components/code-editor.js')],
-    outfile: join(root, 'resources/js/dist/components/code-editor.js'),
-    bundle: true,
-    format: 'esm',
-    minify: true,
-    target: 'es2020',
-})
+for (const component of ['code-editor', 'exam-supervision']) {
+    await build({
+        entryPoints: [join(root, `resources/js/components/${component}.js`)],
+        outfile: join(root, `resources/js/dist/components/${component}.js`),
+        bundle: true,
+        format: 'esm',
+        minify: true,
+        target: 'es2020',
+    })
+}
 
 rmSync(runnerDir, { recursive: true, force: true })
 mkdirSync(join(runnerDir, 'sql'), { recursive: true })

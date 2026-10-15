@@ -780,3 +780,123 @@ it('ignores live updates that reach a lazy table before it has loaded', function
         ->dispatch('classroom-push', kind: 'attempt', quizId: $quiz->id)
         ->assertOk()->assertSee('Submitted');
 });
+
+/**
+ * A supervised attempt in progress, as the student sees it.
+ */
+function supervisedAttempt(array $fixture): array
+{
+    $fixture['quiz']->update(['supervise_attempts' => true]);
+    test()->actingAs($fixture['student']);
+    $page = Livewire::test(TakeQuiz::class, ['quiz' => $fixture['quiz']])
+        ->assertSee('This quiz is supervised')->assertSee('Nothing else on your computer is seen')
+        ->call('beginAttempt')->assertSee('Supervised: leaving this page and pasting from outside are recorded');
+
+    return [$page, $fixture['quiz']->attempts()->firstOrFail()];
+}
+
+it('records when a supervised student leaves the page and for how long, and tells the instructor once', function () {
+    $fixture = quizWorkflowFixture();
+    extract($fixture);
+    \Illuminate\Support\Facades\Event::fake([\App\Events\ClassroomChanged::class]);
+    [$page, $attempt] = supervisedAttempt($fixture);
+    $page->call('superviseEvent', 'left', ['secondsAgo' => 2]);
+    $this->travel(65)->seconds();
+    $page->call('superviseEvent', 'returned', ['seconds' => 68]);
+    $away = $attempt->events()->sole();
+    expect($away->type)->toBe('away')->and($away->seconds)->toBe(68)->and($away->ended_at)->not->toBeNull();
+    // A browser that claims a much longer absence is held to the server's count.
+    $page->call('superviseEvent', 'left', ['secondsAgo' => 2]);
+    $this->travel(10)->seconds();
+    $page->call('superviseEvent', 'returned', ['seconds' => 5000]);
+    expect($attempt->events()->latest('id')->first()->seconds)->toBe(17);
+    $attempt->events()->latest('id')->first()->delete();
+    // The "left" report never arrived (connection lost): the return records the whole absence.
+    $page->call('superviseEvent', 'returned', ['seconds' => 30]);
+    expect($attempt->events()->count())->toBe(2)->and($attempt->events()->latest('id')->first()->seconds)->toBe(30);
+    // Absences under two seconds are not recorded.
+    $page->call('superviseEvent', 'returned', ['seconds' => 1]);
+    expect($attempt->events()->count())->toBe(2);
+    // One bell notification per attempt every two minutes, however often the student leaves.
+    $notifications = $instructor->notifications()->get();
+    expect($notifications)->toHaveCount(1)
+        ->and($notifications->first()->data['title'])->toContain($student->full_name)->toContain('left the quiz page');
+    \Illuminate\Support\Facades\Event::assertDispatched(\App\Events\ClassroomChanged::class, fn ($event) => $event->kind === 'supervision' && $event->quizId === $quiz->id
+        && $event->broadcastWith() === ['courseId' => $offering->id, 'quizId' => $quiz->id, 'kind' => 'supervision']);
+});
+
+it('records outside pastes with their text and ignores small ones', function () {
+    $fixture = quizWorkflowFixture();
+    extract($fixture);
+    [$page, $attempt] = supervisedAttempt($fixture);
+    $pasted = "function solve() {\n    return 42;\n}\n";
+    $page->call('superviseEvent', 'paste', ['questionId' => $question->id, 'text' => $pasted, 'chars' => strlen($pasted), 'lines' => 3, 'file' => 'app.js'])
+        ->call('superviseEvent', 'paste', ['questionId' => $question->id, 'text' => 'echo', 'chars' => 4, 'lines' => 1])
+        ->call('superviseEvent', 'paste', ['questionId' => 999999, 'text' => str_repeat('x', 12_000), 'chars' => 50_000, 'lines' => 1])
+        ->call('superviseEvent', 'paste', ['questionId' => $question->id, 'text' => ['not', 'text']])
+        ->call('superviseEvent', 'unknown', []);
+    [$first, $long] = $attempt->events()->orderBy('id')->get()->all();
+    expect($attempt->events()->count())->toBe(2)
+        ->and($first->type)->toBe('paste')->and($first->quiz_question_id)->toBe($question->id)
+        ->and($first->details)->toMatchArray(['text' => $pasted, 'lines' => 3, 'file' => 'app.js'])
+        ->and($long->quiz_question_id)->toBeNull()
+        ->and(mb_strlen($long->details['text']))->toBe(10_000)->and($long->details['chars'])->toBe(50_000)->and($long->details['truncated'])->toBeTrue();
+});
+
+it('records nothing when supervision is off, in previews or after the attempt is submitted', function () {
+    $fixture = quizWorkflowFixture();
+    extract($fixture);
+    $this->actingAs($student);
+    $page = Livewire::test(TakeQuiz::class, ['quiz' => $quiz])->assertDontSee('This quiz is supervised')->call('beginAttempt')
+        ->assertDontSee('Supervised: leaving this page')
+        ->call('superviseEvent', 'left', [])->call('superviseEvent', 'returned', ['seconds' => 40]);
+    expect(\App\Models\QuizAttemptEvent::count())->toBe(0);
+    $page->call('submit');
+
+    $quiz->update(['supervise_attempts' => true]);
+    $page->call('superviseEvent', 'returned', ['seconds' => 40]);
+    $this->actingAs($instructor);
+    Livewire::test(TakeQuiz::class, ['quiz' => $quiz])->assertSet('previewMode', true)
+        ->assertSee('Supervision is on')->call('superviseEvent', 'left', []);
+    expect(\App\Models\QuizAttemptEvent::count())->toBe(0)
+        ->and($instructor->notifications()->count())->toBe(0);
+});
+
+it('stops recording after the per-attempt cap', function () {
+    $fixture = quizWorkflowFixture();
+    [$page, $attempt] = supervisedAttempt($fixture);
+    $attempt->events()->createMany(array_fill(0, \App\Services\ExamSupervision::MAX_EVENTS, ['type' => 'away', 'started_at' => now(), 'ended_at' => now(), 'seconds' => 3]));
+    $page->call('superviseEvent', 'left', []);
+    expect($attempt->events()->count())->toBe(\App\Services\ExamSupervision::MAX_EVENTS);
+});
+
+it('shows the supervision log to the instructor in the attempts table and while grading', function () {
+    $fixture = quizWorkflowFixture();
+    extract($fixture);
+    [$page, $attempt] = supervisedAttempt($fixture);
+    $page->call('superviseEvent', 'left', ['secondsAgo' => 2, 'via' => 'phpmyadmin']);
+    $this->travel(70)->seconds();
+    $page->call('superviseEvent', 'returned', ['seconds' => 72])
+        ->call('superviseEvent', 'paste', ['questionId' => $question->id, 'text' => "<script>alert(1)</script>\n<p>a</p>\n<p>b</p>", 'lines' => 3])
+        ->call('submit');
+    $this->actingAs($instructor);
+    $table = Livewire::test(AttemptsRelationManager::class, ['ownerRecord' => $quiz, 'pageClass' => EditQuiz::class])
+        ->assertSee('Left 1× (1m 12s away) · 1 outside paste');
+    $table->mountTableAction('supervisionLog', $attempt)
+        ->assertSee('after opening phpMyAdmin')->assertSee('Away 1m 12s')->assertSee('Question 1')
+        ->assertSee('&lt;script&gt;alert(1)&lt;/script&gt;', escape: false)->assertDontSee('<script>alert(1)', escape: false);
+    $table = Livewire::test(AttemptsRelationManager::class, ['ownerRecord' => $quiz, 'pageClass' => EditQuiz::class]);
+    $table->mountTableAction('grade', $attempt)->assertSee('Supervision log');
+    // Live updates for supervision refresh this table and the notification bell.
+    $table->dispatch('classroom-supervision', kind: 'supervision', quizId: $quiz->id)->assertDispatched('databaseNotificationsSent');
+});
+
+it('turns supervision on from the assessment settings', function () {
+    extract(quizWorkflowFixture());
+    $this->actingAs($instructor);
+    Livewire::test(EditQuiz::class, ['record' => $quiz->id])->assertSee('Supervise attempts')
+        ->fillForm(['supervise_attempts' => true])->call('save')->assertHasNoFormErrors();
+    expect($quiz->refresh()->supervise_attempts)->toBeTrue();
+    gradedAttempt($quiz, $student);
+    Livewire::test(AttemptsRelationManager::class, ['ownerRecord' => $quiz, 'pageClass' => EditQuiz::class])->assertSee('Supervision')->assertSee('Nothing recorded');
+});

@@ -97,6 +97,9 @@
                     <p class="text-sm">{{ $quiz->type === 'activity' || $quiz->isScheduled() ? 'Closes' : 'Last time to start' }}: <strong>{{ $quiz->available_until->format('M j, Y g:i A') }}</strong> ({{ config('app.timezone') }})</p>
                 @endif
                 <p class="text-sm text-gray-500">Your attempt begins only when you press Start. Once started, the timer keeps running even if you leave this page.</p>
+                @if ($quiz->supervise_attempts)
+                    @include('filament.partials.supervision-notice', ['quiz' => $quiz])
+                @endif
                 <div class="flex flex-wrap gap-3">
                     <x-filament::button wire:click="beginAttempt" wire:loading.attr="disabled">Start attempt</x-filament::button>
                     <x-filament::button color="gray" tag="a" href="{{ \App\Filament\Pages\MyQuizzes::getUrl(panel: 'admin', tenant: $quiz->campus) }}">Back to My Assessments</x-filament::button>
@@ -113,6 +116,7 @@
     @endphp
 
     <div wire:key="quiz-attempt-{{ $attempt->id ?? 'preview' }}-{{ $attempt->status }}"
+        data-exam-page
         x-data="{
             expiresAt: @js($reviewMode ? null : optional($attempt->expires_at)?->toIso8601String()),
             remaining: null,
@@ -138,12 +142,32 @@
             },
         }"
     >
+        @if ($quiz->supervise_attempts && ! $reviewMode && ! $previewMode && $attempt->exists)
+            {{-- Exam supervision: App\Services\ExamSupervision, resources/js/components/exam-supervision.js --}}
+            <div
+                hidden
+                wire:ignore
+                x-load
+                x-load-src="{{ \Filament\Support\Facades\FilamentAsset::getAlpineComponentSrc('exam-supervision') }}"
+                x-data="examSupervisionComponent({
+                    attemptId: @js($attempt->id),
+                    minAwaySeconds: @js(\App\Services\ExamSupervision::MIN_AWAY_SECONDS),
+                    minPasteChars: @js(\App\Services\ExamSupervision::MIN_PASTE_CHARS),
+                    minPasteLines: @js(\App\Services\ExamSupervision::MIN_PASTE_LINES),
+                    maxPasteStored: @js(\App\Services\ExamSupervision::MAX_PASTE_STORED),
+                })"
+            ></div>
+        @endif
+
         @if ($previewMode)
             <div class="mb-6 flex items-start gap-3 rounded-lg bg-info-50 px-4 py-3 text-info-700 dark:bg-info-500/10 dark:text-info-400">
                 <x-heroicon-o-eye class="mt-0.5 h-5 w-5 shrink-0" />
                 <div class="text-sm">
                     <p class="font-semibold">Preview Mode</p>
                     <p>You're viewing this exactly as your students will see it. Nothing you do here is saved or submitted.</p>
+                    @if ($quiz->supervise_attempts)
+                        <p class="mt-1">Supervision is on: students' attempts record when they leave the page and what they paste from outside. Nothing is recorded in this preview.</p>
+                    @endif
                 </div>
             </div>
         @endif
@@ -220,6 +244,12 @@
                         <span>{{ $answeredCount }} of {{ $totalCount }} answered</span>
                     </div>
                 @endif
+                @if ($quiz->supervise_attempts)
+                    <span class="inline-flex items-center gap-1.5 text-xs text-gray-500" title="Leaving this page (another tab, window or app) and pasting text from outside the {{ strtolower($quiz->kindLabel()) }} are recorded for your instructor. Nothing else on your computer is seen.">
+                        <x-heroicon-o-eye class="h-4 w-4" />
+                        Supervised: leaving this page and pasting from outside are recorded
+                    </span>
+                @endif
                 @if (!$reviewMode)
                     <details class="w-full text-sm">
                         <summary class="cursor-pointer text-primary-600">Jump to a question · {{ $totalCount - $answeredCount }} unanswered</summary>
@@ -237,7 +267,7 @@
             @foreach ($this->questions as $index => $question)
                 @php($savedAnswer = $reviewMode ? $attempt->answers->firstWhere('quiz_question_id', $question->id) : null)
 
-                <div id="question-{{ $question->id }}" wire:key="question-{{ $question->id }}" class="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
+                <div id="question-{{ $question->id }}" data-question-id="{{ $question->id }}" wire:key="question-{{ $question->id }}" class="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
                     <div class="mb-3 flex items-start gap-3">
                         <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-600 dark:bg-gray-800 dark:text-gray-300">
                             {{ $index + 1 }}
@@ -316,7 +346,7 @@
                                     @if ($previewMode || ! $databaseAnswer)
                                         <span class="text-xs text-gray-400">Each student gets their own database here.</span>
                                     @else
-                                        <x-filament::button tag="a" size="sm" target="_blank" icon="heroicon-o-arrow-top-right-on-square"
+                                        <x-filament::button tag="a" size="sm" target="_blank" icon="heroicon-o-arrow-top-right-on-square" data-supervision-via="phpmyadmin"
                                             href="{{ route('student-databases.open', $databaseAnswer) }}">
                                             Open phpMyAdmin
                                         </x-filament::button>

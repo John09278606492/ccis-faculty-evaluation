@@ -4,7 +4,9 @@ namespace App\Filament\Resources\QuizResource\RelationManagers;
 
 use App\Models\QuizAnswer;
 use App\Models\QuizAttempt;
+use App\Models\QuizAttemptEvent;
 use App\Models\QuizQuestion;
+use App\Services\ExamSupervision;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
@@ -15,6 +17,8 @@ use Filament\Tables\Table;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\HtmlString;
+use Illuminate\Support\Str;
+use Livewire\Attributes\On;
 use pxlrbt\FilamentExcel\Actions\Tables\ExportAction;
 use pxlrbt\FilamentExcel\Exports\ExcelExport;
 
@@ -38,6 +42,7 @@ class AttemptsRelationManager extends RelationManager
         return $table
             ->heading('Attempts & Submissions')
             ->description("Highest possible score: {$this->getOwnerRecord()->total_points} points")
+            ->modifyQueryUsing(fn ($query) => $query->with('events'))
             ->columns([
                 Tables\Columns\TextColumn::make('user.student_id')
                     ->label('Student ID')
@@ -86,6 +91,13 @@ class AttemptsRelationManager extends RelationManager
                     ->dateTime()
                     ->sortable()
                     ->placeholder('Not submitted'),
+
+                Tables\Columns\TextColumn::make('supervision')
+                    ->label('Supervision')
+                    ->state(fn (QuizAttempt $record) => $this->supervisionSummary($record))
+                    ->badge()
+                    ->color(fn (string $state) => $state === 'Nothing recorded' ? 'gray' : 'warning')
+                    ->visible(fn () => $this->showsSupervision()),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('status')
@@ -96,6 +108,17 @@ class AttemptsRelationManager extends RelationManager
                     ]),
             ], layout: FiltersLayout::AboveContent)
             ->actions([
+                Tables\Actions\Action::make('supervisionLog')
+                    ->label('Supervision log')
+                    ->icon('heroicon-o-eye')
+                    ->color('gray')
+                    ->visible(fn (QuizAttempt $record) => $record->events->isNotEmpty()
+                        && (auth()->user()?->can('update', $this->getOwnerRecord()) ?? false))
+                    ->modalHeading(fn (QuizAttempt $record) => "Supervision log — {$record->user->name}, attempt #{$record->attempt_number}")
+                    ->modalContent(fn (QuizAttempt $record) => $this->supervisionLog($record))
+                    ->modalSubmitAction(false)
+                    ->modalCancelActionLabel('Close'),
+
                 Tables\Actions\Action::make('grade')
                     ->label('Grade')
                     ->icon('heroicon-o-pencil-square')
@@ -138,6 +161,18 @@ class AttemptsRelationManager extends RelationManager
             ->get();
 
         $schema = [];
+
+        if ($record->events()->exists()) {
+            $schema[] = Forms\Components\Section::make('Supervision log')
+                ->description(fn () => $this->supervisionSummary($record))
+                ->schema([
+                    Forms\Components\Placeholder::make('supervision_log')
+                        ->label('')
+                        ->content(fn () => $this->supervisionLog($record)),
+                ])
+                ->collapsible()
+                ->collapsed();
+        }
 
         if ($autoGraded->isNotEmpty()) {
             $schema[] = Forms\Components\Section::make('Auto-graded answers')
@@ -239,6 +274,49 @@ class AttemptsRelationManager extends RelationManager
             '<x-code-editor :value="$files" read-only :can-run="$canRun" min-height="4rem" max-height="24rem" />',
             ['files' => $files, 'canRun' => $canRun],
         ));
+    }
+
+    /**
+     * Supervision events (sent by ExamSupervision) refresh this table and the
+     * notification bell without reloading the student pages that share the channel.
+     */
+    #[On('classroom-supervision')]
+    public function receiveSupervisionUpdate(string $kind = 'supervision', ?int $quizId = null, ?int $courseId = null): void
+    {
+        $this->dispatch('databaseNotificationsSent');
+        $this->receiveClassroomUpdate($kind, $quizId, $courseId);
+    }
+
+    protected function showsSupervision(): bool
+    {
+        $quiz = $this->getOwnerRecord();
+
+        return $quiz->supervise_attempts
+            || QuizAttemptEvent::whereIn('quiz_attempt_id', $quiz->attempts()->select('id'))->exists();
+    }
+
+    protected function supervisionSummary(QuizAttempt $record): string
+    {
+        $summary = ExamSupervision::summary($record);
+        $parts = [];
+        if ($summary['away']) {
+            $parts[] = "Left {$summary['away']}× (".QuizAttemptEvent::formatSeconds($summary['away_seconds']).' away)';
+        }
+        if ($summary['pastes']) {
+            $parts[] = $summary['pastes'].' outside '.Str::plural('paste', $summary['pastes']);
+        }
+
+        return $parts ? implode(' · ', $parts) : 'Nothing recorded';
+    }
+
+    protected function supervisionLog(QuizAttempt $record): HtmlString
+    {
+        $record->loadMissing(['events.question', 'quiz.questions', 'user']);
+
+        return new HtmlString(view('filament.partials.supervision-log', [
+            'attempt' => $record,
+            'summary' => $this->supervisionSummary($record),
+        ])->render());
     }
 
     protected function saveGrades(QuizAttempt $record, array $data): void

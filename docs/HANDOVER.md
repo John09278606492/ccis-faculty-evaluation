@@ -113,6 +113,14 @@ Internally everything is still named "quiz" (tables, models, classes). Only the 
 - `database_name`: the student's workspace database (set only after setup succeeded).
 - `database_export`: SQL dump taken when the attempt is submitted (graded from this).
 
+### `quizzes.supervise_attempts` and `quiz_attempt_events` (exam supervision, section 4.6)
+
+- `quizzes.supervise_attempts` (bool, default false) turns supervision on per assessment.
+- `quiz_attempt_events`: `quiz_attempt_id`, `quiz_question_id` (pastes only), `type` (`away` | `paste`),
+  `started_at`, `ended_at` (null while the student is still away, or never came back), `seconds`, `details` JSON:
+  `away` → `{"via": "phpmyadmin"}` when it began right after Open phpMyAdmin;
+  `paste` → `{"chars", "lines", "file", "text", "truncated"}` (at most 10,000 characters of text kept).
+
 ### `student_db_accounts`
 
 One row per student: `user_id`, `mysql_user` (`stu{userId}`), `password` (encrypted with `APP_KEY`).
@@ -249,6 +257,48 @@ their own database, opened from the exam with **Open phpMyAdmin**. No passwords 
   (`routes/web.php`), keeping query strings.
 - Code comments, class names and tables still say "quiz"; that is intentional.
 
+### 4.6 Exam supervision (leaving the page, outside pastes)
+
+Purpose: the instructor asked for a log of students leaving the exam page, with notifications, and paste
+detection. Scope agreed with the instructor: only during an attempt, only on the exam page, logs and
+notifications only. **No screenshots, no lockdown, nothing outside the page.** Browsers cannot reveal which
+other tab, site or app a student opened, and this feature does not try.
+
+- **Setting:** *Supervise attempts* toggle in the assessment form (`QuizResource`), column
+  `quizzes.supervise_attempts`.
+- **Students are told:** a notice before Start (`resources/views/filament/partials/supervision-notice.blade.php`)
+  and a badge in the exam's progress bar. Instructor previews say supervision is on and record nothing.
+- **Browser side:** `resources/js/components/exam-supervision.js`, an async Alpine component like the code
+  editor (built by `npm run build:code-editor` into `resources/js/dist/components/`, published by
+  `filament:assets`, registered in `AppServiceProvider`). It is only rendered during a real, supervised,
+  in-progress attempt.
+  - *Leaving:* page hidden or window without focus (checked on blur/focus/visibilitychange and every second,
+    because leaving from inside the Run preview iframe fires no event on the page). Absences under 2 s are
+    not reported. Focus inside the Run preview, the file chooser of a file-upload question and
+    alert/confirm dialogs do not count. The first absence after clicking **Open phpMyAdmin** is tagged
+    (phpMyAdmin opens in another tab, so time there counts as away; the notice tells students).
+  - *Pastes:* every copy/cut/dragstart inside the page is remembered (also in `sessionStorage` per attempt,
+    so a reload keeps it). A paste or drop into a question (`[data-question-id]`) is **internal** when the
+    text, ignoring whitespace, is part of something copied inside the page, already in the question's files
+    or starter files (`containsText()` in `code-editor.js`), or shown on the exam page. Only outside pastes
+    of 3+ lines or 100+ characters are reported, with the text, question and editor file.
+- **Server side:** `TakeQuiz::superviseEvent()` (skips rendering) → `App\Services\ExamSupervision`
+  (`left`, `returned`, `pastedFromOutside`). It re-checks the thresholds, caps 500 events per attempt, and
+  ignores previews, unsupervised assessments and finished attempts. If the "left" report was lost, the
+  return records the whole absence. Durations use the browser's measure, bounded by the server's clock.
+- **Instructor:** a bell notification to the course instructor (at most one per attempt every 2 minutes)
+  linking to Attempts & Submissions; there, a *Supervision* column ("Left 2× (6s away) · 1 outside
+  paste"), a *Supervision log* action, and the log inside the grading modal
+  (`resources/views/filament/partials/supervision-log.blade.php`).
+- **Live updates:** events broadcast `ClassroomChanged` with kind `supervision`. `resources/js/live-updates.js`
+  turns that kind into the Livewire event `classroom-supervision` (not `classroom-push`), which only
+  `AttemptsRelationManager` listens to, so students' exam pages are not reloaded for every event. It also
+  refreshes the notification bell (`databaseNotificationsSent`); elsewhere the bell polls every 30 s.
+- **Verified in Chromium** (Playwright cannot do this part by itself, because it makes every page report
+  focus; the check drove real tab switches with Playwright detached): a 4 s tab switch is logged, a 0.5 s one
+  is not, clicking into the Run preview is not, leaving from inside the preview is; copying in the editor
+  and pasting is not logged, an outside 3-line paste is logged with the file name, a one-line paste is not.
+
 ---
 
 ## 5. Bugs found and fixed this session (keep these fixes)
@@ -301,9 +351,10 @@ their own database, opened from the exam with **Open phpMyAdmin**. No passwords 
 
 ## 7. Tests
 
-- `php -d opcache.enable_cli=0 vendor/bin/pest` → **57 passed** (56 at handover, plus
-  `tests/Unit/EnvExampleTest.php`, which checks that `.env.example` parses: Windows paths there must be
-  single-quoted, because `\l` inside double quotes is an invalid escape for phpdotenv).
+- `php -d opcache.enable_cli=0 vendor/bin/pest` → **63 passed**: the 56 at handover, plus
+  `tests/Unit/EnvExampleTest.php` (checks that `.env.example` parses: Windows paths there must be
+  single-quoted, because `\l` inside double quotes is an invalid escape for phpdotenv) and six exam
+  supervision tests at the end of `tests/Feature/QuizWorkflowTest.php` (helper `supervisedAttempt`).
 - The code/database tests are at the end of `tests/Feature/QuizWorkflowTest.php`. They rely on its
   helper functions (`quizWorkflowFixture`, `gradedAttempt`, `fakeStudentDatabases`,
   `databaseQuestionAttempt`) and on `tests/Support/EvaluationFixture.php`.
@@ -364,17 +415,14 @@ hosts keep separate sessions. The demo server is single-threaded, so it is slow 
    - Check that phpMyAdmin works at `/phpmyadmin`.
    - Check that Stop shuts the student MySQL down cleanly.
 3. After grading, use `classroom:student-db prune` to remove graded workspaces.
-4. **Requested by the instructor but not built:** exam supervision, i.e. a log of when students leave
-   the exam tab, with notifications. The previous assistant could not build this part in its session
-   (its responses on this topic were stopped by an automated safety check), so nothing for it exists in
-   the code. The instructor's stated scope: only during an exam, only on the exam page at the classroom
-   server's address, logs and notifications only, **no screenshots and no lockdown**. Related
-   facts already established:
+4. **Exam supervision is built** (section 4.6). Try it on the classroom laptop with real student devices:
+   run `php -d opcache.enable_cli=0 artisan migrate`, then `npm run build` (or `npm run build:code-editor`
+   plus `filament:assets`). Facts established with the instructor:
    - Browsers cannot reveal which other site or tab a student switched to; only that they left the
-     page and for how long.
+     page and for how long. Typing code read from another device is not detectable.
    - Screen capture needs explicit student consent and HTTPS (not available on the current plain-HTTP
      LAN setup). The instructor has since dropped screenshots.
-   - An alternative discussed but not built: a per-assessment **"Require Safe Exam Browser"** setting
+   - Still not built: a per-assessment **"Require Safe Exam Browser"** setting
      (SEB from safeexambrowser.org locks the student's computer to the exam address; the server
      checks SEB's request headers). The instructor found per-laptop installation too slow; the
      proposed mitigation was hosting the SEB installer on the laptop server plus a one-click

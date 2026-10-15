@@ -649,6 +649,15 @@ export default function codeEditorComponent({
             }
         },
 
+        // ---- Exam supervision ---------------------------------------------------------
+
+        /** Whether text (ignoring whitespace) is already in this project or its starter files; see exam-supervision.js. */
+        containsText(text) {
+            const needle = text.replace(/\s+/g, ' ').trim()
+
+            return [...this.files, ...starter.files].some((file) => file.content.replace(/\s+/g, ' ').includes(needle))
+        },
+
         // ---- Saving -----------------------------------------------------------------
 
         serialize() {

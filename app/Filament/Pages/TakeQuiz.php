@@ -6,6 +6,7 @@ use App\Models\Quiz;
 use App\Models\QuizAnswer;
 use App\Models\QuizAttempt;
 use App\Models\QuizQuestion;
+use App\Services\ExamSupervision;
 use App\Services\StudentDatabase\StudentDatabases;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
@@ -506,6 +507,32 @@ class TakeQuiz extends Page
             $this->answers[$questionId] = $path;
             unset($this->files[$questionId]);
         }
+    }
+
+    /**
+     * Reports from resources/js/components/exam-supervision.js: the student left the
+     * page, came back, or pasted text from outside the exam. The page never re-renders.
+     */
+    public function superviseEvent(string $type, array $data = []): void
+    {
+        $this->skipRender();
+        if ($this->previewMode || ! $this->attempt?->exists || $this->attempt->user_id !== Auth::id()) {
+            return;
+        }
+        $attempt = QuizAttempt::with('quiz')->find($this->attempt->id);
+        if (! $attempt) {
+            return;
+        }
+        $string = fn (string $key) => is_string($data[$key] ?? null) ? $data[$key] : null;
+        $number = fn (string $key) => is_numeric($data[$key] ?? null) ? (int) $data[$key] : 0;
+        match ($type) {
+            'left' => ExamSupervision::left($attempt, $number('secondsAgo'), $string('via')),
+            'returned' => ExamSupervision::returned($attempt, $number('seconds')),
+            'paste' => $string('text') !== null
+                ? ExamSupervision::pastedFromOutside($attempt, $number('questionId') ?: null, $string('text'), $string('file'), $number('chars'), $number('lines'))
+                : null,
+            default => null,
+        };
     }
 
     public function submit(): void

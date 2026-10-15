@@ -479,6 +479,10 @@ class QuizResource extends Resource implements HasShieldPermissions
                         Forms\Components\Toggle::make('shuffle_questions')
                             ->label('Shuffle question order per student'),
 
+                        Forms\Components\Toggle::make('supervise_attempts')
+                            ->label('Supervise attempts')
+                            ->helperText('Records when students leave the exam page (and for how long) and text they paste from outside it, and notifies you. Students are told before they start. Browsers cannot show which other sites or apps they opened.'),
+
                         Forms\Components\Toggle::make('is_published')
                             ->label('Published (visible to students)')
                             ->disabled(fn (?Quiz $record) => ! $record)

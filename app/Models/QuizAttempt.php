@@ -60,6 +60,12 @@ class QuizAttempt extends Model
         return $this->hasMany(QuizAnswer::class);
     }
 
+    /** The supervision log, see App\Services\ExamSupervision. */
+    public function events(): HasMany
+    {
+        return $this->hasMany(QuizAttemptEvent::class);
+    }
+
     public function isExpired(): bool
     {
         return $this->expires_at !== null && now()->gt($this->expires_at);

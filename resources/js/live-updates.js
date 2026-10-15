@@ -15,7 +15,9 @@ function status(message, connected = false) {
 }
 
 function refreshRelatedViews(event = { kind: 'reconnected', quizId: null, courseId: null }) {
-    if (window.Livewire) window.Livewire.dispatch('classroom-push', event);
+    // Supervision events are frequent and only the instructor's Attempts table needs them,
+    // so they get their own Livewire event instead of reloading every student's page.
+    if (window.Livewire) window.Livewire.dispatch(event.kind === 'supervision' ? 'classroom-supervision' : 'classroom-push', event);
 }
 
 function connect() {
