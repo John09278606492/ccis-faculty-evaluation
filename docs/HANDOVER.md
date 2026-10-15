@@ -12,10 +12,8 @@ or the internet at exam time.
 
 ## 0. Do this first
 
-1. **Commit the pending work before creating a new worktree.** A worktree starts from a commit, so it
-   will not contain anything uncommitted. At the time of writing, the last commit is `7c6137f`, and
-   everything in section 2 ("Uncommitted") exists only in the original folder's working tree.
-   Leave `.playwright-cli/` out of the commit (browser debug logs).
+1. Everything is committed on `main` (latest feature commit `560a2d4`). Only `.playwright-cli/`
+   (browser debug logs) is left out on purpose. Nothing has been pushed to GitHub.
 2. After cloning or creating the worktree, install and build:
    ```bash
    composer install
@@ -35,9 +33,9 @@ or the internet at exam time.
 | `734bfe6` | Code-editor question type (first version), live classroom updates over Laravel Reverb, desktop host app, class-record auto-sync, quiz assignments |
 | `7c6137f` | Multi-file code questions and an in-browser **Run** button (HTML/CSS/JS preview, PHP via WebAssembly, SQL via SQLite WebAssembly) |
 
-## 2. What exists (uncommitted, in the original working tree)
+## 2. What exists (commit `560a2d4`)
 
-All of this is built and tested (56 Pest tests passing) but **not committed**:
+All of this is built and tested (56 Pest tests passing):
 
 - **Student database workspaces**: a separate MySQL server for students, per-student accounts, and
   one-click phpMyAdmin sign-on from a code question (section 4.4).
@@ -357,7 +355,7 @@ hosts keep separate sessions. The demo server is single-threaded, so it is slow 
 
 ## 9. Open items / next steps
 
-1. **Commit** the uncommitted work (section 2), excluding `.playwright-cli/`.
+1. **Push** `main` to GitHub when ready (nothing has been pushed).
 2. **Fix Laragon** (gotcha 6.2), then run `php -d opcache.enable_cli=0 artisan migrate` on the real
    database (the new migration has not been run there).
 3. **Verify the desktop host end to end** with the real database:
