@@ -1,5 +1,7 @@
 <x-filament-panels::page>
+    @php($questionsLocked = $quizRecord->attempts()->exists())
     <div x-data="{
+            dirty: false,
             draggedType: null,
             draggedQuestionId: null,
             dragOverIndex: null,
@@ -109,7 +111,7 @@
 
             getTypeIcon(type) {
                 const icons = {
-                    multiple_choice: '◉', true_false: '✓', short_answer: 'T', essay: '¶', file_upload: '📎',
+                    multiple_choice: '◉', true_false: '✓', short_answer: 'T', essay: '¶', file_upload: '📎', code: '</>',
                 };
                 return icons[type] || '?';
             },
@@ -117,16 +119,20 @@
             getTypeLabel(type) {
                 const labels = {
                     multiple_choice: 'Multiple Choice', true_false: 'True / False', short_answer: 'Short Answer',
-                    essay: 'Essay', file_upload: 'File Upload',
+                    essay: 'Essay', file_upload: 'File Upload', code: 'Code',
                 };
                 return labels[type] || type;
             },
-        }" class="qb-container">
+        }" class="qb-container" x-on:input="dirty = true" x-on:change="dirty = true"
+        x-on:question-saved.window="dirty = false"
+        x-on:question-selected.window="if (window.innerWidth <= 640) $nextTick(() => $refs.properties.scrollIntoView({ behavior: 'smooth', block: 'start' }))"
+        x-on:beforeunload.window="if (dirty) { $event.preventDefault(); $event.returnValue = ''; }">
+
         {{-- ═══════ LEFT SIDEBAR — QUESTION TYPE PALETTE ═══════ --}}
         <div class="qb-sidebar">
             <div class="qb-sidebar-header">
                 <h3>Question Types</h3>
-                <p>Drag a type to the canvas</p>
+                <p>Click to add. Drag or use arrows to reorder.</p>
             </div>
 
             @foreach (static::getQuestionTypeCategories() as $category => $types)
@@ -134,13 +140,13 @@
                     <h4 class="qb-category-title">{{ $category }}</h4>
                     <div class="qb-palette-grid">
                         @foreach ($types as $typeKey => $typeInfo)
-                            <div class="qb-palette-item" draggable="true"
+                            <button @disabled($questionsLocked) type="button" class="qb-palette-item" draggable="{{ $questionsLocked ? 'false' : 'true' }}"
                                 x-on:dragstart="startDragFromPalette($event, '{{ $typeKey }}')"
                                 x-on:dragend="onDragEnd($event)"
                                 wire:click="addQuestion('{{ $typeKey }}')" title="Click or drag to add">
                                 <span class="qb-palette-icon">{{ $typeInfo['icon'] }}</span>
                                 <span class="qb-palette-label">{{ $typeInfo['label'] }}</span>
-                            </div>
+                            </button>
                         @endforeach
                     </div>
                 </div>
@@ -159,7 +165,7 @@
                         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
                         </svg>
-                        Back
+                        Quiz settings
                     </a>
                     <a href="{{ \App\Filament\Resources\QuizResource::shareUrl($quizRecord) }}" target="_blank" class="qb-btn qb-btn-outline">
                         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -171,6 +177,17 @@
                 </div>
             </div>
 
+            <div class="qb-guidance">
+                @if ($questionsLocked)
+                    Students have started this quiz. Questions are locked; duplicate the quiz to make a revised version.
+                @else
+                    {{ $quizRecord->is_published ? 'Published' : 'Draft' }} · Edit a question, save its answer key, then preview. Publish from Quiz settings when ready.
+                @endif
+                <span x-show="dirty" x-cloak role="status"> You have unsaved changes.</span>
+            </div>
+            @if ($errors->any())
+                <div class="qb-validation" role="alert">{{ $errors->first() }}</div>
+            @endif
             <div class="qb-canvas" x-ref="canvas"
                 x-on:dragover.prevent="onDragOverCanvas($event)"
                 x-on:dragleave="onDragLeave($event)"
@@ -190,7 +207,9 @@
 
                 @foreach ($questions as $index => $question)
                     <div class="qb-question-card {{ $selectedQuestionId === $question['id'] ? 'qb-question-selected' : '' }}"
-                        data-question-id="{{ $question['id'] }}" draggable="true"
+                        wire:key="builder-question-{{ $question['id'] }}" tabindex="0" role="button"
+                        x-on:keydown.enter.prevent="$wire.selectQuestion({{ $question['id'] }})"
+                        data-question-id="{{ $question['id'] }}" draggable="{{ $questionsLocked ? 'false' : 'true' }}"
                         x-on:dragstart="startDragQuestion($event, {{ $question['id'] }})"
                         x-on:dragend="onDragEnd($event)"
                         x-on:click="$wire.call('selectQuestion', {{ $question['id'] }})">
@@ -213,12 +232,14 @@
                         </div>
 
                         <div class="qb-field-actions">
-                            <button wire:click.stop="duplicateQuestion({{ $question['id'] }})" class="qb-field-action-btn" title="Duplicate">
+                            <button type="button" wire:click.stop="moveQuestion({{ $question['id'] }}, -1)" @disabled($questionsLocked || $loop->first) class="qb-field-action-btn" aria-label="Move question up" title="Move up">↑</button>
+                            <button type="button" wire:click.stop="moveQuestion({{ $question['id'] }}, 1)" @disabled($questionsLocked || $loop->last) class="qb-field-action-btn" aria-label="Move question down" title="Move down">↓</button>
+                            <button @disabled($questionsLocked) wire:click.stop="duplicateQuestion({{ $question['id'] }})" class="qb-field-action-btn" title="Duplicate">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                                     <path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                                 </svg>
                             </button>
-                            <button wire:click.stop="deleteQuestion({{ $question['id'] }})" wire:confirm="Delete this question?" class="qb-field-action-btn qb-field-action-delete" title="Delete">
+                            <button @disabled($questionsLocked) wire:click.stop="deleteQuestion({{ $question['id'] }})" wire:confirm="Delete this question?" class="qb-field-action-btn qb-field-action-delete" title="Delete">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                                     <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                 </svg>
@@ -230,18 +251,18 @@
         </div>
 
         {{-- ═══════ RIGHT SIDEBAR — PROPERTIES PANEL ═══════ --}}
-        <div class="qb-properties {{ $showProperties ? 'qb-properties-open' : '' }}">
+        <div x-ref="properties" class="qb-properties {{ $showProperties ? 'qb-properties-open' : '' }}">
             @if ($showProperties && $selectedQuestionId)
                 <div class="qb-properties-header">
                     <h3>Question Properties</h3>
-                    <button wire:click="closeProperties" class="qb-properties-close">
+                    <button aria-label="Save and close question" title="Save and close" wire:click="closeProperties" class="qb-properties-close">
                         <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
                         </svg>
                     </button>
                 </div>
 
-                <div class="qb-properties-body">
+                <div class="qb-properties-body" wire:key="properties-{{ $selectedQuestionId }}">
                     <div class="qb-prop-group">
                         <label class="qb-prop-label">Question Type</label>
                         <div class="qb-prop-type-display">
@@ -253,29 +274,29 @@
 
                     <div class="qb-prop-group">
                         <label class="qb-prop-label" for="prop-text">Question Text <span class="text-red-500">*</span></label>
-                        <textarea id="prop-text" class="qb-prop-input" rows="3"
+                        <textarea @disabled($questionsLocked) id="prop-text" class="qb-prop-input" rows="3"
                             wire:model.live.debounce.300ms="selectedQuestionData.question_text"></textarea>
                     </div>
 
                     <div class="qb-prop-group">
                         <label class="qb-prop-label" for="prop-points">Points</label>
-                        <input type="number" id="prop-points" min="1" class="qb-prop-input"
+                        <input @disabled($questionsLocked) type="number" id="prop-points" min="1" class="qb-prop-input"
                             wire:model.live.debounce.300ms="selectedQuestionData.points">
                     </div>
 
                     @if (($selectedQuestionData['type'] ?? '') === 'multiple_choice')
                         <div class="qb-prop-group">
                             <label class="qb-prop-label">Choices &amp; Answer Key</label>
-                            <span class="qb-prop-help">Tick the box next to the correct choice(s).</span>
+                            <span class="qb-prop-help">Mark exactly one correct choice. Students select one answer.</span>
                             <div class="qb-options-list">
                                 @foreach (($selectedQuestionData['options'] ?? []) as $optIndex => $option)
                                     <div class="qb-option-row" wire:key="option-{{ $optIndex }}">
                                         <label class="qb-option-correct" title="Mark as correct answer">
-                                            <input type="checkbox" wire:model="selectedQuestionData.options.{{ $optIndex }}.is_correct">
+                                            <input @disabled($questionsLocked) type="checkbox" wire:model="selectedQuestionData.options.{{ $optIndex }}.is_correct">
                                         </label>
-                                        <input type="text" class="qb-prop-input qb-option-input"
+                                        <input @disabled($questionsLocked) type="text" class="qb-prop-input qb-option-input"
                                             wire:model="selectedQuestionData.options.{{ $optIndex }}.label" placeholder="Choice text">
-                                        <button wire:click="removeOption({{ $optIndex }})" class="qb-option-remove" title="Remove">
+                                        <button @disabled($questionsLocked) wire:click="removeOption({{ $optIndex }})" class="qb-option-remove" title="Remove">
                                             <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                                                 <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
                                             </svg>
@@ -283,7 +304,7 @@
                                     </div>
                                 @endforeach
                             </div>
-                            <button wire:click="addOption" class="qb-add-option-btn">
+                            <button @disabled($questionsLocked) wire:click="addOption" class="qb-add-option-btn">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                                     <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                                 </svg>
@@ -295,11 +316,11 @@
                             <label class="qb-prop-label">Answer Key</label>
                             <div class="qb-tf-options">
                                 <label class="qb-tf-option">
-                                    <input type="radio" wire:model="selectedQuestionData.true_false_correct" value="true">
+                                    <input @disabled($questionsLocked) type="radio" wire:model="selectedQuestionData.true_false_correct" value="true">
                                     <span>True</span>
                                 </label>
                                 <label class="qb-tf-option">
-                                    <input type="radio" wire:model="selectedQuestionData.true_false_correct" value="false">
+                                    <input @disabled($questionsLocked) type="radio" wire:model="selectedQuestionData.true_false_correct" value="false">
                                     <span>False</span>
                                 </label>
                             </div>
@@ -311,9 +332,9 @@
                             <div class="qb-options-list">
                                 @foreach (($selectedQuestionData['correct_answer'] ?? []) as $ansIndex => $answer)
                                     <div class="qb-option-row" wire:key="answer-{{ $ansIndex }}">
-                                        <input type="text" class="qb-prop-input qb-option-input"
+                                        <input @disabled($questionsLocked) type="text" class="qb-prop-input qb-option-input"
                                             wire:model="selectedQuestionData.correct_answer.{{ $ansIndex }}" placeholder="Accepted answer">
-                                        <button wire:click="removeAcceptedAnswer({{ $ansIndex }})" class="qb-option-remove" title="Remove">
+                                        <button @disabled($questionsLocked) wire:click="removeAcceptedAnswer({{ $ansIndex }})" class="qb-option-remove" title="Remove">
                                             <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                                                 <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
                                             </svg>
@@ -321,12 +342,38 @@
                                     </div>
                                 @endforeach
                             </div>
-                            <button wire:click="addAcceptedAnswer" class="qb-add-option-btn">
+                            <button @disabled($questionsLocked) wire:click="addAcceptedAnswer" class="qb-add-option-btn">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                                     <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                                 </svg>
                                 Add Accepted Answer
                             </button>
+                        </div>
+                    @elseif (($selectedQuestionData['type'] ?? '') === 'code')
+                        @php($codeLanguage = $selectedQuestionData['code_language'] ?? 'python')
+                        <div class="qb-prop-group">
+                            <label class="qb-prop-label" for="prop-code-language">Language</label>
+                            <select @disabled($questionsLocked) id="prop-code-language" class="qb-prop-input"
+                                wire:model.live="selectedQuestionData.code_language">
+                                @foreach (\App\Models\QuizQuestion::CODE_LANGUAGES as $languageKey => $languageLabel)
+                                    <option value="{{ $languageKey }}">{{ $languageLabel }}</option>
+                                @endforeach
+                            </select>
+                            <span class="qb-prop-help">Sets highlighting and indentation. Code is never run; you grade it in the quiz's Attempts tab.</span>
+                        </div>
+                        <div class="qb-prop-group">
+                            <span class="qb-prop-label">Starter Code</span>
+                            <span class="qb-prop-help">Optional. Students start from this instead of an empty editor.</span>
+                            <x-code-editor state-path="selectedQuestionData.starter_code" :language="$codeLanguage"
+                                :read-only="$questionsLocked" min-height="8rem" max-height="20rem"
+                                wire:key="starter-{{ $selectedQuestionId }}-{{ $codeLanguage }}" />
+                        </div>
+                        <div class="qb-prop-group">
+                            <span class="qb-prop-label">Reference Solution</span>
+                            <span class="qb-prop-help">Optional. Only you see this, next to each student's code while grading.</span>
+                            <x-code-editor state-path="selectedQuestionData.reference_solution" :language="$codeLanguage"
+                                :read-only="$questionsLocked" min-height="8rem" max-height="20rem"
+                                wire:key="reference-{{ $selectedQuestionId }}-{{ $codeLanguage }}" />
                         </div>
                     @else
                         <div class="qb-prop-group">
@@ -338,7 +385,7 @@
                 </div>
 
                 <div class="qb-properties-footer">
-                    <button wire:click="saveQuestionProperties" class="qb-btn qb-btn-primary qb-btn-full">
+                    <button @disabled($questionsLocked) wire:click="saveQuestionProperties" wire:loading.attr="disabled" class="qb-btn qb-btn-primary qb-btn-full">
                         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
                         </svg>
@@ -358,7 +405,7 @@
         {{-- Toast notification --}}
         <div x-data="{ show: false, message: '' }"
             x-on:notify.window="message = $event.detail.message; show = true; setTimeout(() => show = false, 3000)"
-            x-show="show" x-transition.opacity class="qb-toast">
+            x-show="show" x-cloak x-transition.opacity class="qb-toast">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
             </svg>
@@ -485,6 +532,39 @@
             .dark .qb-prop-readonly { background: rgba(255, 255, 255, 0.05); border-color: rgba(255, 255, 255, 0.1); color: #9ca3af; }
             .dark .qb-btn-outline { background: #1f2937; border-color: #4b5563; color: #d1d5db; }
             .dark .qb-toast { background: #1f2937; border-color: #065f46; color: #6ee7b7; }
+            .qb-container { height: auto; min-height: 65vh; margin: 0; border: 1px solid #e5e7eb; border-radius: 12px; align-items: stretch; }
+            .qb-sidebar { width: 190px; min-width: 190px; }
+            .qb-canvas-wrapper { min-width: 0; }
+            .qb-canvas-header { flex-wrap: wrap; gap: 12px; padding: 16px; }
+            .qb-canvas { padding: 16px; }
+            .qb-properties-open { width: 340px; min-width: 300px; }
+            .qb-field-actions { opacity: 1; flex-wrap: wrap; max-width: 72px; }
+            .qb-container button:disabled { opacity: .4; cursor: not-allowed; }
+            .qb-field-action-btn:disabled { opacity: .3; cursor: default; }
+            .qb-field-label { overflow-wrap: anywhere; }
+            .qb-guidance { padding: 12px 16px; font-size: .8rem; color: #475569; background: #eef2ff; line-height: 1.6; }
+            .qb-validation { padding: 12px 16px; color: #b91c1c; background: #fef2f2; font-size: .85rem; }
+            .qb-question-count, .qb-prop-help { color: #64748b; }
+            .dark .qb-guidance { color: #c7d2fe; background: #1e293b; }
+            .dark .qb-prop-help, .dark .qb-question-count { color: #cbd5e1; }
+            .qb-container button:focus-visible, .qb-question-card:focus-visible { outline: 2px solid #6366f1; outline-offset: 2px; }
+            @media (max-width: 1100px) {
+                .qb-container { flex-wrap: wrap; }
+                .qb-sidebar { width: 100%; min-width: 0; border-right: 0; }
+                .qb-category { display: inline-block; padding: 8px 16px; }
+                .qb-palette-grid { flex-direction: row; flex-wrap: wrap; }
+                .qb-canvas-wrapper { flex-basis: 50%; }
+            }
+            @media (max-width: 640px) {
+                .qb-container { display: block; overflow: visible; }
+                .qb-properties-open { width: 100%; min-width: 0; }
+                .qb-properties { border-left: 0; }
+                .qb-canvas { max-height: 380px; }
+                .qb-field-drag-handle, .qb-field-type-badge { display: none; }
+                .qb-question-card { padding: 12px; gap: 8px; }
+                .qb-empty-state { padding: 24px; }
+                .qb-properties-footer { position: sticky; bottom: 0; background: inherit; }
+            }
         </style>
     @endpush
 </x-filament-panels::page>

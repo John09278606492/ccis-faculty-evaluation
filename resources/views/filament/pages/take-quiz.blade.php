@@ -46,9 +46,10 @@
                     this.remaining = Math.max(diff, 0);
                     if (diff <= 0) {
                         clearInterval(this.timer);
-                        window.location.reload();
+                        $wire.refreshLiveState();
                     }
                 },
+                destroy() { clearInterval(this.timer); },
                 formatted() {
                     if (this.remaining === null) return '';
                     let h = Math.floor(this.remaining / 3600).toString().padStart(2, '0');
@@ -57,7 +58,7 @@
                     return h + ':' + m + ':' + s;
                 },
             }"
-            wire:poll.10s="checkWaitingRoom"
+            wire:key="waiting-{{ $availableFromIso }}"
             class="flex flex-col items-center gap-4 py-8 text-center"
         >
             <div class="flex h-14 w-14 items-center justify-center rounded-full bg-warning-50 text-warning-600 dark:bg-warning-500/10 dark:text-warning-400">
@@ -81,6 +82,27 @@
                 Back to My Quizzes
             </a>
         </div>
+    @elseif ($readyToStart)
+        <x-filament::section>
+            <x-slot name="heading">{{ $quiz->title }}</x-slot>
+            <x-slot name="description">{{ $quiz->courseOffering->display_name }}</x-slot>
+            <div class="space-y-4">
+                <p class="whitespace-pre-line">{{ $quiz->instructions ?: 'Read each question carefully and submit when you are finished.' }}</p>
+                <div class="grid gap-4 sm:grid-cols-3">
+                    <div><p class="text-sm text-gray-500">Questions</p><strong>{{ $quiz->questions()->count() }} · {{ $quiz->total_points }} points</strong></div>
+                    <div><p class="text-sm text-gray-500">Time allowed</p><strong>{{ $quiz->type === 'activity' ? ($quiz->available_until ? 'Until the deadline' : 'Untimed') : ($quiz->isScheduled() ? 'Until the scheduled closing time' : $quiz->duration_minutes.' minutes from Start') }}</strong></div>
+                    <div><p class="text-sm text-gray-500">Attempts allowed</p><strong>{{ $quiz->max_attempts }}</strong></div>
+                </div>
+                @if ($quiz->available_until)
+                    <p class="text-sm">{{ $quiz->type === 'activity' || $quiz->isScheduled() ? 'Closes' : 'Last time to start' }}: <strong>{{ $quiz->available_until->format('M j, Y g:i A') }}</strong> ({{ config('app.timezone') }})</p>
+                @endif
+                <p class="text-sm text-gray-500">Your attempt begins only when you press Start. Once started, the timer keeps running even if you leave this page.</p>
+                <div class="flex flex-wrap gap-3">
+                    <x-filament::button wire:click="beginAttempt" wire:loading.attr="disabled">Start attempt</x-filament::button>
+                    <x-filament::button color="gray" tag="a" href="{{ \App\Filament\Pages\MyQuizzes::getUrl(panel: 'admin', tenant: $quiz->campus) }}">Back to My Quizzes</x-filament::button>
+                </div>
+            </div>
+        </x-filament::section>
     @else
     @php
         $answeredCount = collect($this->questions)
@@ -90,9 +112,9 @@
         $progressPercent = $totalCount > 0 ? intval(($answeredCount / $totalCount) * 100) : 0;
     @endphp
 
-    <div
+    <div wire:key="quiz-attempt-{{ $attempt->id ?? 'preview' }}-{{ $attempt->status }}"
         x-data="{
-            expiresAt: @js(optional($attempt->expires_at)?->toIso8601String()),
+            expiresAt: @js($reviewMode ? null : optional($attempt->expires_at)?->toIso8601String()),
             remaining: null,
             timer: null,
             init() {
@@ -115,9 +137,6 @@
                 return m + ':' + s;
             },
         }"
-        @if ($attempt->status === 'in_progress' && $attempt->expires_at)
-            wire:poll.15s="checkExpiry"
-        @endif
     >
         @if ($previewMode)
             <div class="mb-6 flex items-start gap-3 rounded-lg bg-info-50 px-4 py-3 text-info-700 dark:bg-info-500/10 dark:text-info-400">
@@ -171,7 +190,21 @@
                 </div>
             </div>
 
-            <div class="mt-3 flex flex-wrap items-center gap-3">
+            @if ($reviewMode)
+                <div class="mt-3 rounded-lg bg-gray-100 px-3 py-2 text-sm dark:bg-gray-800">
+                    Attempt #{{ $attempt->attempt_number }} of {{ $quiz->max_attempts }}
+                    @if ($attempt->status === 'graded')
+                        — <strong>Final score: {{ $attempt->score }} / {{ $attempt->max_score }}</strong>
+                    @elseif ($attempt->status === 'submitted')
+                        — <strong>Partial score: {{ $attempt->score }} / {{ $attempt->max_score }}</strong>
+                        <span class="text-gray-500">(essay, code and file answers still need to be graded by your instructor — this isn't final yet)</span>
+                    @endif
+                </div>
+            @endif
+        </div>
+
+        @if (!$reviewMode)
+            <div class="quiz-progress-bar mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
                 @if ($attempt->status === 'in_progress' && $attempt->expires_at)
                     <div class="inline-flex items-center gap-2 rounded-lg bg-warning-50 px-3 py-1.5 text-warning-700 dark:bg-warning-500/10 dark:text-warning-400">
                         <x-heroicon-o-clock class="h-5 w-5" />
@@ -187,26 +220,24 @@
                         <span>{{ $answeredCount }} of {{ $totalCount }} answered</span>
                     </div>
                 @endif
+                @if (!$reviewMode)
+                    <details class="w-full text-sm">
+                        <summary class="cursor-pointer text-primary-600">Jump to a question · {{ $totalCount - $answeredCount }} unanswered</summary>
+                        <nav aria-label="Quiz questions" class="mt-2 flex flex-wrap gap-2">
+                            @foreach ($this->questions as $number => $item)
+                                <a href="#question-{{ $item->id }}" class="rounded border px-3 py-2 {{ filled($answers[$item->id] ?? null) ? 'bg-primary-50 text-primary-700' : 'text-gray-600 dark:text-gray-300' }}" aria-label="Question {{ $number + 1 }}, {{ filled($answers[$item->id] ?? null) ? 'answered' : 'unanswered' }}">{{ $number + 1 }}</a>
+                            @endforeach
+                        </nav>
+                    </details>
+                @endif
             </div>
-
-            @if ($reviewMode)
-                <div class="mt-3 rounded-lg bg-gray-100 px-3 py-2 text-sm dark:bg-gray-800">
-                    Attempt #{{ $attempt->attempt_number }} of {{ $quiz->max_attempts }}
-                    @if ($attempt->status === 'graded')
-                        — <strong>Final score: {{ $attempt->score }} / {{ $attempt->max_score }}</strong>
-                    @elseif ($attempt->status === 'submitted')
-                        — <strong>Partial score: {{ $attempt->score }} / {{ $attempt->max_score }}</strong>
-                        <span class="text-gray-500">(essay/file answers still need to be graded by your instructor — this isn't final yet)</span>
-                    @endif
-                </div>
-            @endif
-        </div>
+        @endif
 
         <div class="space-y-4">
             @foreach ($this->questions as $index => $question)
                 @php($savedAnswer = $reviewMode ? $attempt->answers->firstWhere('quiz_question_id', $question->id) : null)
 
-                <div class="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
+                <div id="question-{{ $question->id }}" wire:key="question-{{ $question->id }}" class="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
                     <div class="mb-3 flex items-start gap-3">
                         <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-600 dark:bg-gray-800 dark:text-gray-300">
                             {{ $index + 1 }}
@@ -261,6 +292,20 @@
                                 placeholder="Write your answer..."
                                 class="fi-input block w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-900"
                             ></textarea>
+                        @elseif ($question->type === 'code')
+                            @if ($reviewMode && blank($answers[$question->id] ?? null))
+                                <p class="text-sm text-gray-400">No code submitted.</p>
+                            @else
+                                <x-code-editor
+                                    state-path="answers.{{ $question->id }}"
+                                    :initial-value="$reviewMode ? '' : $question->starterCode()"
+                                    :language="$question->codeLanguage()"
+                                    :read-only="$reviewMode"
+                                    :commit-debounce="$reviewMode ? null : 750"
+                                    placeholder="Write your code here..."
+                                    wire:key="code-{{ $question->id }}-{{ $reviewMode ? 'review' : 'edit' }}"
+                                />
+                            @endif
                         @elseif ($question->type === 'file_upload')
                             @if (!$reviewMode)
                                 <input type="file" wire:model="files.{{ $question->id }}" />
@@ -287,12 +332,23 @@
                                 @endif
                             </p>
                         @endif
+                        @error('answers.'.$question->id)<p class="mt-2 text-sm text-danger-600">{{ $message }}</p>@enderror
+                        @error('files.'.$question->id)<p class="mt-2 text-sm text-danger-600">{{ $message }}</p>@enderror
                     </div>
                 </div>
             @endforeach
         </div>
 
+        @if ($reviewMode)
+            <div class="mt-6 flex flex-wrap gap-3">
+                <x-filament::button tag="a" color="gray" href="{{ \App\Filament\Pages\MyQuizzes::getUrl(panel: 'admin', tenant: $quiz->campus) }}">Back to My Quizzes</x-filament::button>
+                @if ($quiz->isAvailable() && $attempt->attempt_number < $quiz->max_attempts)
+                    <x-filament::button wire:click="beginAttempt" wire:confirm="Start another attempt? The timer will begin immediately." wire:loading.attr="disabled">Start another attempt</x-filament::button>
+                @endif
+            </div>
+        @endif
         @if (!$reviewMode)
+            <p class="mt-4 text-sm text-gray-500" wire:loading role="status">Saving your changes…</p>
             <div class="mt-6 flex items-center gap-3">
                 @if ($previewMode)
                     <x-filament::button wire:click="submit" color="gray">
@@ -302,7 +358,8 @@
                 @else
                     <x-filament::button
                         wire:click="submit"
-                        wire:confirm="Submit this attempt? You won't be able to change your answers afterward."
+                        wire:loading.attr="disabled"
+                        wire:confirm="Submit this attempt? {{ $totalCount - $answeredCount }} question(s) remain unanswered. You cannot change answers after submitting."
                     >
                         Submit
                     </x-filament::button>
@@ -311,4 +368,8 @@
         @endif
     </div>
     @endif
+    <style>
+        .quiz-progress-bar { position: sticky; top: 4.5rem; z-index: 10; box-shadow: 0 2px 8px #00000008; }
+        [id^="question-"] { scroll-margin-top: 13rem; }
+    </style>
 </x-filament-panels::page>

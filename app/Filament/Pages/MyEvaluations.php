@@ -20,7 +20,6 @@ class MyEvaluations extends Page implements HasTable
     // Gates access via the page_MyEvaluations permission (see Roles) instead of
     // just checking isStudent(), so an admin can actually toggle this on/off.
     use HasPageShield;
-
     use InteractsWithTable;
 
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-check';

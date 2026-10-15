@@ -115,6 +115,7 @@ class AdminPanelProvider extends PanelProvider
                 $this->getPlugins()
             )
             ->databaseNotifications()
+            ->renderHook(\Filament\View\PanelsRenderHook::BODY_END, fn () => view('filament.partials.live-connection'))
             // Multi-tenancy with Campus
             ->tenant(Campus::class)
             ->tenantRegistration(null)

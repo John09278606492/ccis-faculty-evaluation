@@ -23,7 +23,7 @@ class QuizPolicy
      */
     public function view(User $user, Quiz $quiz): bool
     {
-        return $user->can('view_quiz');
+        return $user->can('view_quiz') && ($user->hasRole('super_admin') || $quiz->courseOffering->user_id === $user->id);
     }
 
     /**
@@ -39,7 +39,7 @@ class QuizPolicy
      */
     public function update(User $user, Quiz $quiz): bool
     {
-        return $user->can('update_quiz');
+        return $user->can('update_quiz') && ($user->hasRole('super_admin') || $quiz->courseOffering->user_id === $user->id);
     }
 
     /**
@@ -47,7 +47,7 @@ class QuizPolicy
      */
     public function delete(User $user, Quiz $quiz): bool
     {
-        return $user->can('delete_quiz');
+        return $user->can('delete_quiz') && ($user->hasRole('super_admin') || $quiz->courseOffering->user_id === $user->id);
     }
 
     /**
@@ -63,7 +63,7 @@ class QuizPolicy
      */
     public function forceDelete(User $user, Quiz $quiz): bool
     {
-        return $user->can('force_delete_quiz');
+        return $user->can('force_delete_quiz') && ($user->hasRole('super_admin') || $quiz->courseOffering->user_id === $user->id);
     }
 
     /**
@@ -79,7 +79,7 @@ class QuizPolicy
      */
     public function restore(User $user, Quiz $quiz): bool
     {
-        return $user->can('restore_quiz');
+        return $user->can('restore_quiz') && ($user->hasRole('super_admin') || $quiz->courseOffering->user_id === $user->id);
     }
 
     /**
@@ -95,7 +95,7 @@ class QuizPolicy
      */
     public function replicate(User $user, Quiz $quiz): bool
     {
-        return $user->can('replicate_quiz');
+        return $user->can('replicate_quiz') && ($user->hasRole('super_admin') || $quiz->courseOffering->user_id === $user->id);
     }
 
     /**

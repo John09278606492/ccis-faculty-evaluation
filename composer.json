@@ -23,6 +23,7 @@
         "jeffgreco13/filament-breezy": "^2.4",
         "kenepa/banner": "^0.1.0",
         "laravel/framework": "^12.0",
+        "laravel/reverb": "^1.12",
         "laravel/sanctum": "^4.0",
         "laravel/tinker": "^2.9",
         "owenvoke/blade-fontawesome": "^2.8",
@@ -76,7 +77,7 @@
         ],
         "dev": [
             "Composer\\Config::disableProcessTimeout",
-            "npx concurrently -c \"#93c5fd,#c4b5fd,#fb7185,#fdba74\" \"php artisan serve\" \"php artisan queue:listen --tries=1\" \"php artisan pail --timeout=0\" \"npm run dev\" --names=server,queue,logs,vite"
+            "npx concurrently -c \"#93c5fd,#c4b5fd,#fb7185,#fdba74\" \"php artisan serve\" \"php artisan queue:listen --tries=1\" \"php -d opcache.enable_cli=0 artisan reverb:start\" \"npm run dev\" --names=server,queue,live,vite"
         ],
         "setup": [
             "@php artisan migrate --seed",

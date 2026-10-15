@@ -18,8 +18,8 @@ class MyQuizzes extends Page implements HasTable
     // Gated by the page_MyQuizzes permission (toggle per-role in Roles) instead
     // of just isStudent(), so access is actually controllable via permissions.
     use HasPageShield;
-
     use InteractsWithTable;
+    use \App\Filament\Concerns\ReceivesClassroomUpdates;
 
     protected static ?string $navigationIcon = 'heroicon-o-pencil-square';
 
@@ -40,25 +40,20 @@ class MyQuizzes extends Page implements HasTable
             ->columns([
                 Tables\Columns\TextColumn::make('courseOffering.display_name')
                     ->label('Course')
-                    ->searchable(),
-
+                    ->searchable(query: fn (Builder $query, string $search) => $query->whereHas('courseOffering', fn ($q) => $q->where('section', 'like', "%{$search}%")->orWhereHas('course', fn ($course) => $course->where('code', 'like', "%{$search}%")->orWhere('name', 'like', "%{$search}%")))),
                 Tables\Columns\TextColumn::make('title')
                     ->searchable()
                     ->sortable(),
-
                 Tables\Columns\TextColumn::make('type')
                     ->badge()
                     ->formatStateUsing(fn (string $state): string => Quiz::TYPES[$state] ?? $state),
-
                 Tables\Columns\TextColumn::make('duration_minutes')
                     ->label('Duration')
                     ->formatStateUsing(fn (?int $state) => $state ? "{$state} min" : 'Untimed'),
-
                 Tables\Columns\TextColumn::make('available_until')
                     ->label('Deadline')
                     ->dateTime('M j, Y g:ia')
                     ->placeholder('No deadline'),
-
                 Tables\Columns\TextColumn::make('status')
                     ->label('Status')
                     ->state(fn (Quiz $record) => $this->statusFor($record))
@@ -89,6 +84,7 @@ class MyQuizzes extends Page implements HasTable
     {
         return Quiz::query()
             ->where('is_published', true)
+            ->whereHas('courseOffering.semester.schoolYear', fn ($q) => $q->where('campus_id', filament()->getTenant()?->id))
             ->whereHas('courseOffering.students', function ($query) {
                 $query->where('user_id', Auth::id());
             })
@@ -122,7 +118,6 @@ class MyQuizzes extends Page implements HasTable
     protected function statusFor(Quiz $quiz): string
     {
         $attempt = $this->latestAttempt($quiz);
-
         if (! $attempt) {
             if (! $quiz->hasWindowOpened()) {
                 return 'Starts '.$quiz->available_from->format('M j, g:ia');
@@ -143,21 +138,17 @@ class MyQuizzes extends Page implements HasTable
     protected function actionLabelFor(Quiz $quiz): ?string
     {
         $attempt = $this->latestAttempt($quiz);
-
         if ($attempt?->status === 'in_progress') {
             return 'Continue';
         }
-
         if ($attempt) {
             $attemptsLeft = $attempt->attempt_number < $quiz->max_attempts;
-
             if ($attemptsLeft && $quiz->isAvailable()) {
-                return 'Start New Attempt';
+                return 'Review / retry';
             }
 
             return 'Review';
         }
-
         if (! $quiz->hasWindowOpened()) {
             return 'View';
         }

@@ -20,7 +20,6 @@ class MyEvaluationResults extends Page implements HasTable
     // Gated by the page_MyEvaluationResults permission — super_admin already
     // holds every generated permission automatically, so no extra role check needed.
     use HasPageShield;
-
     use InteractsWithTable;
 
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-list';

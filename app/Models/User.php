@@ -184,6 +184,7 @@ class User extends Authenticatable implements FilamentUser, HasAvatar, HasTenant
     public function courseOfferings(): BelongsToMany
     {
         return $this->belongsToMany(CourseOffering::class, 'course_offering_student', 'user_id', 'course_offering_id')
+            ->using(ClassroomEnrollment::class)
             ->withPivot('enrolled_at')
             ->withTimestamps();
     }
@@ -218,7 +219,7 @@ class User extends Authenticatable implements FilamentUser, HasAvatar, HasTenant
      */
     public function assignedQuizzes(): BelongsToMany
     {
-        return $this->belongsToMany(Quiz::class, 'quiz_student');
+        return $this->belongsToMany(Quiz::class, 'quiz_student')->using(QuizAssignment::class);
     }
 
     /**

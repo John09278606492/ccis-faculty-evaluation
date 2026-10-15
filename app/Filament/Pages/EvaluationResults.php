@@ -22,7 +22,6 @@ class EvaluationResults extends Page implements HasTable
     // role-name list (the old check also referenced a view_evaluation_results
     // permission that was never actually created, so it never took effect).
     use HasPageShield;
-
     use InteractsWithTable;
 
     protected static ?string $navigationIcon = 'heroicon-o-chart-bar';

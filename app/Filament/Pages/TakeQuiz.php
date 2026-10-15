@@ -5,6 +5,7 @@ namespace App\Filament\Pages;
 use App\Models\Quiz;
 use App\Models\QuizAnswer;
 use App\Models\QuizAttempt;
+use App\Models\QuizQuestion;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Support\Enums\MaxWidth;
@@ -14,6 +15,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Computed;
+use Livewire\Attributes\Locked;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Livewire\WithFileUploads;
 
@@ -40,10 +42,13 @@ class TakeQuiz extends Page
         ];
     }
 
+    #[Locked]
     public Quiz $quiz;
 
+    #[Locked]
     public ?QuizAttempt $attempt = null;
 
+    #[Locked]
     public bool $reviewMode = false;
 
     /**
@@ -58,6 +63,7 @@ class TakeQuiz extends Page
      * True when an instructor/admin is previewing the quiz. Nothing is persisted:
      * the in-memory attempt/answers below are never saved to the database.
      */
+    #[Locked]
     public bool $previewMode = false;
 
     /**
@@ -79,6 +85,8 @@ class TakeQuiz extends Page
      */
     public bool $waitingForStart = false;
 
+    public bool $readyToStart = false;
+
     public ?string $availableFromIso = null;
 
     public function boot(): void
@@ -93,7 +101,6 @@ class TakeQuiz extends Page
                 'max_score' => $this->previewMaxScore,
             ]);
         }
-
         // Once available_from arrives, transition out of the waiting room on the
         // very next request (the countdown's auto-reload, or the poll safety net).
         if (isset($this->quiz) && $this->waitingForStart && $this->quiz->hasWindowOpened()) {
@@ -108,7 +115,47 @@ class TakeQuiz extends Page
      */
     public function checkWaitingRoom(): void
     {
-        //
+        $this->refreshLiveState();
+    }
+
+    #[\Livewire\Attributes\On('classroom-push')]
+    public function refreshLiveState(string $kind = 'reconnected', ?int $quizId = null, ?int $courseId = null): void
+    {
+        if (($quizId && $quizId !== $this->quiz->id) || ($courseId && $courseId !== $this->quiz->course_offering_id)) {
+            $this->skipRender();
+
+            return;
+        }
+        if ($this->previewMode) {
+            return;
+        }
+        abort_unless(auth()->user()?->isStudent() && auth()->user()->can('page_MyQuizzes'), 403);
+        $this->quiz->refresh();
+        $this->accessDenied = false;
+        if (! $this->quiz->courseOffering->students()->where('users.id', auth()->id())->exists() || ! $this->quiz->isAssignedTo(auth()->id())) {
+            $this->denyAccess('You are no longer assigned to this quiz. Contact your instructor.');
+
+            return;
+        }
+        $latest = $this->quiz->attempts()->where('user_id', auth()->id())->latest('attempt_number')->first();
+        if ($latest) {
+            $wasActive = $this->attempt?->id === $latest->id && ! $this->reviewMode;
+            $this->attempt = $latest;
+            $this->readyToStart = false;
+            $this->waitingForStart = false;
+            $this->reviewMode = $latest->status !== 'in_progress';
+            // Do not reload answer inputs or pending uploads during an active attempt.
+            if (! $wasActive || $this->reviewMode) {
+                $this->loadAnswersIntoState();
+            }
+            $this->checkExpiry();
+
+            return;
+        }
+        $this->readyToStart = false;
+        $this->waitingForStart = false;
+        $this->availableFromIso = null;
+        $this->mountForStudent($this->quiz);
     }
 
     /** @var array<int, string|null> question_id => text/option-key answer */
@@ -139,7 +186,6 @@ class TakeQuiz extends Page
         if ($user->hasRole('super_admin')) {
             return true;
         }
-
         $quiz = $quiz instanceof Quiz ? $quiz : Quiz::find($quiz);
 
         return $quiz
@@ -151,13 +197,11 @@ class TakeQuiz extends Page
     {
         $quiz->loadMissing(['courseOffering.course', 'courseOffering.instructor']);
         $this->quiz = $quiz;
-
         if (Auth::user()->isStudent()) {
             $this->mountForStudent($quiz);
 
             return;
         }
-
         abort_unless(static::canManage(Auth::user(), $quiz), 403, 'You do not manage this quiz.');
         $this->mountPreview($quiz);
     }
@@ -172,7 +216,6 @@ class TakeQuiz extends Page
 
             return;
         }
-
         // Enrolled, but the instructor may have restricted this quiz to specific students.
         if (! $quiz->isAssignedTo(Auth::id())) {
             $this->denyAccess("You're signed in as {$this->studentDisplayName()}, but \"{$quiz->title}\" has not been "
@@ -180,11 +223,9 @@ class TakeQuiz extends Page
 
             return;
         }
-
         $hasAnyAttempt = QuizAttempt::where('quiz_id', $quiz->id)
             ->where('user_id', Auth::id())
             ->exists();
-
         // Never attempted yet, and the window hasn't opened — wait for it, rather
         // than rejecting outright. The countdown transitions out of this on its own.
         if (! $hasAnyAttempt && $quiz->is_published && ! $quiz->hasWindowOpened()) {
@@ -193,7 +234,6 @@ class TakeQuiz extends Page
 
             return;
         }
-
         $this->resolveAttempt($quiz);
     }
 
@@ -208,31 +248,45 @@ class TakeQuiz extends Page
             ->where('user_id', Auth::id())
             ->latest('attempt_number')
             ->first();
-
         if ($latestAttempt && $latestAttempt->status === 'in_progress') {
             $this->attempt = $latestAttempt;
             $this->checkExpiry();
         }
-
-        // If we didn't just resume an in-progress attempt, decide between starting a new one or reviewing.
         if (! $this->attempt || $this->attempt->status !== 'in_progress') {
-            $attemptsUsed = $latestAttempt?->attempt_number ?? 0;
-            $canStartNew = $quiz->isAvailable() && $attemptsUsed < $quiz->max_attempts;
-
-            if ($canStartNew) {
-                $this->attempt = $this->startNewAttempt();
-            } elseif ($latestAttempt) {
+            if ($latestAttempt) {
                 $this->attempt = $latestAttempt;
                 $this->reviewMode = true;
+            } elseif ($quiz->isAvailable() && $quiz->questions()->exists()) {
+                $this->readyToStart = true;
+
+                return;
             } else {
-                $this->denyAccess($attemptsUsed >= $quiz->max_attempts && $quiz->max_attempts > 0
-                    ? "You've already used all {$quiz->max_attempts} allowed attempt(s) for this quiz."
-                    : 'This quiz is not open right now. It may not have started yet, or the deadline has passed — check with your instructor.');
+                $this->denyAccess('This quiz is not ready to start. Check its opening time or contact your instructor.');
 
                 return;
             }
         }
+        $this->loadAnswersIntoState();
+    }
 
+    public function beginAttempt(): void
+    {
+        abort_if($this->previewMode, 403);
+        $this->quiz->refresh();
+        abort_unless(auth()->user()->isStudent()
+            && auth()->user()->can('page_MyQuizzes')
+            && $this->quiz->courseOffering->students()->where('users.id', auth()->id())->exists()
+            && $this->quiz->isAssignedTo(auth()->id()), 403);
+        if (! $this->quiz->isAvailable() || ! $this->quiz->questions()->exists()) {
+            $this->readyToStart = false;
+            $this->denyAccess('This quiz is no longer available. Return to My Quizzes for the latest schedule.');
+
+            return;
+        }
+        $this->attempt = $this->startNewAttempt();
+        $this->readyToStart = false;
+        $this->reviewMode = false;
+        $this->answers = [];
         $this->loadAnswersIntoState();
     }
 
@@ -259,7 +313,6 @@ class TakeQuiz extends Page
         $this->previewStartedAt = now()->toISOString();
         $this->previewExpiresAt = optional($this->computeExpiresAt($quiz, now()))->toISOString();
         $this->previewMaxScore = $quiz->questions()->sum('points');
-
         // boot() only rebuilds $attempt from the preview* scalars above on requests
         // *after* this one (mount() runs after boot(), which is too early to see
         // previewMode/quiz yet) — so build it here too for this first render.
@@ -282,14 +335,11 @@ class TakeQuiz extends Page
                 ->where('user_id', Auth::id())
                 ->latest('attempt_number')
                 ->first();
-
             if ($latestAttempt?->status === 'in_progress') {
                 return $latestAttempt;
             }
-
             $attemptNumber = ($latestAttempt?->attempt_number ?? 0) + 1;
             abort_if(! $quiz->isAvailable() || $attemptNumber > $quiz->max_attempts, 409, 'No additional attempt is available.');
-
             $startedAt = now();
             $attempt = QuizAttempt::create([
                 'quiz_id' => $quiz->id,
@@ -301,7 +351,6 @@ class TakeQuiz extends Page
                 'max_score' => $quiz->questions()->sum('points'),
                 'ip_address' => request()->ip(),
             ]);
-
             $attempt->answers()->createMany(
                 $quiz->questions()->get()->map(fn ($question) => [
                     'quiz_question_id' => $question->id,
@@ -319,6 +368,9 @@ class TakeQuiz extends Page
      */
     protected function computeExpiresAt(Quiz $quiz, Carbon $startedAt): ?Carbon
     {
+        if ($quiz->type === 'activity') {
+            return $quiz->available_until;
+        }
         if ($quiz->isScheduled()) {
             return $quiz->available_until;
         }
@@ -329,11 +381,8 @@ class TakeQuiz extends Page
     protected function loadAnswersIntoState(): void
     {
         $this->attempt->loadMissing('answers.question');
-
         foreach ($this->attempt->answers as $answer) {
-            $this->answers[$answer->quiz_question_id] = $answer->question?->type === 'file_upload'
-                ? null
-                : $answer->answer_text;
+            $this->answers[$answer->quiz_question_id] = $answer->answer_text;
         }
     }
 
@@ -353,7 +402,6 @@ class TakeQuiz extends Page
     public function questions()
     {
         $questions = $this->quiz->questions;
-
         if ($this->quiz->shuffle_questions && $this->attempt) {
             $attemptId = $this->attempt->id;
             $questions = $questions
@@ -382,50 +430,39 @@ class TakeQuiz extends Page
         if ($this->previewMode || $this->reviewMode || ! $this->attempt || $this->attempt->status !== 'in_progress') {
             return;
         }
-
         $this->checkExpiry();
-
         if ($this->attempt->status !== 'in_progress') {
             return;
         }
-
         if (str_starts_with($name, 'answers.')) {
             $questionId = (int) Str::after($name, 'answers.');
-
             $question = $this->quiz->questions()
                 ->whereKey($questionId)
                 ->where('type', '!=', 'file_upload')
                 ->first();
-
             if (! $question || (! is_null($value) && ! is_scalar($value))) {
                 return;
             }
-
             $answerValue = is_null($value) ? null : (string) $value;
-
-            if ($answerValue !== null && mb_strlen($answerValue) > 10_000) {
-                $this->addError($name, 'Answers may not exceed 10,000 characters.');
+            $maxLength = $question->type === 'code' ? QuizQuestion::MAX_CODE_LENGTH : 10_000;
+            if ($answerValue !== null && mb_strlen($answerValue) > $maxLength) {
+                $this->addError($name, 'Answers may not exceed '.number_format($maxLength).' characters.');
 
                 return;
             }
-
             QuizAnswer::where('quiz_attempt_id', $this->attempt->id)
                 ->where('quiz_question_id', $questionId)
                 ->update(['answer_text' => $answerValue]);
         }
-
         if (str_starts_with($name, 'files.') && $value) {
             $questionId = (int) Str::after($name, 'files.');
-
             $question = $this->quiz->questions()
                 ->whereKey($questionId)
                 ->where('type', 'file_upload')
                 ->first();
-
             if (! $question) {
                 return;
             }
-
             $this->validateOnly($name, [
                 $name => [
                     'required',
@@ -434,24 +471,18 @@ class TakeQuiz extends Page
                     'mimes:pdf,doc,docx,xls,xlsx,ppt,pptx,txt,csv,jpg,jpeg,png',
                 ],
             ]);
-
             $answer = QuizAnswer::where('quiz_attempt_id', $this->attempt->id)
                 ->where('quiz_question_id', $questionId)
                 ->first();
-
             if (! $answer) {
                 return;
             }
-
             if ($answer->answer_text
                 && str_starts_with($answer->answer_text, "quiz-submissions/{$this->quiz->id}/")) {
                 Storage::disk('local')->delete($answer->answer_text);
             }
-
             $path = $value->store("quiz-submissions/{$this->quiz->id}", 'local');
-
             $answer->update(['answer_text' => $path]);
-
             $this->answers[$questionId] = $path;
             unset($this->files[$questionId]);
         }
@@ -468,7 +499,6 @@ class TakeQuiz extends Page
 
             return;
         }
-
         $this->finalizeAttempt();
     }
 
@@ -477,41 +507,31 @@ class TakeQuiz extends Page
         if ($this->previewMode || ! $this->attempt || $this->attempt->status !== 'in_progress') {
             return;
         }
-
         DB::transaction(function (): void {
             $attempt = QuizAttempt::query()->lockForUpdate()->findOrFail($this->attempt->id);
-
             if ($attempt->status !== 'in_progress') {
                 return;
             }
-
             $autoScore = 0;
-
             foreach ($attempt->answers()->with('question')->get() as $answer) {
                 $question = $answer->question;
-
                 if (! $question->isAutoGraded()) {
                     continue;
                 }
-
                 $isCorrect = $question->grade($answer->answer_text) ?? false;
                 $points = $isCorrect ? $question->points : 0;
-
                 $answer->update(['is_correct' => $isCorrect, 'points_awarded' => $points]);
                 $autoScore += $points;
             }
-
             $needsManualGrading = $attempt->answers()
-                ->whereHas('question', fn ($query) => $query->whereIn('type', ['essay', 'file_upload']))
+                ->whereHas('question', fn ($query) => $query->whereIn('type', QuizQuestion::MANUALLY_GRADED_TYPES))
                 ->exists();
-
             $attempt->update([
                 'submitted_at' => now(),
                 'status' => $needsManualGrading ? 'submitted' : 'graded',
                 'score' => $autoScore,
             ]);
         });
-
         $this->reviewMode = true;
         $this->attempt->refresh();
     }

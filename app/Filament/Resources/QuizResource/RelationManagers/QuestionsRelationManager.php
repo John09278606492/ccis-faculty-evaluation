@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\QuizResource\RelationManagers;
 
+use App\Filament\Forms\Components\CodeEditor;
 use App\Models\QuizQuestion;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -9,6 +10,7 @@ use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
+use Illuminate\Validation\ValidationException;
 
 class QuestionsRelationManager extends RelationManager
 {
@@ -78,6 +80,32 @@ class QuestionsRelationManager extends RelationManager
                     ->visible(fn (Forms\Get $get) => $get('type') === 'short_answer')
                     ->required(fn (Forms\Get $get) => $get('type') === 'short_answer'),
 
+                // Code: editor language, optional starter code, and a reference solution for grading.
+                Forms\Components\Select::make('code_language')
+                    ->label('Language')
+                    ->options(QuizQuestion::CODE_LANGUAGES)
+                    ->default('python')
+                    ->live()
+                    ->columnSpanFull()
+                    ->visible(fn (Forms\Get $get) => $get('type') === 'code')
+                    ->required(fn (Forms\Get $get) => $get('type') === 'code'),
+
+                CodeEditor::make('starter_code')
+                    ->label('Starter code')
+                    ->helperText('Optional. Students start from this code instead of an empty editor.')
+                    ->language(fn (Forms\Get $get) => $get('code_language'))
+                    ->rules(['nullable', 'string', 'max:'.QuizQuestion::MAX_CODE_LENGTH])
+                    ->columnSpanFull()
+                    ->visible(fn (Forms\Get $get) => $get('type') === 'code'),
+
+                CodeEditor::make('reference_solution')
+                    ->label('Reference solution')
+                    ->helperText("Optional. Only you see this, next to each student's code when grading.")
+                    ->language(fn (Forms\Get $get) => $get('code_language'))
+                    ->rules(['nullable', 'string', 'max:'.QuizQuestion::MAX_CODE_LENGTH])
+                    ->columnSpanFull()
+                    ->visible(fn (Forms\Get $get) => $get('type') === 'code'),
+
                 Forms\Components\Hidden::make('order')
                     ->default(fn () => $this->ownerRecord->questions()->max('order') + 1),
             ]);
@@ -111,6 +139,14 @@ class QuestionsRelationManager extends RelationManager
                 ['key' => 'false', 'label' => 'False'],
             ];
             $data['correct_answer'] = [$data['true_false_correct'] ?? 'true'];
+        } elseif ($data['type'] === 'code') {
+            $data['options'] = [
+                'language' => $data['code_language'] ?? 'plaintext',
+                'starter_code' => (string) ($data['starter_code'] ?? ''),
+            ];
+            $data['correct_answer'] = filled($data['reference_solution'] ?? null)
+                ? ['reference' => $data['reference_solution']]
+                : null;
         } else {
             $data['options'] = null;
 
@@ -119,7 +155,10 @@ class QuestionsRelationManager extends RelationManager
             }
         }
 
-        unset($data['true_false_correct']);
+        if ($issues = (new QuizQuestion($data))->validationIssues()) {
+            throw ValidationException::withMessages(['mountedTableActionsData.0.options' => implode(' ', $issues)]);
+        }
+        unset($data['true_false_correct'], $data['code_language'], $data['starter_code'], $data['reference_solution']);
 
         return $data;
     }
@@ -144,6 +183,12 @@ class QuestionsRelationManager extends RelationManager
                 ])
                 ->toArray();
         }
+        if (($data['type'] ?? null) === 'code') {
+            $question = new QuizQuestion($data);
+            $data['code_language'] = $question->codeLanguage();
+            $data['starter_code'] = $question->starterCode();
+            $data['reference_solution'] = $question->referenceSolution();
+        }
 
         return $data;
     }
@@ -151,7 +196,8 @@ class QuestionsRelationManager extends RelationManager
     public function table(Table $table): Table
     {
         return $table
-            ->reorderable('order')
+            ->description($this->getOwnerRecord()->attempts()->exists() ? 'Questions are locked because students have started. Duplicate the quiz to make changes.' : 'Add questions and one correct answer key per choice question.')
+            ->reorderable('order', fn () => ! $this->getOwnerRecord()->attempts()->exists())
             ->defaultSort('order')
             ->columns([
                 Tables\Columns\TextColumn::make('order')
@@ -170,9 +216,13 @@ class QuestionsRelationManager extends RelationManager
                 Tables\Columns\TextColumn::make('points')
                     ->sortable(),
 
-                Tables\Columns\TextColumn::make('options')
+                Tables\Columns\TextColumn::make('details')
                     ->label('Choices')
-                    ->formatStateUsing(fn ($state) => is_array($state) ? count($state).' choices' : '-')
+                    ->state(fn (QuizQuestion $record) => match ($record->type) {
+                        'multiple_choice' => count($record->options ?? []).' choices',
+                        'code' => QuizQuestion::CODE_LANGUAGES[$record->codeLanguage()] ?? $record->codeLanguage(),
+                        default => '-',
+                    })
                     ->color('gray'),
             ])
             ->filters([
@@ -181,18 +231,18 @@ class QuestionsRelationManager extends RelationManager
             ], layout: FiltersLayout::AboveContent)
             ->headerActions([
                 Tables\Actions\CreateAction::make()
-                    ->label('Add Question')
+                    ->label('Add Question')->visible(fn () => ! $this->getOwnerRecord()->attempts()->exists())
                     ->mutateFormDataUsing(fn (array $data) => $this->mutateFormDataBeforeCreate($data)),
             ])
             ->actions([
-                Tables\Actions\EditAction::make()
+                Tables\Actions\EditAction::make()->visible(fn () => ! $this->getOwnerRecord()->attempts()->exists())
                     ->mutateRecordDataUsing(fn (array $data): array => $this->mutateRecordDataBeforeFill($data))
                     ->mutateFormDataUsing(fn (array $data) => $this->mutateFormDataBeforeSave($data)),
-                Tables\Actions\DeleteAction::make(),
+                Tables\Actions\DeleteAction::make()->visible(fn () => ! $this->getOwnerRecord()->attempts()->exists()),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\DeleteBulkAction::make()->visible(fn () => ! $this->getOwnerRecord()->attempts()->exists()),
                 ]),
             ]);
     }

@@ -11,6 +11,7 @@ use App\Models\ClassRecordUpload;
 use App\Models\CourseOffering;
 use App\Models\Quiz;
 use App\Services\ClassRecordSyncService;
+use App\Services\WorkbookPreviewService;
 use BezhanSalleh\FilamentShield\Contracts\HasShieldPermissions;
 use Filament\Actions\Action;
 use Filament\Forms;
@@ -176,7 +177,7 @@ class QuizResource extends Resource implements HasShieldPermissions
     protected static function buildBuildAction(string $actionClass)
     {
         return $actionClass::make('build')
-            ->label('Build')
+            ->label('Edit questions')
             ->icon('heroicon-o-squares-plus')
             ->color('primary')
             ->visible(fn (Quiz $record) => auth()->user()?->can('update', $record) ?? false)
@@ -202,6 +203,7 @@ class QuizResource extends Resource implements HasShieldPermissions
     {
         return ClassRecordSheet::where('course_offering_id', $record->course_offering_id)
             ->where('student_id_header', '!=', '')
+            ->when(! auth()->user()?->hasRole('super_admin'), fn ($q) => $q->whereHas('upload', fn ($u) => $u->where('uploaded_by', auth()->id())))
             ->with('upload')
             ->get();
     }
@@ -217,23 +219,37 @@ class QuizResource extends Resource implements HasShieldPermissions
             ->label('Sync to Class Record')
             ->icon('heroicon-o-arrow-path')
             ->color('gray')
-            ->visible(fn (Quiz $record) => auth()->user()?->can('update', $record) ?? false)
-            ->form(function (Quiz $record) {
-                $sheets = static::mappedClassRecordSheets($record);
+            ->visible(fn (Quiz $record) => in_array($record->type, ['quiz', 'activity'], true) && (auth()->user()?->can('update', $record) ?? false))
+            ->modalHeading('Preview class record sync')->modalWidth('7xl')->stickyModalHeader()->stickyModalFooter()
+            ->extraModalWindowAttributes(['class' => 'workbook-preview-modal'])
+            ->modalDescription('Only the latest attempt is considered, and only fully graded scores are written. Existing cells without a final score are left unchanged. A backup is kept before each sync.')
+            ->modalSubmitActionLabel('Sync final scores')
+            ->form(fn (Quiz $record) => [
+                Forms\Components\Select::make('class_record_sheet_id')
+                    ->label('Destination workbook and worksheet')
+                    ->options(static::mappedClassRecordSheets($record)->mapWithKeys(fn (ClassRecordSheet $sheet) => [
+                        $sheet->id => "{$sheet->upload->original_filename} — {$sheet->sheet_name} (".(ClassRecordUpload::PERIODS[$sheet->period] ?? $sheet->period).')',
+                    ]))
+                    ->default(fn () => static::mappedClassRecordSheets($record)->count() === 1 ? static::mappedClassRecordSheets($record)->first()->id : null)
+                    ->required()->live()
+                    ->helperText('Missing a worksheet? Open Class Records and map it to this course first.'),
+                Forms\Components\Toggle::make('preview_after_sync')->label('Show proposed scores')->default(true)->live()
+                    ->helperText('Preview only. The workbook changes when you click Sync final scores.'),
+                Forms\Components\TextInput::make('preview_first_row')->label('First preview row')->numeric()->minValue(1)->default(1)->live(onBlur: true),
+                Forms\Components\Placeholder::make('sync_preview')->hiddenLabel()
+                    ->content(function (Forms\Get $get) use ($record) {
+                        $sheet = static::mappedClassRecordSheets($record)->firstWhere('id', (int) $get('class_record_sheet_id'));
+                        if (! $sheet) {
+                            return 'Select a destination to check student matches and final scores.';
+                        }
 
-                if ($sheets->count() <= 1) {
-                    return [];
-                }
-
-                return [
-                    Forms\Components\Select::make('class_record_sheet_id')
-                        ->label('Which class record?')
-                        ->options($sheets->mapWithKeys(fn (ClassRecordSheet $s) => [
-                            $s->id => "{$s->upload->original_filename} — {$s->sheet_name} (".(ClassRecordUpload::PERIODS[$s->period] ?? $s->period).')',
-                        ]))
-                        ->required(),
-                ];
-            })
+                        return view('filament.partials.workbook-preview', [
+                            'preview' => app(WorkbookPreviewService::class)->preview(
+                                $sheet, $record, proposed: (bool) $get('preview_after_sync'), firstRow: (int) $get('preview_first_row'),
+                            ),
+                        ]);
+                    }),
+            ])
             ->action(function (Quiz $record, array $data) {
                 $sheets = static::mappedClassRecordSheets($record);
 
@@ -250,6 +266,12 @@ class QuizResource extends Resource implements HasShieldPermissions
                 $sheet = isset($data['class_record_sheet_id'])
                     ? $sheets->firstWhere('id', (int) $data['class_record_sheet_id'])
                     : $sheets->first();
+
+                if (! $sheet) {
+                    Notification::make()->title('Choose a valid mapped worksheet')->warning()->send();
+
+                    return;
+                }
 
                 try {
                     $result = (new ClassRecordSyncService)->sync($record, $sheet);
@@ -350,7 +372,8 @@ class QuizResource extends Resource implements HasShieldPermissions
                 Forms\Components\Section::make('Quiz Details')
                     ->schema([
                         Forms\Components\Select::make('course_offering_id')
-                            ->label('Course Offering')
+                            ->label('Course and section')
+                            ->disabled(fn (?Quiz $record) => $record?->attempts()->exists())
                             ->options(fn () => static::courseOfferingOptions())
                             ->searchable()
                             ->required(),
@@ -370,6 +393,22 @@ class QuizResource extends Resource implements HasShieldPermissions
                             ->label('Instructions')
                             ->rows(3)
                             ->columnSpanFull(),
+                        Forms\Components\Toggle::make('auto_sync_class_record')
+                            ->label('Auto-sync to class record')->default(true)
+                            ->visible(fn (Forms\Get $get) => in_array($get('type'), ['quiz', 'activity'], true))
+                            ->helperText('Automatically writes final grades and opening dates after grading. Uses the linked worksheet, or the only worksheet mapped by the instructor or a super-admin. With multiple grading periods, sync manually once to choose the destination.')->columnSpanFull(),
+                        Forms\Components\Placeholder::make('auto_sync_status')->label('Class record sync status')
+                            ->visible(fn (?Quiz $record) => $record && in_array($record->type, ['quiz', 'activity'], true))
+                            ->content(function (Quiz $record) {
+                                $record = $record->fresh();
+                                if (! $record->auto_sync_class_record) {
+                                    return 'Automatic syncing is off. You can still sync manually.';
+                                }
+
+                                return $record->class_record_sync_error
+                                    ? 'Needs attention: '.$record->class_record_sync_error.' Grades are saved. Fix the issue, then use Sync to Class Record to retry.'
+                                    : ($record->class_record_synced_at ? 'Last synced: '.$record->class_record_synced_at->format('M j, Y g:i A') : 'Enabled — new or updated final grades sync automatically. Use Sync to Class Record to sync existing grades now.');
+                            })->columnSpanFull(),
                     ])->columns(2),
 
                 Forms\Components\Section::make('Timing & Attempts')
@@ -414,6 +453,7 @@ class QuizResource extends Resource implements HasShieldPermissions
                                 : null),
 
                         Forms\Components\DateTimePicker::make('available_until')
+                            ->rule('after:data.available_from', fn (Forms\Get $get) => filled($get('available_from')))
                             ->label(fn (Forms\Get $get) => $get('timing_mode') === 'scheduled' && $get('type') !== 'activity' ? 'Closes At' : 'Available Until')
                             ->required(fn (Forms\Get $get) => $get('timing_mode') === 'scheduled' && $get('type') !== 'activity')
                             ->helperText(fn (Forms\Get $get) => match (true) {
@@ -435,6 +475,8 @@ class QuizResource extends Resource implements HasShieldPermissions
 
                         Forms\Components\Toggle::make('is_published')
                             ->label('Published (visible to students)')
+                            ->disabled(fn (?Quiz $record) => ! $record)
+                            ->helperText('Save a draft, add questions and answer keys, then publish. Incomplete quizzes cannot be published.')
                             ->default(false),
                     ])->columns(2),
             ]);
@@ -450,7 +492,7 @@ class QuizResource extends Resource implements HasShieldPermissions
 
                 Tables\Columns\TextColumn::make('courseOffering.display_name')
                     ->label('Course Offering')
-                    ->searchable(),
+                    ->searchable(query: fn (Builder $query, string $search) => $query->whereHas('courseOffering', fn ($q) => $q->where('section', 'like', "%{$search}%")->orWhereHas('course', fn ($course) => $course->where('code', 'like', "%{$search}%")->orWhere('name', 'like', "%{$search}%")))),
 
                 Tables\Columns\TextColumn::make('type')
                     ->badge()
@@ -477,9 +519,13 @@ class QuizResource extends Resource implements HasShieldPermissions
                         ? 'Scheduled'
                         : ($record->duration_minutes ? "{$record->duration_minutes} min" : 'Untimed')),
 
-                Tables\Columns\IconColumn::make('is_published')
-                    ->boolean()
-                    ->label('Published'),
+                Tables\Columns\TextColumn::make('is_published')
+                    ->label('Visibility')->badge()
+                    ->formatStateUsing(fn (bool $state) => $state ? 'Published' : 'Draft')
+                    ->color(fn (bool $state) => $state ? 'success' : 'gray'),
+                Tables\Columns\TextColumn::make('pending_grading_count')
+                    ->counts(['attempts as pending_grading_count' => fn (Builder $query) => $query->where('status', 'submitted')])
+                    ->label('To grade')->badge()->color('warning'),
 
                 Tables\Columns\TextColumn::make('available_until')
                     ->label('Deadline')
@@ -498,13 +544,18 @@ class QuizResource extends Resource implements HasShieldPermissions
             ], layout: FiltersLayout::AboveContent)
             ->actions([
                 static::buildAction(),
-                static::previewAction(),
-                static::copyLinkAction(),
-                Tables\Actions\EditAction::make(),
-                static::duplicateAction(),
-                static::syncClassRecordAction(),
-                Tables\Actions\DeleteAction::make(),
+                Tables\Actions\EditAction::make()->label('Settings & results'),
+                Tables\Actions\ActionGroup::make([
+                    static::previewAction(),
+                    static::copyLinkAction(),
+                    static::syncClassRecordAction(),
+                    static::duplicateAction(),
+                    Tables\Actions\DeleteAction::make(),
+                ])->label('More')->button(),
             ])
+            ->defaultSort('created_at', 'desc')
+            ->emptyStateHeading('Create your first quiz')
+            ->emptyStateDescription('Save a draft, add questions, preview it, then publish for your students.')
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),

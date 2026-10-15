@@ -2,3 +2,148 @@
 @import '../../../../vendor/kenepa/banner/resources/css/index.css';
 
 @config 'tailwind.config.js';
+
+/* Filament resource tables become labeled record cards on phones. Workbook
+   previews are intentionally excluded: their row/column coordinates matter. */
+@media (max-width: 639px) {
+    .fi-ta-table:has([data-mobile-label]) {
+        display: block;
+        border: 0;
+    }
+
+    .fi-ta-table:has([data-mobile-label]) > thead {
+        display: block;
+        border: 0;
+    }
+    .fi-ta-table:has([data-mobile-label]) > thead:not(:has([role="button"], input[type="checkbox"])) {
+        display: none;
+    }
+
+    .fi-ta-table:has([data-mobile-label]) > thead > tr {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: .375rem;
+        padding: .75rem;
+        background: transparent;
+    }
+
+    .fi-ta-table:has([data-mobile-label]) > thead th { display: none; }
+    .fi-ta-table:has([data-mobile-label]) > thead th:has([role="button"]),
+    .fi-ta-table:has([data-mobile-label]) > thead th:has(input[type="checkbox"]) {
+        display: block;
+        width: auto;
+        padding: 0;
+    }
+    .fi-ta-table:has([data-mobile-label]) > thead tr:has([role="button"])::before {
+        content: 'Sort by';
+        font-size: .75rem;
+        color: rgb(100 116 139);
+        margin-inline-end: .25rem;
+    }
+    .fi-ta-table:has([data-mobile-label]) > thead [role="button"] {
+        min-height: 44px;
+        padding: .5rem .625rem;
+        border: 1px solid rgb(226 232 240);
+        border-radius: .5rem;
+    }
+    .fi-ta-table:has([data-mobile-label]) > thead .fi-ta-selection-cell > div {
+        display: flex;
+        gap: .5rem;
+        align-items: center;
+        min-height: 44px;
+        padding: .5rem;
+    }
+    .fi-ta-table:has([data-mobile-label]) > thead .fi-ta-selection-cell > div::after {
+        content: 'Select page';
+        font-size: .75rem;
+    }
+
+    .fi-ta-table:has([data-mobile-label]) > tbody {
+        display: grid;
+        gap: .875rem;
+        padding: .75rem;
+        white-space: normal;
+        border: 0;
+    }
+    .fi-ta-table:has([data-mobile-label]) > tbody > .fi-ta-row:not(.hidden) {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        border: 1px solid rgb(226 232 240);
+        border-radius: .875rem;
+        background: white;
+        box-shadow: 0 1px 3px rgb(15 23 42 / .05);
+    }
+    .fi-ta-table .fi-ta-row > [data-mobile-label]:not(.hidden) {
+        display: grid;
+        grid-template-columns: minmax(5rem, .7fr) minmax(0, 1.3fr);
+        align-items: start;
+        gap: .75rem;
+        width: 100%;
+        padding: .75rem;
+        white-space: normal;
+        border-bottom: 1px solid rgb(241 245 249);
+    }
+    .fi-ta-table [data-mobile-label]::before {
+        content: attr(data-mobile-label);
+        font-size: .75rem;
+        line-height: 1.5rem;
+        font-weight: 600;
+        color: rgb(100 116 139);
+        overflow-wrap: anywhere;
+    }
+    .fi-ta-table [data-mobile-label] > *,
+    .fi-ta-table [data-mobile-label] .fi-ta-text,
+    .fi-ta-table [data-mobile-label] .fi-ta-icon,
+    .fi-ta-table [data-mobile-label] .fi-ta-col-wrp {
+        min-width: 0;
+        max-width: 100%;
+        padding: 0;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+    .fi-ta-table [data-mobile-label] .fi-ta-text-item,
+    .fi-ta-table [data-mobile-label] .fi-ta-text-item-label {
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+    .fi-ta-table:has([data-mobile-label]) .fi-ta-row > .fi-ta-selection-cell {
+        display: block;
+        width: 100%;
+    }
+    .fi-ta-table:has([data-mobile-label]) .fi-ta-row > .fi-ta-selection-cell > div {
+        display: flex;
+        align-items: center;
+        gap: .5rem;
+        min-height: 44px;
+        padding: .75rem;
+    }
+    .fi-ta-table:has([data-mobile-label]) .fi-ta-row > .fi-ta-selection-cell > div::after {
+        content: 'Select record';
+        font-size: .75rem;
+        color: rgb(100 116 139);
+    }
+    .fi-ta-table:has([data-mobile-label]) .fi-ta-row > .fi-ta-actions-cell:not(.hidden) {
+        display: block;
+        order: 10;
+        width: 100%;
+        padding: 0;
+    }
+    .fi-ta-table:has([data-mobile-label]) .fi-ta-actions-cell > div { padding: .5rem .75rem; }
+    .fi-ta-table:has([data-mobile-label]) .fi-ta-actions {
+        flex-wrap: wrap;
+        justify-content: flex-start;
+        gap: .5rem 1rem;
+    }
+    .fi-ta-table:has([data-mobile-label]) .fi-ta-actions :is(button, a) { min-height: 44px; }
+    .dark .fi-ta-table:has([data-mobile-label]) > tbody > .fi-ta-row:not(.hidden) {
+        background: rgb(15 23 42);
+        border-color: rgb(51 65 85);
+    }
+    .dark .fi-ta-table .fi-ta-row > [data-mobile-label] { border-bottom-color: rgb(30 41 59); }
+    .dark .fi-ta-table [data-mobile-label]::before,
+    .dark .fi-ta-table:has([data-mobile-label]) > thead tr::before,
+    .dark .fi-ta-table:has([data-mobile-label]) .fi-ta-selection-cell > div::after { color: rgb(148 163 184); }
+    .dark .fi-ta-table:has([data-mobile-label]) > thead [role="button"] { border-color: rgb(51 65 85); }
+}

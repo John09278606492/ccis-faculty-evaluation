@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\AutoSyncClassRecord;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -10,6 +11,17 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class QuizAttempt extends Model
 {
     use HasFactory;
+
+    protected static function booted(): void
+    {
+        static::saved(function (self $attempt) {
+            if ($attempt->status === 'graded' && $attempt->score !== null && $attempt->wasChanged(['status', 'score'])) {
+                AutoSyncClassRecord::afterCommit($attempt->quiz_id);
+            } elseif ($attempt->wasRecentlyCreated && $attempt->status === 'graded' && $attempt->score !== null) {
+                AutoSyncClassRecord::afterCommit($attempt->quiz_id);
+            }
+        });
+    }
 
     protected $fillable = [
         'quiz_id',
@@ -60,7 +72,7 @@ class QuizAttempt extends Model
     {
         return $this->answers()
             ->whereNull('points_awarded')
-            ->whereHas('question', fn ($q) => $q->whereIn('type', ['essay', 'file_upload']))
+            ->whereHas('question', fn ($q) => $q->whereIn('type', QuizQuestion::MANUALLY_GRADED_TYPES))
             ->exists();
     }
 }

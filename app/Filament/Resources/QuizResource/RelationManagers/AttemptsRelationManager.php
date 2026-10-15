@@ -4,6 +4,7 @@ namespace App\Filament\Resources\QuizResource\RelationManagers;
 
 use App\Models\QuizAnswer;
 use App\Models\QuizAttempt;
+use App\Models\QuizQuestion;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
@@ -11,10 +12,16 @@ use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
+use Illuminate\Support\Facades\Blade;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\HtmlString;
+use pxlrbt\FilamentExcel\Actions\Tables\ExportAction;
+use pxlrbt\FilamentExcel\Exports\ExcelExport;
 
 class AttemptsRelationManager extends RelationManager
 {
+    use \App\Filament\Concerns\ReceivesClassroomUpdates;
+
     protected static string $relationship = 'attempts';
 
     protected static ?string $title = 'Attempts & Submissions';
@@ -59,7 +66,7 @@ class AttemptsRelationManager extends RelationManager
 
                 Tables\Columns\TextColumn::make('result')
                     ->label('Result')
-                    ->state(fn (QuizAttempt $record) => match ($this->getOwnerRecord()->hasPassed($record->score)) {
+                    ->state(fn (QuizAttempt $record) => $record->status !== 'graded' ? 'Pending' : match ($this->getOwnerRecord()->hasPassed($record->score)) {
                         true => 'Passed',
                         false => 'Failed',
                         null => '—',
@@ -100,6 +107,13 @@ class AttemptsRelationManager extends RelationManager
                     ->form(fn (QuizAttempt $record) => $this->buildGradingSchema($record))
                     ->action(fn (QuizAttempt $record, array $data) => $this->saveGrades($record, $data)),
             ])
+            ->headerActions([
+                ExportAction::make('exportResults')
+                    ->label('Export results')->exports([
+                        ExcelExport::make()
+                            ->fromTable()->withFilename('quiz-'.$this->getOwnerRecord()->id.'-results-'.now()->format('Y-m-d')),
+                    ]),
+            ])
             ->bulkActions([])
             ->defaultSort('started_at', 'desc');
     }
@@ -115,12 +129,12 @@ class AttemptsRelationManager extends RelationManager
     {
         $autoGraded = $record->answers()
             ->with('question')
-            ->whereHas('question', fn ($q) => $q->whereIn('type', ['multiple_choice', 'true_false', 'short_answer']))
+            ->whereHas('question', fn ($q) => $q->whereIn('type', QuizQuestion::AUTO_GRADED_TYPES))
             ->get();
 
         $manualAnswers = $record->answers()
             ->with('question')
-            ->whereHas('question', fn ($q) => $q->whereIn('type', ['essay', 'file_upload']))
+            ->whereHas('question', fn ($q) => $q->whereIn('type', QuizQuestion::MANUALLY_GRADED_TYPES))
             ->get();
 
         $schema = [];
@@ -151,23 +165,32 @@ class AttemptsRelationManager extends RelationManager
         if ($manualAnswers->isEmpty()) {
             $schema[] = Forms\Components\Placeholder::make('none')
                 ->label('')
-                ->content('This attempt has no essay or file-upload questions to grade — the auto-graded score above is final.');
+                ->content('This attempt has no essay, code or file-upload questions to grade — the auto-graded score above is final.');
 
             return $schema;
         }
 
         $manualSections = $manualAnswers->map(function (QuizAnswer $answer) {
-            $isFile = $answer->question->type === 'file_upload';
+            $question = $answer->question;
 
-            return Forms\Components\Section::make($answer->question->question_text)
+            return Forms\Components\Section::make($question->question_text)
                 ->schema([
                     Forms\Components\Placeholder::make("preview_{$answer->id}")
                         ->label('Submitted Answer')
-                        ->content($isFile
-                            ? ($answer->answer_text
+                        ->content(match ($question->type) {
+                            'file_upload' => $answer->answer_text
                                 ? new HtmlString('<a href="'.e(route('quiz-submissions.download', $answer)).'" class="underline">Download uploaded file</a>')
-                                : 'No file submitted')
-                            : ($answer->answer_text ?: '—')),
+                                : 'No file submitted',
+                            'code' => filled($answer->answer_text)
+                                ? $this->codeBlock($answer->answer_text, $question->codeLanguage())
+                                : 'No code submitted',
+                            default => $answer->answer_text ?: '—',
+                        }),
+
+                    Forms\Components\Placeholder::make("reference_{$answer->id}")
+                        ->label('Your Reference Solution')
+                        ->content(fn () => $this->codeBlock($question->referenceSolution(), $question->codeLanguage()))
+                        ->visible($question->type === 'code' && filled($question->referenceSolution())),
 
                     Forms\Components\TextInput::make("awards.{$answer->id}.points")
                         ->label('Points Awarded')
@@ -188,20 +211,33 @@ class AttemptsRelationManager extends RelationManager
         return [...$schema, ...$manualSections];
     }
 
+    protected function codeBlock(string $code, string $language): HtmlString
+    {
+        return new HtmlString(Blade::render(
+            '<x-code-editor :value="$code" :language="$language" read-only min-height="4rem" max-height="24rem" />',
+            ['code' => $code, 'language' => $language],
+        ));
+    }
+
     protected function saveGrades(QuizAttempt $record, array $data): void
     {
-        foreach ($data['awards'] ?? [] as $answerId => $award) {
-            QuizAnswer::whereKey($answerId)->update([
-                'points_awarded' => $award['points'],
-                'feedback' => $award['feedback'] ?? null,
-                'is_correct' => (float) $award['points'] > 0,
-            ]);
-        }
+        abort_unless(auth()->user()->can('update', $this->getOwnerRecord()) && $record->quiz_id === $this->getOwnerRecord()->id && $record->status !== 'in_progress', 403);
+        DB::transaction(function () use ($record, $data): void {
+            foreach ($data['awards'] ?? [] as $answerId => $award) {
+                $answer = $record->answers()->whereKey($answerId)->whereHas('question', fn ($q) => $q->whereIn('type', QuizQuestion::MANUALLY_GRADED_TYPES))->firstOrFail();
+                validator($award, ['points' => ['required', 'numeric', 'min:0', 'max:'.$answer->question->points]])->validate();
+                $answer->update([
+                    'points_awarded' => $award['points'],
+                    'feedback' => $award['feedback'] ?? null,
+                    'is_correct' => (float) $award['points'] > 0,
+                ]);
+            }
 
-        $record->update([
-            'score' => $record->answers()->sum('points_awarded'),
-            'status' => 'graded',
-        ]);
+            $record->update([
+                'score' => $record->answers()->sum('points_awarded'),
+                'status' => $record->hasUngradedAnswers() ? 'submitted' : 'graded',
+            ]);
+        });
 
         Notification::make()
             ->title('Attempt graded')

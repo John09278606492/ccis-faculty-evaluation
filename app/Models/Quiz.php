@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Filament\Pages\TakeQuiz;
+use App\Services\AutoSyncClassRecord;
 use Filament\Notifications\Actions\Action;
 use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -10,24 +11,60 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Validation\ValidationException;
 
 class Quiz extends Model
 {
     use HasFactory;
 
+    protected $attributes = ['auto_sync_class_record' => true];
+
     protected static function boot(): void
     {
         parent::boot();
-
+        static::saved(function (self $quiz) {
+            if ($quiz->auto_sync_class_record && $quiz->wasChanged(['auto_sync_class_record', 'available_from', 'title', 'course_offering_id', 'type'])) {
+                AutoSyncClassRecord::afterCommit($quiz->id);
+            }
+        });
         // If the instructor reschedules the start time, let the alert fire again.
         static::saving(function (self $quiz) {
+            if ($quiz->is_published && $quiz->isDirty('is_published')) {
+                $issues = $quiz->publicationIssues();
+                if ($issues) {
+                    throw ValidationException::withMessages(['data.is_published' => implode(' ', $issues)]);
+                }
+            }
             if ($quiz->isDirty('available_from') && ! $quiz->isDirty('notified_at')) {
                 $quiz->notified_at = null;
             }
         });
     }
 
+    public function publicationIssues(): array
+    {
+        $questions = $this->questions()->get();
+        $issues = [];
+        if ($questions->isEmpty()) {
+            $issues[] = 'Add questions in the question builder before publishing.';
+        }
+        foreach ($questions as $index => $question) {
+            foreach ($question->validationIssues() as $issue) {
+                $issues[] = 'Question '.($index + 1).': '.$issue;
+            }
+        }
+        if ($this->passing_score !== null && $this->passing_score > $questions->sum('points')) {
+            $issues[] = 'The passing score cannot exceed the total points.';
+        }
+        if ($this->available_from && $this->available_until && $this->available_until->lte($this->available_from)) {
+            $issues[] = 'The closing time must be after the opening time.';
+        }
+
+        return $issues;
+    }
+
     protected $fillable = [
+        'auto_sync_class_record',
         'course_offering_id',
         'title',
         'instructions',
@@ -46,6 +83,8 @@ class Quiz extends Model
     ];
 
     protected $casts = [
+        'auto_sync_class_record' => 'boolean',
+        'class_record_synced_at' => 'datetime',
         'duration_minutes' => 'integer',
         'available_from' => 'datetime',
         'available_until' => 'datetime',
@@ -117,7 +156,7 @@ class Quiz extends Model
             'course_offering_id',
             'user_id',
             'course_offering_id',
-        );
+        )->using(ClassroomEnrollment::class);
     }
 
     /**
@@ -126,7 +165,7 @@ class Quiz extends Model
      */
     public function assignedStudents(): BelongsToMany
     {
-        return $this->belongsToMany(User::class, 'quiz_student');
+        return $this->belongsToMany(User::class, 'quiz_student')->using(QuizAssignment::class);
     }
 
     /**
@@ -224,7 +263,6 @@ class Quiz extends Model
         $students = $this->assign_to_all
             ? $this->courseOffering->students
             : $this->assignedStudents;
-
         foreach ($students as $student) {
             Notification::make()
                 ->title("\"{$this->title}\" starts soon")
@@ -238,7 +276,6 @@ class Quiz extends Model
                 ])
                 ->sendToDatabase($student);
         }
-
         $this->update(['notified_at' => now()]);
     }
 
