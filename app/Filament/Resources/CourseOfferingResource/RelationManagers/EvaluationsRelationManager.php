@@ -3,13 +3,24 @@
 namespace App\Filament\Resources\CourseOfferingResource\RelationManagers;
 
 use App\Models\FormSubmission;
+use App\Services\EvaluationResultsRelease;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Model;
 
 class EvaluationsRelationManager extends RelationManager
 {
+    /**
+     * The person being evaluated sees these scores only once the results are released.
+     */
+    public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
+    {
+        return parent::canViewForRecord($ownerRecord, $pageClass)
+            && EvaluationResultsRelease::canSeeScores(auth()->user(), $ownerRecord);
+    }
+
     protected static string $relationship = 'formSubmissions';
 
     protected static ?string $title = 'Evaluation Submissions';

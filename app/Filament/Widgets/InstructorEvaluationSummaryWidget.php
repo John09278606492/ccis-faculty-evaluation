@@ -4,6 +4,7 @@ namespace App\Filament\Widgets;
 
 use App\Models\CourseOffering;
 use App\Models\FormSubmission;
+use App\Services\EvaluationResultsRelease;
 use BezhanSalleh\FilamentShield\Traits\HasWidgetShield;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -39,7 +40,7 @@ class InstructorEvaluationSummaryWidget extends BaseWidget
                 CourseOffering::query()
                     ->where('user_id', $user->id)
                     ->where('is_active', true)
-                    ->with(['course', 'semester.schoolYear', 'evaluationForm'])
+                    ->with(['course', 'semester.schoolYear', 'evaluationForm', 'semester'])
                     ->withCount(['students', 'formSubmissions'])
             )
             ->emptyStateHeading('No Evaluation Assignments')
@@ -101,6 +102,10 @@ class InstructorEvaluationSummaryWidget extends BaseWidget
                 Tables\Columns\TextColumn::make('average_score')
                     ->label('Avg Score')
                     ->getStateUsing(function (CourseOffering $record) {
+                        if (! EvaluationResultsRelease::isReleased($record, $record->form_submissions_count)) {
+                            return 'After close';
+                        }
+
                         $submissions = FormSubmission::where('course_offering_id', $record->id)->get();
                         if ($submissions->isEmpty()) {
                             return 'N/A';
