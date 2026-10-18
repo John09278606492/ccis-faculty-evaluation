@@ -19,6 +19,11 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
         // The Filament panel owns sign-in; there is no route named "login".
         $middleware->redirectGuestsTo('/login');
+        // The classroom server's gateway passes on each device's address, so sign-in
+        // limits and logs see the student's own device instead of the gateway.
+        if ($proxies = env('TRUSTED_PROXIES')) {
+            $middleware->trustProxies(at: explode(',', $proxies));
+        }
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //

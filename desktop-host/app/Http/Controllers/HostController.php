@@ -59,7 +59,7 @@ class HostController extends Controller
     public function save(Request $request)
     {
         abort_if(ChildProcess::get(self::ALIAS) !== null, 422, 'Stop the server before changing its settings.');
-        $data = $request->validate(['project' => 'required|string|max:500', 'php' => 'required|string|max:500', 'port' => 'required|integer|min:1024|max:65524', 'autostart' => 'required|boolean']);
+        $data = $request->validate(['project' => 'required|string|max:500', 'php' => 'required|string|max:500', 'port' => 'required|integer|min:1024|max:65500', 'autostart' => 'required|boolean']);
         abort_unless(is_file($data['project'].'/artisan') && is_file($data['project'].'/vendor/autoload.php'), 422, 'Select the installed classroom project folder.');
         abort_unless(is_file($data['php']) && strtolower(pathinfo($data['php'], PATHINFO_EXTENSION)) === 'exe', 422, 'Select a valid PHP executable.');
         Settings::set('classroom', $data);

@@ -18,6 +18,10 @@
         </form>
     </div>
 
+    @if (! $reviewMode && ! $accessDenied && ($runtime = $this->phpRuntimeToPrefetch()))
+        <link rel="prefetch" href="{{ $runtime }}" as="fetch" crossorigin="anonymous">
+    @endif
+
     @if ($accessDenied)
         <div class="flex flex-col items-center gap-4 py-8 text-center">
             <div class="flex h-14 w-14 items-center justify-center rounded-full bg-danger-50 text-danger-600 dark:bg-danger-500/10 dark:text-danger-400">

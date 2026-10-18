@@ -22,7 +22,7 @@ To restore, stop the server, import `database.sql` into an empty classroom datab
 
 ## Operation
 
-The public gateway shares HTTP and WebSockets on port 8088. Four PHP workers and Reverb run on loopback behind it. NativePHP's desktop controls stay private to the host. Closing the desktop app stops its managed process tree. Startup checks the database and ports without killing unrelated applications. NativePHP's environment is stripped before launching the classroom workers so its SQLite settings and encryption key cannot override the classroom configuration.
+The public gateway shares HTTP and WebSockets on port 8088. Four to eight PHP workers (one per CPU core) and Reverb run on loopback behind it; each request goes to the least busy worker. The gateway sends files from `public/` itself, gzip-compressed and cached by browsers, so the 18 MB PHP runtime for code questions never ties up a PHP worker, and exam pages download it in the background before students press Start. It passes each device's address to Laravel (`TRUSTED_PROXIES`), so sign-in limits apply per device rather than to the whole class. Workers keep compiled PHP in OPcache and recheck files every two seconds. Route, event, icon and Filament caches are rebuilt at every start and cleared at stop; if the app was force-closed, run `php artisan optimize:clear` before developing. NativePHP's desktop controls stay private to the host. Closing the desktop app stops its managed process tree. Startup checks the database and ports without killing unrelated applications. NativePHP's environment is stripped before launching the classroom workers so its SQLite settings and encryption key cannot override the classroom configuration.
 
 The classroom installation requires its Composer dependencies, Vite build, `.env` and Reverb credentials. Leave its configuration uncached because the desktop host supplies runtime ports. The local process-status indicator checks every five seconds; classroom data updates through WebSocket events.
 
@@ -44,6 +44,6 @@ php -d opcache.enable_cli=0 vendor/bin/phpunit
 
 ## Verification
 
-Packaged startup, stop, restart and exit cleanup were checked. Two authenticated browser sessions received push events through the same LAN port. Main-project tests: 44 tests, 252 assertions. Desktop tests: 2 tests, 5 assertions. A separate physical phone was not available for testing; router/firewall configuration may affect its access.
+Packaged startup, stop, restart and exit cleanup were checked. Two authenticated browser sessions received push events through the same LAN port. Main-project tests: 44 tests, 252 assertions. Desktop tests: 2 tests, 5 assertions. Load test (2026-10-18, 4-core Linux, MariaDB): 60 students signed in from separate addresses, started a three-question coding exam and autosaved code every 1.5 s for a minute; autosaves took 41 ms (median) and 78 ms (95th percentile), with no errors. A separate physical phone was not available for testing; router/firewall configuration may affect its access.
 
 [NativePHP documentation](https://nativephp.com/docs/desktop/2/getting-started/installation)

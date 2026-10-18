@@ -50,6 +50,20 @@ class TakeQuiz extends Page
         ];
     }
 
+    /**
+     * The PHP runtime (about 18 MB) to download in the background before the
+     * attempt starts, so the whole class is not fetching it when Run is first pressed.
+     */
+    public function phpRuntimeToPrefetch(): ?string
+    {
+        $runsPhp = $this->quiz->questions->contains(
+            fn (QuizQuestion $question) => $question->type === 'code' && $question->codeRunner() === 'php' && $question->studentsCanRunCode()
+        );
+        $runtime = $runsPhp ? (glob(public_path('code-runner/*/php_*.wasm')) ?: [null])[0] : null;
+
+        return $runtime ? asset(str_replace('\\', '/', substr($runtime, strlen(public_path()) + 1))) : null;
+    }
+
     #[Locked]
     public Quiz $quiz;
 
@@ -129,7 +143,9 @@ class TakeQuiz extends Page
     #[On('classroom-push')]
     public function refreshLiveState(string $kind = 'reconnected', ?int $quizId = null, ?int $courseId = null): void
     {
-        if ($kind === 'focus' || ($quizId && $quizId !== $this->quiz->id) || ($courseId && $courseId !== $this->quiz->course_offering_id)) {
+        // Classmates starting and submitting send 'attempt' updates; they change nothing on an attempt in progress.
+        $activeAttempt = $kind === 'attempt' && $this->attempt?->status === 'in_progress' && ! $this->reviewMode;
+        if ($kind === 'focus' || $activeAttempt || ($quizId && $quizId !== $this->quiz->id) || ($courseId && $courseId !== $this->quiz->course_offering_id)) {
             $this->skipRender();
 
             return;
@@ -474,9 +490,15 @@ class TakeQuiz extends Page
 
                 return;
             }
-            QuizAnswer::where('quiz_attempt_id', $this->attempt->id)
-                ->where('quiz_question_id', $questionId)
-                ->update(['answer_text' => $answerValue]);
+            $answer = QuizAnswer::where('quiz_attempt_id', $this->attempt->id)
+                ->where('quiz_question_id', $questionId);
+            $wasAnswered = filled($answer->clone()->value('answer_text'));
+            $answer->update(['answer_text' => $answerValue]);
+            // Autosaves while typing need no new page: re-render only when the
+            // answered count changes, so a full classroom typing stays fast.
+            if ($wasAnswered === filled($answerValue)) {
+                $this->skipRender();
+            }
         }
         if (str_starts_with($name, 'files.') && $value) {
             $questionId = (int) Str::after($name, 'files.');
