@@ -281,6 +281,8 @@ their own database, opened from the exam with **Open phpMyAdmin**. No passwords 
    `DOMContentLoaded`/`alpine:init` having not fired yet, and document/window listeners must be
    removed on `livewire:navigating` (see the exam script in `take-quiz.blade.php`). Non-panel pages
    and exams are listed in `spaUrlExceptions` so they always load fresh.
+   `public/build` (Vite output) is committed so the classroom PC needs no Node.js: run
+   `npm run build` and commit it after changing anything in `resources/css` or `resources/js`.
 
 1. **CLI OPcache serves stale code.** `C:\php\php.ini` has `opcache.enable_cli=1` and
    `opcache.validate_timestamps=0`, so `php artisan …` can run old code after edits. Always use

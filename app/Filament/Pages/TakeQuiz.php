@@ -481,6 +481,8 @@ class TakeQuiz extends Page
             if ($answerValue !== null && $question->type === 'code') {
                 if (($issue = $question->codeAnswerIssue($answerValue)) !== null) {
                     $this->addError($name, $issue);
+                    // The editor's status bar would otherwise still say "Saved".
+                    $this->dispatch('code-save-rejected', path: $name);
 
                     return;
                 }

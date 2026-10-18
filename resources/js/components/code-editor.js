@@ -124,6 +124,7 @@ function parseProject(value, fallback) {
 }
 
 export default function codeEditorComponent({
+    statePath = null,
     state,
     initialValue = null,
     readOnly = false,
@@ -143,6 +144,10 @@ export default function codeEditorComponent({
     let resizeObserver = null
     let commitTimer = null
     let messageListener = null
+    // Livewire, taken from the root: $wire from a handler inside the Explorer (a name input that is
+    // removed once it is confirmed) resolves to no component, so those changes were never saved.
+    let wire = null
+    let rejected = false
 
     return {
         state,
@@ -189,6 +194,15 @@ export default function codeEditorComponent({
         },
 
         init() {
+            wire = this.$wire
+            if (statePath && wire) {
+                wire.$on('code-save-rejected', ({ path }) => {
+                    if (path === statePath) {
+                        rejected = true
+                        this.saveState = 'rejected'
+                    }
+                })
+            }
             const project = parseProject(this.state, starter)
             this.files = project.files
             this.folders = project.folders
@@ -687,9 +701,10 @@ export default function codeEditorComponent({
             }
             clearTimeout(commitTimer)
             this.saveState = 'saving'
+            rejected = false
             try {
-                await this.$wire.$commit()
-                this.saveState = 'saved'
+                await wire.$commit()
+                this.saveState = rejected ? 'rejected' : 'saved'
             } catch {
                 this.saveState = 'unsaved'
             }

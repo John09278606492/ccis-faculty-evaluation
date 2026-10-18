@@ -28,8 +28,9 @@ function connect() {
     }
     const config = JSON.parse(configElement.textContent);
     if (echo && activeChannel === config.channel) {
+        // A page change (also fired once on the first load) brings fresh data from the server,
+        // so nothing to refresh. Refreshing here re-rendered tables before their scripts loaded.
         status(echo.connector.pusher.connection.state === 'connected' ? 'Live updates connected' : 'Live updates reconnecting…', echo.connector.pusher.connection.state === 'connected');
-        refreshRelatedViews();
         return;
     }
     echo?.disconnect();

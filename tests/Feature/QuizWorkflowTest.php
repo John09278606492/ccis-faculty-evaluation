@@ -636,10 +636,21 @@ it('lets students create their own files and folders unless the instructor turns
         ->and(CodeProject::decodeFolders($saved))->toBe(['images']);
     $page->set('answers.'.$code->id, json_encode(['files' => [['name' => '../evil.php', 'content' => '']]]))
         ->assertHasErrors('answers.'.$code->id)
-        ->assertSee('is not a valid file name');
+        ->assertSee('is not a valid file name')
+        ->assertDispatched('code-save-rejected', path: 'answers.'.$code->id);
     expect(QuizAnswer::where('quiz_question_id', $code->id)->value('answer_text'))->toBe($saved);
 
     expect((new QuizQuestion(['type' => 'code', 'options' => [...$code->options, 'allow_student_files' => false]]))->studentsCanManageFiles())->toBeFalse();
+});
+
+it('turns on student files for code questions saved before it was the default', function () {
+    extract(quizWorkflowFixture());
+    $code = $quiz->questions()->create(['type' => 'code', 'question_text' => 'Build a site', 'points' => 5, 'order' => 2, 'options' => [
+        'language' => 'web', 'allow_student_files' => false, 'files' => [['name' => 'index.html', 'content' => '']],
+    ]]);
+    (require database_path('migrations/2026_10_18_000006_let_students_create_files_in_code_questions.php'))->up();
+    expect($code->fresh()->studentsCanManageFiles())->toBeTrue()
+        ->and($code->fresh()->options['files'][0]['name'])->toBe('index.html');
 });
 
 it('turns on student files for new code questions in the builder', function () {

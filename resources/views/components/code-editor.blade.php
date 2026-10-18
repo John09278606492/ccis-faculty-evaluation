@@ -28,6 +28,7 @@
     {{-- prettier-ignore-end --}}
     x-load-src="{{ \Filament\Support\Facades\FilamentAsset::getAlpineComponentSrc('code-editor') }}"
     x-data="codeEditorComponent({
+        statePath: @js($statePath),
         state: {{ $statePath ? "\$wire.\$entangle('{$statePath}')" : \Illuminate\Support\Js::from($encode($value)) }},
         initialValue: @js($encode($starterFiles)),
         readOnly: @js((bool) $readOnly),
@@ -199,6 +200,7 @@
         <span class="cq-status-item" x-show="! readOnly && saveState === 'saving'">Saving…</span>
         <span class="cq-status-item" x-show="! readOnly && saveState === 'unsaved'">● Unsaved</span>
         <span class="cq-status-item" x-show="! readOnly && saveState === 'saved'">✓ Saved</span>
+        <span class="cq-status-item cq-status-error" x-show="! readOnly && saveState === 'rejected'" title="See the message below the editor">⚠ Not saved</span>
         <span class="cq-status-spacer"></span>
         <span class="cq-status-item" x-show="activeName" x-text="'Ln ' + cursor.line + ', Col ' + cursor.column + (cursor.selected ? ' (' + cursor.selected + ' selected)' : '')"></span>
         <span class="cq-status-item cq-status-wide" x-show="activeName">Spaces: 4</span>
