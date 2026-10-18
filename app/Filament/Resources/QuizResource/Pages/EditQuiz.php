@@ -68,6 +68,7 @@ class EditQuiz extends EditRecord
             QuizResource::previewHeaderAction(),
             QuizResource::copyLinkHeaderAction(),
             QuizResource::syncClassRecordHeaderAction(),
+            QuizResource::releaseResultsHeaderAction(),
             Actions\DeleteAction::make(),
         ];
     }

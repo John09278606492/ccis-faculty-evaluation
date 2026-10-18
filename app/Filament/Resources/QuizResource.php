@@ -317,6 +317,44 @@ class QuizResource extends Resource implements HasShieldPermissions
         return static::buildSyncClassRecordAction(Action::class);
     }
 
+    public static function releaseResultsAction(): Tables\Actions\Action
+    {
+        return static::buildReleaseResultsAction(Tables\Actions\Action::class);
+    }
+
+    public static function releaseResultsHeaderAction(): Action
+    {
+        return static::buildReleaseResultsAction(Action::class);
+    }
+
+    /**
+     * Shows held-back scores to students now, or hides them again.
+     *
+     * @param  class-string<Action|Tables\Actions\Action>  $actionClass
+     */
+    protected static function buildReleaseResultsAction(string $actionClass): Action|Tables\Actions\Action
+    {
+        return $actionClass::make('releaseResults')
+            ->label(fn (Quiz $record) => $record->results_released_at ? 'Hide results' : 'Release results')
+            ->icon(fn (Quiz $record) => $record->results_released_at ? 'heroicon-o-eye-slash' : 'heroicon-o-eye')
+            ->color('gray')
+            ->visible(fn (Quiz $record) => $record->holdsResults() && auth()->user()?->can('update', $record))
+            ->requiresConfirmation()
+            ->modalDescription(fn (Quiz $record) => $record->results_released_at
+                ? 'Students will no longer see their scores until you release them again.'
+                : 'Every student who submitted will see their score and the points for each question.')
+            ->action(function (Quiz $record, $livewire) {
+                $record->update(['results_released_at' => $record->results_released_at ? null : now()]);
+                if (property_exists($livewire, 'loadedRevision')) {
+                    $livewire->loadedRevision = hash('sha256', json_encode($record->fresh()->except(['updated_at', 'class_record_synced_at', 'class_record_sync_error'])));
+                }
+                Notification::make()
+                    ->title($record->results_released_at ? 'Results released to students' : 'Results hidden from students')
+                    ->success()
+                    ->send();
+            });
+    }
+
     /**
      * Clones the quiz and its questions into a fresh, unpublished draft in the
      * same course offering. Filament's ReplicateAction only copies the quiz's
@@ -392,6 +430,12 @@ class QuizResource extends Resource implements HasShieldPermissions
                             ->options(Quiz::TYPES)
                             ->default('quiz')
                             ->live()
+                            // Exams hold scores back until they close, unless the instructor chose otherwise.
+                            ->afterStateUpdated(function (?string $state, Forms\Set $set, ?Quiz $record) {
+                                if (! $record) {
+                                    $set('results_visibility', $state === 'exam' ? 'after_close' : 'immediately');
+                                }
+                            })
                             ->required()
                             ->columnSpanFull(),
 
@@ -479,6 +523,20 @@ class QuizResource extends Resource implements HasShieldPermissions
                         Forms\Components\Toggle::make('shuffle_questions')
                             ->label('Shuffle question order per student'),
 
+                        Forms\Components\Select::make('results_visibility')
+                            ->label('Students see their scores')
+                            ->options(Quiz::RESULTS_VISIBILITY)
+                            ->default('immediately')
+                            ->native(false)
+                            ->required()
+                            ->helperText(fn (Forms\Get $get) => match ($get('results_visibility')) {
+                                'after_close' => blank($get('available_until'))
+                                    ? 'Set "Available Until", or use Release results when everyone has finished.'
+                                    : 'Scores appear once "Available Until" passes. You can also release them earlier.',
+                                'manual' => 'Use Release results on this assessment when you are ready.',
+                                default => 'Early finishers can share answers with classmates who are still taking it.',
+                            }),
+
                         Forms\Components\Toggle::make('is_published')
                             ->label('Published (visible to students)')
                             ->disabled(fn (?Quiz $record) => ! $record)
@@ -555,6 +613,7 @@ class QuizResource extends Resource implements HasShieldPermissions
                     static::previewAction(),
                     static::copyLinkAction(),
                     static::syncClassRecordAction(),
+                    static::releaseResultsAction(),
                     static::duplicateAction(),
                     Tables\Actions\DeleteAction::make(),
                 ])->label('More')->button(),

@@ -782,3 +782,35 @@ it('ignores live updates that reach a lazy table before it has loaded', function
         ->dispatch('classroom-push', kind: 'attempt', quizId: $quiz->id)
         ->assertOk()->assertSee('Submitted');
 });
+
+it('holds scores back from students until the assessment closes', function () {
+    extract(quizWorkflowFixture());
+    $quiz->update(['type' => 'exam', 'results_visibility' => 'after_close', 'available_until' => now()->addHour()]);
+    gradedAttempt($quiz, $student, score: 7);
+    $this->actingAs($student);
+
+    Livewire::test(TakeQuiz::class, ['quiz' => $quiz])
+        ->assertSet('reviewMode', true)
+        ->assertSee('Your instructor will release scores after')
+        ->assertDontSee('Final score');
+    Livewire::test(MyQuizzes::class)->assertSee('Submitted — score released later')->assertDontSee('7.00 / 10');
+
+    $this->travel(2)->hours();
+    Livewire::test(TakeQuiz::class, ['quiz' => $quiz->fresh()])->assertSee('Final score: 7.00 / 10');
+});
+
+it('shows held-back scores only after the instructor releases them', function () {
+    extract(quizWorkflowFixture());
+    $quiz->update(['results_visibility' => 'manual']);
+    gradedAttempt($quiz, $student, score: 7);
+
+    $this->actingAs($student);
+    Livewire::test(TakeQuiz::class, ['quiz' => $quiz])->assertDontSee('Final score');
+
+    $this->actingAs($instructor);
+    Livewire::test(ListQuizzes::class)->callTableAction('releaseResults', $quiz);
+    expect($quiz->fresh()->results_released_at)->not->toBeNull();
+
+    $this->actingAs($student);
+    Livewire::test(TakeQuiz::class, ['quiz' => $quiz->fresh()])->assertSee('Final score: 7.00 / 10');
+});

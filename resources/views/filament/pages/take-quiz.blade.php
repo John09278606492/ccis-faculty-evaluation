@@ -193,7 +193,10 @@
             @if ($reviewMode)
                 <div class="mt-3 rounded-lg bg-gray-100 px-3 py-2 text-sm dark:bg-gray-800">
                     Attempt #{{ $attempt->attempt_number }} of {{ $quiz->max_attempts }}
-                    @if ($attempt->status === 'graded')
+                    @if (! $quiz->resultsVisibleToStudents())
+                        — <strong>Submitted.</strong>
+                        <span class="text-gray-500">Your instructor will release scores {{ $quiz->results_visibility === 'after_close' && $quiz->available_until ? 'after '.$quiz->available_until->format('M j, g:ia') : 'later' }}.</span>
+                    @elseif ($attempt->status === 'graded')
                         — <strong>Final score: {{ $attempt->score }} / {{ $attempt->max_score }}</strong>
                     @elseif ($attempt->status === 'submitted')
                         — <strong>Partial score: {{ $attempt->score }} / {{ $attempt->max_score }}</strong>
@@ -350,7 +353,7 @@
                             @endif
                         @endif
 
-                        @if ($reviewMode && $savedAnswer?->points_awarded !== null)
+                        @if ($reviewMode && $savedAnswer?->points_awarded !== null && $quiz->resultsVisibleToStudents())
                             <p class="mt-2 text-xs {{ $savedAnswer->is_correct ? 'text-success-600' : 'text-danger-600' }}">
                                 {{ $savedAnswer->points_awarded }} / {{ $question->points }} points
                                 @if ($savedAnswer->feedback)
