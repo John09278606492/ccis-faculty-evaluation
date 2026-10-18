@@ -420,6 +420,8 @@
 .cq-status-item { display: inline-flex; align-items: center; gap: 4px; padding: 0 6px; white-space: nowrap; }
 .cq-status-item svg { width: 14px; height: 14px; }
 .cq-status-error { background: #c72e0f; color: #fff; font-weight: 600; }
+.cq-status-button { border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.cq-status-button:hover { background: rgb(255 255 255 / 0.15); }
 .cq-status-spacer { flex: 1; }
 
 /* Quick open */

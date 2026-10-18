@@ -201,6 +201,7 @@
         <span class="cq-status-item" x-show="! readOnly && saveState === 'unsaved'">● Unsaved</span>
         <span class="cq-status-item" x-show="! readOnly && saveState === 'saved'">✓ Saved</span>
         <span class="cq-status-item cq-status-error" x-show="! readOnly && saveState === 'rejected'" title="See the message below the editor">⚠ Not saved</span>
+        <button type="button" class="cq-status-item cq-status-button" x-show="canReset" x-on:click="resetToStarter()" title="Replace your files with the starter files">↺ Reset</button>
         <span class="cq-status-spacer"></span>
         <span class="cq-status-item" x-show="activeName" x-text="'Ln ' + cursor.line + ', Col ' + cursor.column + (cursor.selected ? ' (' + cursor.selected + ' selected)' : '')"></span>
         <span class="cq-status-item cq-status-wide" x-show="activeName">Spaces: 4</span>

@@ -465,6 +465,22 @@ export default function codeEditorComponent({
             }
         },
 
+        // Only where answers are saved (a student's attempt), not in the instructor's own editors.
+        get canReset() {
+            return ! readOnly && commitDebounce !== null
+        },
+
+        resetToStarter() {
+            if (! this.canReset || ! confirm('Start over with the starter files? Your changes to this question will be lost.')) {
+                return
+            }
+            const project = parseProject(initialValue, starter)
+            this.openTabs = project.files[0] ? [project.files[0].name] : []
+            this.loadProject(project)
+            this.selected = this.activeName
+            this.changed()
+        },
+
         // ---- Explorer -------------------------------------------------------------
 
         clickRow(row) {
