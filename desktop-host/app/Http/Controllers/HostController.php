@@ -13,7 +13,7 @@ class HostController extends Controller
     private function settings(): array
     {
         return Settings::get('classroom', [
-            'project' => 'C:\\dev\\laravel projects\\ccis-faculty-evaluation',
+            'project' => "D:\\lenovo's drive c old files\\dev\\laravel projects\\ccis-faculty-evaluation",
             'php' => 'C:\\php\\php.exe', 'port' => 8088, 'autostart' => true,
         ]);
     }

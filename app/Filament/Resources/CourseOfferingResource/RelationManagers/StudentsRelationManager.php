@@ -11,6 +11,7 @@ use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -38,6 +39,28 @@ class StudentsRelationManager extends RelationManager
         'id_number',
         'idnumber',
     ];
+
+    /**
+     * Instructors manage their own class list and its sign-in PINs here without
+     * needing access to every user account.
+     */
+    public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
+    {
+        return static::managesClassList($ownerRecord) || parent::canViewForRecord($ownerRecord, $pageClass);
+    }
+
+    /**
+     * Issuing PINs replaces students' sign-in, so only the class's own instructor
+     * or someone who manages user accounts may do it.
+     */
+    protected static function managesClassList(Model $offering): bool
+    {
+        $user = auth()->user();
+
+        return $user !== null
+            && $user->can('update', $offering)
+            && ($offering->user_id === $user->id || $user->can('viewAny', User::class));
+    }
 
     public function form(Form $form): Form
     {
@@ -183,7 +206,7 @@ class StudentsRelationManager extends RelationManager
                     ->label('Sign-in PINs')
                     ->icon('heroicon-o-key')
                     ->color('gray')
-                    ->visible(fn () => auth()->user()?->can('update', $this->ownerRecord))
+                    ->visible(fn () => static::managesClassList($this->ownerRecord))
                     ->modalHeading('Issue sign-in PINs')
                     ->modalDescription('Students sign in with their ID number and this PIN. You get a CSV of the new PINs to print or share; PINs cannot be shown again later.')
                     ->modalSubmitActionLabel('Issue and download')
@@ -220,7 +243,7 @@ class StudentsRelationManager extends RelationManager
                     ->label('New PIN')
                     ->icon('heroicon-o-key')
                     ->color('gray')
-                    ->visible(fn (User $record) => $record->is_student && auth()->user()?->can('update', $this->ownerRecord))
+                    ->visible(fn (User $record) => $record->is_student && static::managesClassList($this->ownerRecord))
                     ->requiresConfirmation()
                     ->modalDescription(fn (User $record) => "Give {$record->full_name} a new PIN? Their old PIN stops working.")
                     ->action(function (User $record) {

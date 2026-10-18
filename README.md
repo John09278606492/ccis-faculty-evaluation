@@ -35,12 +35,13 @@ php artisan key:generate
 Create a database named `ccis_faculty_evaluation`, update the `DB_*` values in `.env`, then run:
 
 ```powershell
-php artisan migrate --seed
-php artisan shield:generate --all --panel=admin
-php artisan make:filament-user
-php artisan shield:super-admin
+php artisan classroom:install
 npm run build
 ```
+
+`classroom:install` runs the migrations, creates the default roles (super_admin, instructor, student) and a campus, and asks for the first super admin's email and password. It is safe to run again: it never removes permissions added on the Roles page. Do not run `shield:generate --all` without `--option=permissions`, because it overwrites the committed policies.
+
+Set `BACKUP_PATH` in `.env` to a second drive or USB stick for the daily backups (see `desktop-host/HOST.md`).
 
 Point a Laragon virtual host at the project's `public` directory, or run `composer run dev` for Laravel, the queue, logs, and Vite together.
 
@@ -73,6 +74,7 @@ After deploying a reviewed revision:
 composer install --no-dev --prefer-dist --optimize-autoloader
 npm ci && npm run build
 php artisan migrate --force
+php artisan db:seed --class=RolesSeeder --force
 php artisan optimize
 php artisan filament:cache-components
 php artisan icons:cache

@@ -59,14 +59,19 @@ it('issues PINs for the class list and downloads them once', function () {
     StudentPins::issue(collect([$classmate]));
     $classmatePassword = $classmate->fresh()->password;
 
-    $admin = User::factory()->create();
-    $admin->assignRole(Role::findByName('super_admin'));
-    foreach (['view_course::offering', 'update_course::offering', 'view_any_user'] as $permission) {
-        $admin->givePermissionTo(Permission::findOrCreate($permission, 'web'));
+    $instructor = $offering->instructor;
+    foreach (['view_course::offering', 'update_course::offering'] as $permission) {
+        $instructor->givePermissionTo(Permission::findOrCreate($permission, 'web'));
     }
-    $this->actingAs($admin);
     Filament::setTenant($offering->semester->schoolYear->campus, isQuiet: true);
 
+    // Another instructor with the same permissions cannot reset this class's PINs.
+    $other = User::factory()->create(['is_instructor' => true]);
+    $other->givePermissionTo(['view_course::offering', 'update_course::offering']);
+    $this->actingAs($other);
+    expect(StudentsRelationManager::canViewForRecord($offering, EditCourseOffering::class))->toBeFalse();
+
+    $this->actingAs($instructor);
     Livewire::test(StudentsRelationManager::class, ['ownerRecord' => $offering, 'pageClass' => EditCourseOffering::class])
         ->callTableAction('signInPins', data: ['scope' => 'missing'])
         ->assertFileDownloaded();

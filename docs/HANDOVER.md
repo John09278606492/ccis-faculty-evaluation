@@ -2,7 +2,7 @@
 
 Written 2026-10-16 for whoever continues this work in another worktree or environment.
 Project: **CCIS Faculty Evaluation** (Laravel 12, Filament 3.3, Livewire 3, PHP 8.3) at
-`C:\dev\laravel projects\ccis-faculty-evaluation`, GitHub `John09278606492/ccis-faculty-evaluation`, branch `main`.
+`D:\lenovo's drive c old files\dev\laravel projects\ccis-faculty-evaluation`, GitHub `John09278606492/ccis-faculty-evaluation`, branch `main`.
 
 The instructor runs the whole system from **one Windows laptop** shared to students over the classroom
 Wi-Fi/LAN (often with no internet). Every feature below is designed for that: nothing depends on a CDN

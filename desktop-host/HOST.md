@@ -8,7 +8,7 @@ Keep the desktop app open, the computer awake, and MySQL running. A wired host c
 
 ## Existing records
 
-This controller uses the existing classroom project at `C:\dev\laravel projects\ccis-faculty-evaluation`, PHP at `C:\php\php.exe`, and that project's MySQL database and workbook storage. It does not transfer those records or install MySQL on another computer. Stop the server before changing paths, the sharing port or automatic startup under **Server settings**.
+This controller uses the existing classroom project at `D:\lenovo's drive c old files\dev\laravel projects\ccis-faculty-evaluation`, PHP at `C:\php\php.exe`, and that project's MySQL database and workbook storage. It does not transfer those records or install MySQL on another computer. Stop the server before changing paths, the sharing port or automatic startup under **Server settings**.
 
 ## Student databases
 
