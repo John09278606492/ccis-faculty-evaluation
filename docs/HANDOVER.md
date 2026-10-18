@@ -98,7 +98,7 @@ Internally everything is still named "quiz" (tables, models, classes). Only the 
 | `files` | Starter files: `[{"name": "css/style.css", "content": "..."}]`. Names are paths |
 | `folders` | Starter folders that contain no files yet |
 | `allow_run` | Students see the Run button (default true; only matters for web/PHP/SQL) |
-| `allow_student_files` | Students may add, rename and delete files and folders (default false) |
+| `allow_student_files` | Students may add, rename and delete files and folders (default true; new questions store true) |
 | `autocomplete` | Code suggestions in the student editor (default false) |
 | `database` | `{"enabled": bool, "starter_sql": "..."}`: each student gets their own MySQL database |
 | `starter_code` | **Legacy** single-file starter (questions from before file tabs); still read |

@@ -479,12 +479,12 @@ class TakeQuiz extends Page
             }
             $answerValue = is_null($value) ? null : (string) $value;
             if ($answerValue !== null && $question->type === 'code') {
-                $answerValue = $question->normalizeCodeAnswer($answerValue);
-                if ($answerValue === null) {
-                    $this->addError($name, 'Your code could not be saved: it may not exceed '.number_format(QuizQuestion::MAX_CODE_LENGTH).' characters in total.');
+                if (($issue = $question->codeAnswerIssue($answerValue)) !== null) {
+                    $this->addError($name, $issue);
 
                     return;
                 }
+                $answerValue = $question->normalizeCodeAnswer($answerValue);
             } elseif ($answerValue !== null && mb_strlen($answerValue) > 10_000) {
                 $this->addError($name, 'Answers may not exceed 10,000 characters.');
 
