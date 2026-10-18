@@ -23,6 +23,8 @@ for %%F in ("%PHP_EXE%") do set "PATH=%%~dpF;%PATH%"
 echo Using PHP:
 "%PHP_EXE%" -r "echo '  ', PHP_VERSION, '  ', PHP_BINARY, PHP_EOL;"
 set "ARTISAN="%PHP_EXE%" -d opcache.enable_cli=0 artisan"
+REM Unpacking big packages into this long folder path can take over Composer's 5-minute limit.
+set COMPOSER_PROCESS_TIMEOUT=0
 
 echo.
 echo [1/6] Installing PHP packages...
