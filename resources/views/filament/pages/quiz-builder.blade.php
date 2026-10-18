@@ -373,7 +373,7 @@
                                 <input @disabled($questionsLocked) type="checkbox" wire:model="selectedQuestionData.allow_student_files">
                                 <span>Students can create files and folders</span>
                             </label>
-                            <span class="qb-prop-help">Like a VS Code workspace: students add, rename and delete files and folders. Otherwise they edit exactly your starter files.</span>
+                            <span class="qb-prop-help">Like a VS Code workspace: students add, rename and delete files and folders. Turn off to keep students to exactly your starter files.</span>
                         </div>
                         <div class="qb-prop-group">
                             <label class="qb-tf-option">

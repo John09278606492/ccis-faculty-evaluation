@@ -237,10 +237,11 @@ class QuizQuestion extends Model
 
     /**
      * Whether students may add, rename and delete files and folders in their workspace.
+     * On unless the instructor turns it off.
      */
     public function studentsCanManageFiles(): bool
     {
-        return (bool) ($this->options['allow_student_files'] ?? false);
+        return (bool) ($this->options['allow_student_files'] ?? true);
     }
 
     /**

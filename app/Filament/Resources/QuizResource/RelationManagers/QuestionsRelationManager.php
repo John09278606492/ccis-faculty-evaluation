@@ -106,7 +106,8 @@ class QuestionsRelationManager extends RelationManager
 
                 Forms\Components\Toggle::make('allow_student_files')
                     ->label('Students can create files and folders')
-                    ->helperText('Like a VS Code workspace: students add, rename and delete files and folders. Otherwise they edit exactly your starter files.')
+                    ->default(true)
+                    ->helperText('Like a VS Code workspace: students add, rename and delete files and folders. Turn off to keep students to exactly your starter files.')
                     ->columnSpanFull()
                     ->visible(fn (Forms\Get $get) => $get('type') === 'code'),
 
@@ -227,7 +228,7 @@ class QuestionsRelationManager extends RelationManager
                 'files' => CodeProject::decode($data['starter_files'] ?? null, []),
                 'folders' => CodeProject::decodeFolders($data['starter_files'] ?? null),
                 'allow_run' => (bool) ($data['allow_run'] ?? true),
-                'allow_student_files' => (bool) ($data['allow_student_files'] ?? false),
+                'allow_student_files' => (bool) ($data['allow_student_files'] ?? true),
                 'autocomplete' => (bool) ($data['autocomplete'] ?? false),
                 'database' => [
                     'enabled' => (bool) ($data['database_enabled'] ?? false),
