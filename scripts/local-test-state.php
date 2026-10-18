@@ -60,4 +60,9 @@ foreach ($steps[$step]['requires'] as $required) {
         exit(1);
     }
 }
+// A ready-made vendor folder records which composer.lock it was built from.
+if ($step === 'composer' && is_file($root.'/vendor/.lock-md5')
+    && trim((string) file_get_contents($root.'/vendor/.lock-md5')) === md5(str_replace("\r\n", "\n", (string) file_get_contents($root.'/composer.lock')))) {
+    exit(0);
+}
 exit(($state[$step] ?? null) === $current ? 0 : 1);

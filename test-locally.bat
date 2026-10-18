@@ -1,7 +1,7 @@
 @echo off
 setlocal
 REM Double-click to update, build and open the app on this PC for testing.
-REM Needs PHP 8.3+ (found automatically), Composer and Node.js, and MySQL running (start it in Laragon first).
+REM Needs PHP 8.3+ (found automatically) and MySQL running (start it in Laragon first).
 
 cd /d "%~dp0"
 title CCIS - test locally
@@ -39,17 +39,18 @@ echo.
     %STATE% save composer
 )
 
-%STATE% check npm && (echo [2/6] Node packages are up to date.) || (
-    echo [2/6] Installing Node packages...
-    call npm install --no-audit --no-fund || goto fail
-    %STATE% save npm
+REM The page assets and code runners come ready-built with the project, so Node.js is only needed if they are missing.
+if exist "public\build\manifest.json" if exist "public\code-runner\php-worker.js" (
+    echo [2/6] Page assets and code runners are ready.
+    goto assets_ready
 )
-
-%STATE% check build && (echo [3/6] Code runners and page assets are up to date.) || (
-    echo [3/6] Building the code runners and page assets...
-    call npm run build || goto fail
-    %STATE% save build
-)
+echo [2/6] Page assets are missing, building them with Node.js...
+call npm install --no-audit --no-fund || goto fail
+echo       Building the code runners and page assets...
+call npm run build || goto fail
+:assets_ready
+%ARTISAN% package:discover >nul || goto fail
+echo [3/6] Packages registered.
 
 echo [4/6] Updating the database...
 %ARTISAN% migrate --force || goto fail
