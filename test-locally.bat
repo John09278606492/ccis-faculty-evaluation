@@ -61,6 +61,8 @@ echo [4/6] Updating the database...
     %STATE% save roles
 )
 %ARTISAN% optimize:clear >nul
+REM Caches Filament's component list and icons; rebuilt on every run, so code changes still show.
+%ARTISAN% filament:optimize >nul
 
 echo.
 echo [6/6] Starting the app at http://127.0.0.1:8000
@@ -69,7 +71,10 @@ echo.
 start "" cmd /c "timeout /t 4 >nul & start http://127.0.0.1:8000"
 REM Serve with OPcache so pages do not recompile every PHP file on each request (slow on Windows,
 REM where this server answers one request at a time). Timestamps are checked, so edits show at once.
-set "OPCACHE=-d opcache.enable_cli=1 -d opcache.validate_timestamps=1 -d opcache.revalidate_freq=0"
+REM On Windows OPcache also needs a cache folder on disk, or the server crashes with an ASLR error.
+set "OPCACHE_DIR=%TEMP%\ccis-opcache"
+if not exist "%OPCACHE_DIR%" mkdir "%OPCACHE_DIR%"
+set "OPCACHE=-d opcache.enable_cli=1 -d opcache.validate_timestamps=1 -d opcache.revalidate_freq=0 -d opcache.memory_consumption=256 -d opcache.max_accelerated_files=20000 -d "opcache.file_cache=%OPCACHE_DIR%" -d opcache.file_cache_fallback=1"
 "%PHP_EXE%" -r "exit(extension_loaded('Zend OPcache') ? 0 : 1);" || (
     "%PHP_EXE%" -d zend_extension=opcache -r "exit(extension_loaded('Zend OPcache') ? 0 : 1);" >nul 2>&1 && set "OPCACHE=-d zend_extension=opcache %OPCACHE%" || set "OPCACHE="
 )
