@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\AvatarProviders\InitialsAvatarProvider;
 use App\Filament\Exports\UserExporter;
 use App\Filament\Imports\UserImporter;
 use App\Filament\Resources\UserResource\Pages;
@@ -225,7 +226,7 @@ class UserResource extends Resource
                         ->grow(false)
                         ->getStateUsing(fn ($record) => $record->avatar_url
                             ? $record->avatar_url
-                            : 'https://ui-avatars.com/api/?name='.urlencode($record->name)),
+                            : app(InitialsAvatarProvider::class)->get($record)),
                     Tables\Columns\Layout\Stack::make([
                         Tables\Columns\TextColumn::make('name')
                             ->searchable()

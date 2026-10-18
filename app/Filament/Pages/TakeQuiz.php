@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Locked;
+use Livewire\Attributes\On;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Livewire\WithFileUploads;
 
@@ -122,7 +123,7 @@ class TakeQuiz extends Page
         $this->refreshLiveState();
     }
 
-    #[\Livewire\Attributes\On('classroom-push')]
+    #[On('classroom-push')]
     public function refreshLiveState(string $kind = 'reconnected', ?int $quizId = null, ?int $courseId = null): void
     {
         if (($quizId && $quizId !== $this->quiz->id) || ($courseId && $courseId !== $this->quiz->course_offering_id)) {

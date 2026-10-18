@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\QuizResource\RelationManagers;
 
+use App\Filament\Concerns\ReceivesClassroomUpdates;
 use App\Models\QuizAnswer;
 use App\Models\QuizAttempt;
 use App\Models\QuizQuestion;
@@ -20,7 +21,7 @@ use pxlrbt\FilamentExcel\Exports\ExcelExport;
 
 class AttemptsRelationManager extends RelationManager
 {
-    use \App\Filament\Concerns\ReceivesClassroomUpdates;
+    use ReceivesClassroomUpdates;
 
     protected static string $relationship = 'attempts';
 

@@ -28,26 +28,31 @@ class HostController extends Controller
         $process = ChildProcess::get(self::ALIAS);
         $file = storage_path('app/host-status.json');
         $state = is_file($file) ? json_decode(file_get_contents($file), true) : null;
-        if (!$process && ($state['state'] ?? null) !== 'error') {
+        if (! $process && ($state['state'] ?? null) !== 'error') {
             $state = ['state' => 'stopped', 'message' => 'Start the server to share the system on your Wi-Fi.', 'links' => []];
         }
+
         return response()->json($state ?? ['state' => 'starting', 'message' => 'Starting…', 'links' => []]);
     }
 
     public function start()
     {
-        if (!ChildProcess::get(self::ALIAS)) {
+        if (! ChildProcess::get(self::ALIAS)) {
             $settings = $this->settings();
             file_put_contents(storage_path('app/host-status.json'), json_encode(['state' => 'starting', 'message' => 'Starting the classroom server…', 'links' => []]));
             ChildProcess::node([base_path('resources/server/host.cjs'), $settings['project'], $settings['php'], (string) $settings['port'], storage_path('app/host-status.json')], self::ALIAS);
         }
+
         return $this->status();
     }
 
     public function stop()
     {
-        if (ChildProcess::get(self::ALIAS)) ChildProcess::stop(self::ALIAS);
+        if (ChildProcess::get(self::ALIAS)) {
+            ChildProcess::stop(self::ALIAS);
+        }
         file_put_contents(storage_path('app/host-status.json'), json_encode(['state' => 'stopped', 'message' => 'Server stopped. Connected devices cannot access the system until you start it again.', 'links' => []]));
+
         return $this->status();
     }
 
@@ -58,6 +63,7 @@ class HostController extends Controller
         abort_unless(is_file($data['project'].'/artisan') && is_file($data['project'].'/vendor/autoload.php'), 422, 'Select the installed classroom project folder.');
         abort_unless(is_file($data['php']) && strtolower(pathinfo($data['php'], PATHINFO_EXTENSION)) === 'exe', 422, 'Select a valid PHP executable.');
         Settings::set('classroom', $data);
+
         return response()->json(['saved' => true]);
     }
 }

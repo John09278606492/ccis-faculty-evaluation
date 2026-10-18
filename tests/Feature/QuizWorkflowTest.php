@@ -1,5 +1,6 @@
 <?php
 
+use App\Events\ClassroomChanged;
 use App\Filament\Pages\ClassRecords;
 use App\Filament\Pages\MyQuizzes;
 use App\Filament\Pages\QuizBuilder;
@@ -9,16 +10,18 @@ use App\Filament\Resources\QuizResource\Pages\ListQuizzes;
 use App\Filament\Resources\QuizResource\RelationManagers\AttemptsRelationManager;
 use App\Models\ClassRecordUpload;
 use App\Models\Quiz;
+use App\Models\QuizAnswer;
 use App\Models\QuizAttempt;
 use App\Models\User;
 use App\Services\ClassRecordSyncService;
-use App\Services\WorkbookPreviewService;
 use App\Services\StudentDatabase\MySqlStudentDatabases;
 use App\Services\StudentDatabase\StudentDatabases;
 use App\Services\StudentDatabase\StudentDbServer;
+use App\Services\WorkbookPreviewService;
 use App\Support\CodeProject;
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
@@ -521,18 +524,17 @@ it('warns about remote quiz edits without replacing unsaved form data or overwri
 
 it('pushes quiz changes only after commit and never broadcasts rolled-back changes', function () {
     extract(quizWorkflowFixture());
-    \Illuminate\Support\Facades\Event::fake([\App\Events\ClassroomChanged::class]);
+    Event::fake([ClassroomChanged::class]);
     DB::beginTransaction();
     $quiz->update(['title' => 'Committed title']);
-    \Illuminate\Support\Facades\Event::assertNotDispatched(\App\Events\ClassroomChanged::class);
+    Event::assertNotDispatched(ClassroomChanged::class);
     DB::commit();
-    \Illuminate\Support\Facades\Event::assertDispatched(\App\Events\ClassroomChanged::class, fn ($event) =>
-        $event->quizId === $quiz->id && $event->courseId === $offering->id && $event->kind === 'quiz');
-    \Illuminate\Support\Facades\Event::fake([\App\Events\ClassroomChanged::class]);
+    Event::assertDispatched(ClassroomChanged::class, fn ($event) => $event->quizId === $quiz->id && $event->courseId === $offering->id && $event->kind === 'quiz');
+    Event::fake([ClassroomChanged::class]);
     DB::beginTransaction();
     $quiz->update(['title' => 'Rolled back']);
     DB::rollBack();
-    \Illuminate\Support\Facades\Event::assertNotDispatched(\App\Events\ClassroomChanged::class);
+    Event::assertNotDispatched(ClassroomChanged::class);
     expect($quiz->refresh()->title)->toBe('Committed title');
 });
 
@@ -546,20 +548,20 @@ it('authorizes live channels by campus and environment without broadcasting priv
     $this->postJson('/broadcasting/auth', ['socket_id' => '123.456', 'channel_name' => 'private-production.campus.'.$offering->campus->id])->assertForbidden();
     $outsider = User::factory()->create();
     $this->actingAs($outsider)->postJson('/broadcasting/auth', ['socket_id' => '123.456', 'channel_name' => $channel])->assertForbidden();
-    $event = new \App\Events\ClassroomChanged($offering->campus->id, $offering->id, $quiz->id, 'attempt');
+    $event = new ClassroomChanged($offering->campus->id, $offering->id, $quiz->id, 'attempt');
     expect($event->broadcastWith())->toBe(['courseId' => $offering->id, 'quizId' => $quiz->id, 'kind' => 'attempt']);
 });
 
 it('pushes roster and individual assignment changes including removals', function () {
     extract(quizWorkflowFixture());
-    \Illuminate\Support\Facades\Event::fake([\App\Events\ClassroomChanged::class]);
+    Event::fake([ClassroomChanged::class]);
     $quiz->assignedStudents()->attach($student);
     $quiz->assignedStudents()->detach($student);
     $offering->students()->detach($student);
     $student->courseOfferings()->attach($offering);
-    \Illuminate\Support\Facades\Event::assertDispatchedTimes(\App\Events\ClassroomChanged::class, 4);
-    \Illuminate\Support\Facades\Event::assertDispatched(\App\Events\ClassroomChanged::class, fn ($event) => $event->kind === 'assignment' && $event->quizId === $quiz->id);
-    \Illuminate\Support\Facades\Event::assertDispatched(\App\Events\ClassroomChanged::class, fn ($event) => $event->kind === 'enrollment' && $event->courseId === $offering->id);
+    Event::assertDispatchedTimes(ClassroomChanged::class, 4);
+    Event::assertDispatched(ClassroomChanged::class, fn ($event) => $event->kind === 'assignment' && $event->quizId === $quiz->id);
+    Event::assertDispatched(ClassroomChanged::class, fn ($event) => $event->kind === 'enrollment' && $event->courseId === $offering->id);
 });
 
 it('builds a multi-file code question with starter files, a reference solution and a run setting', function () {
@@ -664,7 +666,7 @@ function fakeStudentDatabases(bool $available = true): object
             return $this->isAvailable;
         }
 
-        public function workspace(App\Models\QuizAnswer $answer): array
+        public function workspace(QuizAnswer $answer): array
         {
             $database = MySqlStudentDatabases::databaseName($answer);
             $answer->update(['database_name' => $database]);
@@ -673,7 +675,7 @@ function fakeStudentDatabases(bool $available = true): object
             return ['user' => "stu{$answer->attempt->user_id}", 'password' => 'secret', 'database' => $database];
         }
 
-        public function export(App\Models\QuizAnswer $answer): ?string
+        public function export(QuizAnswer $answer): ?string
         {
             return $answer->database_name ? "CREATE TABLE `{$answer->database_name}`;" : null;
         }

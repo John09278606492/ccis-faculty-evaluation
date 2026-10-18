@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Concerns\ReceivesClassroomUpdates;
 use App\Models\ClassRecordSheet;
 use App\Models\ClassRecordUpload;
 use App\Models\CourseOffering;
@@ -26,7 +27,7 @@ class ClassRecords extends Page implements HasTable
 {
     use HasPageShield;
     use InteractsWithTable;
-    use \App\Filament\Concerns\ReceivesClassroomUpdates;
+    use ReceivesClassroomUpdates;
 
     protected static ?string $navigationIcon = 'heroicon-o-table-cells';
 

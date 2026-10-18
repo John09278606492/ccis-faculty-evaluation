@@ -2,13 +2,14 @@
 
 namespace App\Filament\Resources\QuizResource\Pages;
 
+use App\Filament\Concerns\ReceivesClassroomUpdates;
 use App\Filament\Resources\QuizResource;
 use Filament\Actions\CreateAction;
 use Filament\Resources\Pages\ListRecords;
 
 class ListQuizzes extends ListRecords
 {
-    use \App\Filament\Concerns\ReceivesClassroomUpdates;
+    use ReceivesClassroomUpdates;
 
     protected static string $resource = QuizResource::class;
 

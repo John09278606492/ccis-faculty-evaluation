@@ -2,6 +2,7 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\AvatarProviders\InitialsAvatarProvider;
 use App\Filament\Pages\Dashboard;
 use App\Filament\Pages\Login;
 use App\Models\Campus;
@@ -10,6 +11,7 @@ use App\Settings\KaidoSetting;
 use BezhanSalleh\FilamentShield\FilamentShieldPlugin;
 use DutchCodingCompany\FilamentSocialite\FilamentSocialitePlugin;
 use DutchCodingCompany\FilamentSocialite\Provider;
+use Filament\FontProviders\LocalFontProvider;
 use Filament\Forms\Components\FileUpload;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -19,6 +21,7 @@ use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
 use Filament\Support\Enums\MaxWidth;
+use Filament\View\PanelsRenderHook;
 use Hasnayeen\Themes\ThemesPlugin;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
@@ -60,6 +63,9 @@ class AdminPanelProvider extends PanelProvider
             ->when($this->settings?->password_reset_enabled ?? true, fn ($panel) => $panel->passwordReset())
             ->emailVerification()
             ->maxContentWidth(MaxWidth::Full)
+            // No font or avatar requests to the internet: the classroom network is often offline.
+            ->font('Inter', provider: LocalFontProvider::class)
+            ->defaultAvatarProvider(InitialsAvatarProvider::class)
             ->colors([
                 'cyan' => Color::Cyan,         // Stays the same for a neutral/calm tone
                 'danger' => Color::Red,        // Red is more universally recognized for danger
@@ -115,7 +121,7 @@ class AdminPanelProvider extends PanelProvider
                 $this->getPlugins()
             )
             ->databaseNotifications()
-            ->renderHook(\Filament\View\PanelsRenderHook::BODY_END, fn () => view('filament.partials.live-connection'))
+            ->renderHook(PanelsRenderHook::BODY_END, fn () => view('filament.partials.live-connection'))
             // Multi-tenancy with Campus
             ->tenant(Campus::class)
             ->tenantRegistration(null)

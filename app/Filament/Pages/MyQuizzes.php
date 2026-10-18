@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Concerns\ReceivesClassroomUpdates;
 use App\Models\Quiz;
 use App\Models\QuizAttempt;
 use BezhanSalleh\FilamentShield\Traits\HasPageShield;
@@ -19,7 +20,7 @@ class MyQuizzes extends Page implements HasTable
     // of just isStudent(), so access is actually controllable via permissions.
     use HasPageShield;
     use InteractsWithTable;
-    use \App\Filament\Concerns\ReceivesClassroomUpdates;
+    use ReceivesClassroomUpdates;
 
     protected static ?string $navigationIcon = 'heroicon-o-pencil-square';
 
