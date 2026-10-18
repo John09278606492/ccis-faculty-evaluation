@@ -62,7 +62,7 @@
                 </div>
             </div>
             <div class="cq-section-title">Workspace</div>
-            <ul class="cq-tree" role="tree" x-on:keydown.f2.prevent="selected && startRename(selected)" x-on:keydown.delete.prevent="selected && remove(selected)">
+            <ul class="cq-tree" role="tree" x-on:keydown.f2="$event.target.tagName !== 'INPUT' && selected && ($event.preventDefault(), startRename(selected))" x-on:keydown.delete="$event.target.tagName !== 'INPUT' && selected && ($event.preventDefault(), remove(selected))">
                 <template x-for="row in explorerRows" :key="row.key">
                     <li role="treeitem" :aria-expanded="row.type === 'folder' ? String(row.open) : null"
                         :style="{ paddingLeft: (8 + row.depth * 12) + 'px' }"

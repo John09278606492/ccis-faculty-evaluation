@@ -237,10 +237,11 @@ class QuizQuestion extends Model
 
     /**
      * Whether students may add, rename and delete files and folders in their workspace.
+     * On unless the instructor turned it off, like a normal VS Code workspace.
      */
     public function studentsCanManageFiles(): bool
     {
-        return (bool) ($this->options['allow_student_files'] ?? false);
+        return (bool) ($this->options['allow_student_files'] ?? true);
     }
 
     /**
@@ -323,6 +324,31 @@ class QuizQuestion extends Model
      * file list for this question.
      */
     public function normalizeCodeAnswer(string $answer): ?string
+    {
+        return $this->codeAnswerIssue($answer) === null ? $this->normalizedCodeAnswer($answer) : null;
+    }
+
+    /**
+     * Why a submitted code answer cannot be saved, or null when it can.
+     */
+    public function codeAnswerIssue(string $answer): ?string
+    {
+        $decoded = json_decode($answer, true);
+        $submitted = CodeProject::normalize(is_array($decoded) ? ($decoded['files'] ?? null) : null);
+        if ($submitted === null) {
+            return 'Your code could not be saved. Reload the page and try again.';
+        }
+        if ($this->studentsCanManageFiles() && ($issues = CodeProject::issues($submitted)) !== []) {
+            return 'Your code could not be saved: '.implode(' ', $issues);
+        }
+        if ($this->normalizedCodeAnswer($answer) === null) {
+            return 'Your code could not be saved: it may not exceed '.number_format(self::MAX_CODE_LENGTH).' characters in total.';
+        }
+
+        return null;
+    }
+
+    protected function normalizedCodeAnswer(string $answer): ?string
     {
         $decoded = json_decode($answer, true);
         $submitted = CodeProject::normalize(is_array($decoded) ? ($decoded['files'] ?? null) : null);

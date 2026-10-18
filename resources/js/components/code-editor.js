@@ -72,7 +72,7 @@ const languageNames = {
 const extensions = {
     html: 'html', htm: 'html', css: 'css', js: 'javascript', json: 'javascript', php: 'php', sql: 'sql',
     py: 'python', java: 'java', c: 'c', h: 'c', cpp: 'cpp', cc: 'cpp', hpp: 'cpp', cs: 'csharp',
-    txt: 'plaintext', md: 'plaintext',
+    xml: 'html', svg: 'html', txt: 'plaintext', md: 'plaintext', csv: 'plaintext',
 }
 const MAX_FILES = 30
 const MAX_DEPTH = 4
@@ -518,6 +518,8 @@ export default function codeEditorComponent({
 
                     return
                 }
+                // A file deleted earlier under the same name must not bring back its old text.
+                editorStates.delete(path)
                 this.files.push({ name: path, content: '' })
                 this.creating = null
                 this.openFile(path)
@@ -599,6 +601,7 @@ export default function codeEditorComponent({
             this.files = this.files.filter((file) => ! inside(file.name))
             this.folders = this.folders.filter((folder) => ! inside(folder))
             this.openTabs.filter(inside).forEach((name) => this.closeTab(name))
+            doomed.forEach((file) => editorStates.delete(file.name))
             if (! this.activeName && this.files[0]) {
                 this.openFile(this.files[0].name)
             }

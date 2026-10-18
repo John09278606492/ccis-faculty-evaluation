@@ -34,7 +34,8 @@ class CodeProject
         'c' => 'c', 'h' => 'c',
         'cpp' => 'cpp', 'cc' => 'cpp', 'hpp' => 'cpp',
         'cs' => 'csharp',
-        'txt' => 'plaintext', 'md' => 'plaintext',
+        'xml' => 'html', 'svg' => 'html',
+        'txt' => 'plaintext', 'md' => 'plaintext', 'csv' => 'plaintext',
     ];
 
     /** Files a new question starts with, per language preset. */

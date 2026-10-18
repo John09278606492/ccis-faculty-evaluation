@@ -599,6 +599,7 @@ it('saves only the question files from a student answer and leaves it for manual
     extract(quizWorkflowFixture());
     $code = $quiz->questions()->create(['type' => 'code', 'question_text' => 'Build a page', 'points' => 5, 'order' => 2, 'options' => [
         'language' => 'web',
+        'allow_student_files' => false,
         'files' => [['name' => 'index.html', 'content' => '<h1>Start</h1>'], ['name' => 'style.css', 'content' => '']],
     ]]);
     $this->actingAs($student);
@@ -614,6 +615,39 @@ it('saves only the question files from a student answer and leaves it for manual
     $saved = $code->answerFiles($attempt->answers()->where('quiz_question_id', $code->id)->value('answer_text'));
     expect($attempt->status)->toBe('submitted')->and((float) $attempt->score)->toBe(10.0)
         ->and($saved)->toBe([['name' => 'index.html', 'content' => '<h1>Done</h1>'], ['name' => 'style.css', 'content' => '']]);
+});
+
+it('lets students create their own files and folders unless the instructor turns it off', function () {
+    extract(quizWorkflowFixture());
+    $code = $quiz->questions()->create(['type' => 'code', 'question_text' => 'Build a site', 'points' => 5, 'order' => 2, 'options' => [
+        'language' => 'web',
+        'files' => [['name' => 'index.html', 'content' => '<h1>Start</h1>']],
+    ]]);
+    expect($code->studentsCanManageFiles())->toBeTrue();
+    $this->actingAs($student);
+    $page = Livewire::test(TakeQuiz::class, ['quiz' => $quiz])->call('beginAttempt');
+    $page->set('answers.'.$code->id, json_encode(['files' => [
+        ['name' => 'index.html', 'content' => '<link rel="stylesheet" href="css/site.css">'],
+        ['name' => 'css/site.css', 'content' => 'h1 { color: red; }'],
+        ['name' => 'about.html', 'content' => '<p>About</p>'],
+    ], 'folders' => ['images']]))->assertHasNoErrors();
+    $saved = QuizAnswer::where('quiz_question_id', $code->id)->value('answer_text');
+    expect(array_column($code->answerFiles($saved), 'name'))->toBe(['index.html', 'css/site.css', 'about.html'])
+        ->and(CodeProject::decodeFolders($saved))->toBe(['images']);
+    $page->set('answers.'.$code->id, json_encode(['files' => [['name' => '../evil.php', 'content' => '']]]))
+        ->assertHasErrors('answers.'.$code->id)
+        ->assertSee('is not a valid file name');
+    expect(QuizAnswer::where('quiz_question_id', $code->id)->value('answer_text'))->toBe($saved);
+
+    expect((new QuizQuestion(['type' => 'code', 'options' => [...$code->options, 'allow_student_files' => false]]))->studentsCanManageFiles())->toBeFalse();
+});
+
+it('turns on student files for new code questions in the builder', function () {
+    extract(quizWorkflowFixture());
+    $this->actingAs($instructor);
+    Livewire::test(QuizBuilder::class, ['record' => $quiz->id])->call('addQuestion', 'code')
+        ->assertSet('selectedQuestionData.allow_student_files', true);
+    expect($quiz->questions()->where('type', 'code')->firstOrFail()->studentsCanManageFiles())->toBeTrue();
 });
 
 it('loads single-file code questions and answers saved before file tabs', function () {

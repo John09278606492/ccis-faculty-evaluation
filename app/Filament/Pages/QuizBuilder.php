@@ -133,7 +133,7 @@ class QuizBuilder extends Page
                 'correct_answer' => ['true'],
             ],
             'code' => [
-                'options' => ['language' => 'web', 'files' => CodeProject::preset('web'), 'allow_run' => true],
+                'options' => ['language' => 'web', 'files' => CodeProject::preset('web'), 'allow_run' => true, 'allow_student_files' => true],
                 'correct_answer' => null,
             ],
             default => ['options' => null, 'correct_answer' => null],
@@ -259,7 +259,7 @@ class QuizBuilder extends Page
                 'files' => $this->decodeFiles($this->selectedQuestionData['starter_files'] ?? null) ?? [],
                 'folders' => CodeProject::decodeFolders($this->selectedQuestionData['starter_files'] ?? null),
                 'allow_run' => (bool) ($this->selectedQuestionData['allow_run'] ?? true),
-                'allow_student_files' => (bool) ($this->selectedQuestionData['allow_student_files'] ?? false),
+                'allow_student_files' => (bool) ($this->selectedQuestionData['allow_student_files'] ?? true),
                 'autocomplete' => (bool) ($this->selectedQuestionData['autocomplete'] ?? false),
                 'database' => [
                     'enabled' => (bool) ($this->selectedQuestionData['database_enabled'] ?? false),
