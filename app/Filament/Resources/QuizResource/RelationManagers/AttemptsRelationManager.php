@@ -38,6 +38,8 @@ class AttemptsRelationManager extends RelationManager
         return $form->schema([]);
     }
 
+    protected ?int $questionCount = null;
+
     protected function receivesFocusUpdates(): bool
     {
         return true;
@@ -46,7 +48,8 @@ class AttemptsRelationManager extends RelationManager
     public function table(Table $table): Table
     {
         return $table
-            ->modifyQueryUsing(fn ($query) => $query->with('answers:id,quiz_attempt_id,auto_check'))
+            ->modifyQueryUsing(fn ($query) => $query->with('answers:id,quiz_attempt_id,auto_check')
+                ->withCount(['answers as answered_count' => fn ($answers) => $answers->whereNotNull('answer_text')->where('answer_text', '!=', '')]))
             ->heading('Attempts & Submissions')
             ->description("Highest possible score: {$this->getOwnerRecord()->total_points} points")
             ->columns([
@@ -69,6 +72,11 @@ class AttemptsRelationManager extends RelationManager
                         'graded' => 'success',
                         default => 'gray',
                     }),
+
+                // Updates live while students work, so instructors can see who is stuck.
+                Tables\Columns\TextColumn::make('answered')
+                    ->label('Answered')
+                    ->state(fn (QuizAttempt $record) => $record->answered_count.' / '.($this->questionCount ??= $this->getOwnerRecord()->questions()->count())),
 
                 Tables\Columns\TextColumn::make('score')
                     ->label('Score')

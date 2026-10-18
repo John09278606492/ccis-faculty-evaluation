@@ -32,8 +32,18 @@ Object.assign(env, {
     TRUSTED_PROXIES: '127.0.0.1',
 });
 // Compiled PHP stays cached in memory between requests, re-checking files every two seconds so edits still show.
-const opcache = ['-d', 'opcache.enable=1', '-d', 'opcache.validate_timestamps=1', '-d', 'opcache.revalidate_freq=2',
-    '-d', 'opcache.memory_consumption=192', '-d', 'opcache.max_accelerated_files=20000', '-d', 'opcache.file_cache='];
+// On Windows OPcache also needs a cache folder on disk, or PHP stops with an ASLR error.
+const opcacheDir = path.join(os.tmpdir(), 'ccis-opcache');
+fs.mkdirSync(opcacheDir, { recursive: true });
+const opcache = ['-d', 'opcache.enable=1', '-d', 'opcache.enable_cli=1', '-d', 'opcache.validate_timestamps=1', '-d', 'opcache.revalidate_freq=2',
+    '-d', 'opcache.memory_consumption=192', '-d', 'opcache.max_accelerated_files=20000',
+    '-d', `opcache.file_cache=${opcacheDir}`, '-d', 'opcache.file_cache_fallback=1'];
+// Many PHP installs (Laragon among them) ship OPcache switched off in php.ini.
+const opcacheLoaded = (extra) => spawnSync(php, [...extra, '-r', "exit(extension_loaded('Zend OPcache') ? 0 : 1);"], { windowsHide: true, timeout: 15000, stdio: 'ignore' }).status === 0;
+if (!opcacheLoaded([])) {
+    if (opcacheLoaded(['-d', 'zend_extension=opcache'])) opcache.unshift('-d', 'zend_extension=opcache');
+    else opcache.length = 0;
+}
 // Laravel caches rebuilt on every start and removed on stop, so code changes are never hidden afterwards.
 const caches = ['route', 'event', 'filament:cache-components', 'icons'];
 function artisan(...args) {
@@ -171,6 +181,8 @@ async function main() {
             launch(studentDb.phpmyadmin_arguments.map(argument => argument === '127.0.0.1:0' ? `127.0.0.1:${value}` : argument), webRoot, opcache);
         }
     }
+    // Live updates need a key and secret; new installs start with them empty.
+    artisan('classroom:live-keys');
     launch(['artisan', 'reverb:start', '--host=127.0.0.1', `--port=${wsPort}`], project);
     // Runs scheduled work such as the daily backup while the server is open.
     launch(['artisan', 'schedule:work'], project);

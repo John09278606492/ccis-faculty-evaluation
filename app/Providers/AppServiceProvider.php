@@ -2,10 +2,23 @@
 
 namespace App\Providers;
 
+use App\Models\Campus;
 use App\Models\ClassRecordSheet;
+use App\Models\Contact;
+use App\Models\Course;
+use App\Models\CourseOffering;
+use App\Models\Department;
+use App\Models\Form;
+use App\Models\FormField;
+use App\Models\FormSubmission;
+use App\Models\Post;
 use App\Models\Quiz;
 use App\Models\QuizAttempt;
 use App\Models\QuizQuestion;
+use App\Models\Rating;
+use App\Models\RatingCriteria;
+use App\Models\SchoolYear;
+use App\Models\Semester;
 use App\Models\User;
 use App\Services\ClassroomUpdates;
 use App\Services\StudentDatabase\MySqlStudentDatabases;
@@ -65,6 +78,33 @@ class AppServiceProvider extends ServiceProvider
             Event::listen('eloquent.'.$action.': '.QuizAttempt::class, fn ($attempt) => ClassroomUpdates::quiz($attempt->quiz_id, 'attempt'));
             Event::listen('eloquent.'.$action.': '.QuizQuestion::class, fn ($question) => ClassroomUpdates::quiz($question->quiz_id, 'question'));
             Event::listen('eloquent.'.$action.': '.ClassRecordSheet::class, fn ($sheet) => ClassroomUpdates::course($sheet->course_offering_id, 'workbook'));
+        }
+
+        // Everything else shown in panel tables and widgets: open pages reload when it changes.
+        // Staff-only kinds skip students, whose pages never show them.
+        $panelData = [
+            FormSubmission::class => ['evaluation', true],
+            Rating::class => ['evaluation', true],
+            Form::class => ['forms', false],
+            FormField::class => ['forms', false],
+            RatingCriteria::class => ['forms', false],
+            Campus::class => ['setup', false],
+            Department::class => ['setup', false],
+            Course::class => ['setup', false],
+            CourseOffering::class => ['setup', false],
+            SchoolYear::class => ['setup', false],
+            Semester::class => ['setup', false],
+            User::class => ['users', true],
+            Post::class => ['posts', false],
+            Contact::class => ['posts', true],
+        ];
+        foreach ($panelData as $model => [$kind, $staffOnly]) {
+            Event::listen('eloquent.saved: '.$model, function (Model $record) use ($kind, $staffOnly) {
+                if ($record->wasRecentlyCreated || $record->wasChanged()) {
+                    ClassroomUpdates::panel($kind, $staffOnly);
+                }
+            });
+            Event::listen('eloquent.deleted: '.$model, fn () => ClassroomUpdates::panel($kind, $staffOnly));
         }
 
         // Self-hosted CodeMirror bundle (npm run build:code-editor), published to

@@ -19,7 +19,7 @@ trait ReceivesClassroomUpdates
             return;
         }
         // Exam tab-leave updates only matter to the attempts table.
-        if ($kind === 'focus' && ! $this->receivesFocusUpdates()) {
+        if (in_array($kind, ['focus', 'progress'], true) && ! $this->receivesFocusUpdates()) {
             $this->skipRender();
 
             return;

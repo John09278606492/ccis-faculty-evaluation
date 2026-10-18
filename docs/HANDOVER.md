@@ -309,6 +309,13 @@ their own database, opened from the exam with **Open phpMyAdmin**. No passwords 
 7. `@php-wasm/web` is GPL-2.0-or-later, which is fine for internal school use.
 8. Live updates log "Live update could not be delivered" whenever Reverb is not running; that is
    harmless.
+9. Live updates cover the whole panel: quiz/class-record changes go to the campus channel
+   (`ClassroomChanged`); evaluations, forms, setup data, users and posts go to `{env}.panel` or
+   `{env}.panel.staff` (`PanelDataChanged`, listeners in `AppServiceProvider`), and any table or
+   widget on screen reloads unless a modal is open or the viewer is typing. Bell notifications must
+   use `App\Notifications\BellNotification`: Filament's own is queued, and the classroom server runs
+   no queue worker, so those never appeared. `classroom:live-keys` fills empty Reverb keys in `.env`
+   (run by `classroom:install`, `test-locally.bat` and the desktop host).
 
 ---
 

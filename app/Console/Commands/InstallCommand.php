@@ -16,6 +16,7 @@ class InstallCommand extends Command
 
     public function handle(): int
     {
+        $this->call('classroom:live-keys');
         $this->call('migrate', ['--force' => true]);
         $this->call('db:seed', ['--force' => true]);
 

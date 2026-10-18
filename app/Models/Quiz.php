@@ -3,9 +3,9 @@
 namespace App\Models;
 
 use App\Filament\Pages\TakeQuiz;
+use App\Notifications\BellNotification;
 use App\Services\AutoSyncClassRecord;
 use Filament\Notifications\Actions\Action;
-use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -303,7 +303,7 @@ class Quiz extends Model
             ? $this->courseOffering->students
             : $this->assignedStudents;
         foreach ($students as $student) {
-            Notification::make()
+            BellNotification::make()
                 ->title("\"{$this->title}\" starts soon")
                 ->body("{$this->courseOffering->display_name} — opens at {$this->available_from->format('F j, Y g:i A')}.")
                 ->icon('heroicon-o-clock')

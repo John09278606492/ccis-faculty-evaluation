@@ -7,6 +7,7 @@ use App\Models\Quiz;
 use App\Models\QuizAnswer;
 use App\Models\QuizAttempt;
 use App\Models\QuizQuestion;
+use App\Notifications\BellNotification;
 use App\Services\ClassroomUpdates;
 use App\Services\StudentDatabase\StudentDatabases;
 use Filament\Notifications\Actions\Action as NotificationAction;
@@ -145,7 +146,7 @@ class TakeQuiz extends Page
     {
         // Classmates starting and submitting send 'attempt' updates; they change nothing on an attempt in progress.
         $activeAttempt = $kind === 'attempt' && $this->attempt?->status === 'in_progress' && ! $this->reviewMode;
-        if ($kind === 'focus' || $activeAttempt || ($quizId && $quizId !== $this->quiz->id) || ($courseId && $courseId !== $this->quiz->course_offering_id)) {
+        if (in_array($kind, ['focus', 'progress'], true) || $activeAttempt || ($quizId && $quizId !== $this->quiz->id) || ($courseId && $courseId !== $this->quiz->course_offering_id)) {
             $this->skipRender();
 
             return;
@@ -500,6 +501,8 @@ class TakeQuiz extends Page
             // answered count changes, so a full classroom typing stays fast.
             if ($wasAnswered === filled($answerValue)) {
                 $this->skipRender();
+            } else {
+                ClassroomUpdates::course($this->quiz->course_offering_id, 'progress', $this->quiz->id);
             }
         }
         if (str_starts_with($name, 'files.') && $value) {
@@ -634,7 +637,7 @@ class TakeQuiz extends Page
         }
         $student = Auth::user();
 
-        Notification::make()
+        BellNotification::make()
             ->title("{$student->name} {$what}")
             ->body(($student->student_id ? "{$student->student_id}, " : '')."{$this->quiz->title}: {$detail}")
             ->warning()

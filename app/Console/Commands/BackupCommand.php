@@ -3,8 +3,8 @@
 namespace App\Console\Commands;
 
 use App\Models\User;
+use App\Notifications\BellNotification;
 use App\Services\StudentDatabase\StudentDbServer;
-use Filament\Notifications\Notification;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -161,7 +161,7 @@ class BackupCommand extends Command
             return;
         }
         if ($admins->isNotEmpty()) {
-            Notification::make()
+            BellNotification::make()
                 ->title('Nightly backup failed')
                 ->body($message)
                 ->danger()

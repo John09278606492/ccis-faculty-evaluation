@@ -52,6 +52,7 @@ call npm run build || goto fail
 %ARTISAN% package:discover >nul || goto fail
 echo [3/6] Packages registered.
 
+%ARTISAN% classroom:live-keys >nul || goto fail
 echo [4/6] Updating the database...
 %ARTISAN% migrate --force || goto fail
 
@@ -67,6 +68,7 @@ REM Caches Filament's component list and icons; rebuilt on every run, so code ch
 echo.
 echo [6/6] Starting the app at http://127.0.0.1:8000
 echo       Keep this window open while testing. Close it to stop the app.
+echo       Live updates run in a second, minimised window. Close it too when you are done.
 echo.
 start "" cmd /c "timeout /t 4 >nul & start http://127.0.0.1:8000"
 REM Serve with OPcache so pages do not recompile every PHP file on each request (slow on Windows,
@@ -78,6 +80,8 @@ set "OPCACHE=-d opcache.enable_cli=1 -d opcache.validate_timestamps=1 -d opcache
 "%PHP_EXE%" -r "exit(extension_loaded('Zend OPcache') ? 0 : 1);" || (
     "%PHP_EXE%" -d zend_extension=opcache -r "exit(extension_loaded('Zend OPcache') ? 0 : 1);" >nul 2>&1 && set "OPCACHE=-d zend_extension=opcache %OPCACHE%" || set "OPCACHE="
 )
+REM Live updates: pages refresh by themselves when someone else changes data. Closes with this window.
+start "CCIS live updates" /min "%PHP_EXE%" artisan reverb:start --host=127.0.0.1 --port=8085
 cd public
 "%PHP_EXE%" %OPCACHE% -S 127.0.0.1:8000 ..\vendor\laravel\framework\src\Illuminate\Foundation\resources\server.php
 goto end
