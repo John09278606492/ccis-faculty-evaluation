@@ -13,6 +13,7 @@ use Filament\Forms\Components\Select;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\HtmlString;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class StudentImporter extends Importer
@@ -201,7 +202,9 @@ class StudentImporter extends Importer
     protected function beforeSave(): void
     {
         if (! $this->record->password) {
-            $this->record->password = Hash::make('password123');
+            // Nobody knows this password: students sign in with a PIN their instructor issues
+            // from the class list (Evaluators > Sign-in PINs).
+            $this->record->password = Hash::make(Str::random(40));
         }
 
         $this->record->is_student = true;

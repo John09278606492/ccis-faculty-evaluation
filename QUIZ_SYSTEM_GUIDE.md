@@ -99,8 +99,13 @@ score recomputes automatically and its status flips from partial to final.
 
 ## Signing in with a Student ID
 
-The login page now accepts either an email or a student ID number in the same field. Bulk-imported
-students get the default password `password123` (set by `StudentImporter`) unless changed.
+Students sign in with their ID number and a 6-digit PIN. Imported students have no usable PIN until
+their instructor issues one: open the course offering, go to **Evaluators**, and use **Sign-in PINs**
+to download a CSV of new PINs to print or share (PINs are stored hashed and cannot be shown again).
+**New PIN** on a student's row, or in **Users**, replaces one forgotten PIN.
+
+Staff sign in with their email and password. Staff imported with the shared starting password
+(`password123`) must choose their own the first time they sign in.
 
 ## Running It Offline on a Classroom WiFi/LAN
 

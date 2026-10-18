@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\ChangePasswordController;
 use App\Http\Controllers\EvaluationController;
 use App\Http\Controllers\QuizSubmissionController;
 use App\Http\Controllers\StudentDatabaseController;
@@ -24,6 +25,11 @@ Route::middleware('throttle:10,1')->group(function () {
 Route::get('/form-preview/{form}', [EvaluationController::class, 'preview'])
     ->name('form.preview')
     ->middleware('auth');
+
+Route::middleware(['auth', 'throttle:10,1'])->group(function () {
+    Route::get('/change-password', [ChangePasswordController::class, 'edit'])->name('password.change');
+    Route::post('/change-password', [ChangePasswordController::class, 'update']);
+});
 
 Route::get('/quiz-submissions/{quizAnswer}/download', [QuizSubmissionController::class, 'download'])
     ->name('quiz-submissions.download')

@@ -215,7 +215,9 @@ class InstructorImporter extends Importer
         $departmentId = $this->options['department_id'] ?? null;
 
         if (! $this->record->password) {
+            // Shared starting password; the instructor must choose their own at first sign-in.
             $this->record->password = Hash::make('password123');
+            $this->record->must_change_password = true;
         }
 
         $this->record->is_instructor = true;

@@ -17,6 +17,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->web(append: [
             EnsureCampusAccess::class,
         ]);
+        // The Filament panel owns sign-in; there is no route named "login".
+        $middleware->redirectGuestsTo('/login');
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //

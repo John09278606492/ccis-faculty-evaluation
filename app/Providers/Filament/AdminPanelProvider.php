@@ -5,6 +5,7 @@ namespace App\Providers\Filament;
 use App\Filament\AvatarProviders\InitialsAvatarProvider;
 use App\Filament\Pages\Dashboard;
 use App\Filament\Pages\Login;
+use App\Http\Middleware\EnsurePasswordIsChanged;
 use App\Models\Campus;
 use App\Models\User;
 use App\Settings\KaidoSetting;
@@ -116,6 +117,7 @@ class AdminPanelProvider extends PanelProvider
             ->sidebarCollapsibleOnDesktop(true)
             ->authMiddleware([
                 Authenticate::class,
+                EnsurePasswordIsChanged::class,
             ])
             ->plugins(
                 $this->getPlugins()
