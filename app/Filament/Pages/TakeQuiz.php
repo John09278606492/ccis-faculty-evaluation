@@ -582,15 +582,37 @@ class TakeQuiz extends Page
             && $this->attempt->user_id === Auth::id();
     }
 
-    public function recordFocusLost(): void
+    public function recordFocusLost(string $kind = 'tab'): void
     {
         $this->skipRender();
-        if (! $this->isSupervised() || $this->attempt->isExpired() || ! $this->attempt->recordFocusLost()) {
+        if (! $this->isSupervised() || $this->attempt->isExpired() || ! $this->attempt->recordFocusLost($kind)) {
             return;
         }
         ClassroomUpdates::quiz($this->quiz->id, 'focus');
         if (in_array($this->attempt->focus_leaves, QuizAttempt::FOCUS_ALERT_AT, true)) {
-            $this->alertInstructor();
+            $times = $this->attempt->focus_leaves === 1 ? 'once' : "{$this->attempt->focus_leaves} times";
+            $this->alertInstructor(
+                $kind === 'window' ? 'switched to another window' : 'left the exam page',
+                "left {$times} so far.",
+                'heroicon-o-eye-slash',
+            );
+        }
+    }
+
+    public function recordPaste(int $chars, int $lines = 1): void
+    {
+        $this->skipRender();
+        if (! $this->isSupervised() || $this->attempt->isExpired() || $chars < QuizAttempt::PASTE_MIN_CHARS) {
+            return;
+        }
+        $this->attempt->recordPaste(min($chars, 1_000_000), max(1, min($lines, 100_000)));
+        ClassroomUpdates::quiz($this->quiz->id, 'focus');
+        if (in_array($this->attempt->pastes, QuizAttempt::FOCUS_ALERT_AT, true)) {
+            $this->alertInstructor(
+                'pasted text into the exam',
+                number_format($chars).' characters pasted from outside the exam ('.$this->attempt->pastes.' '.str('paste')->plural($this->attempt->pastes).' so far).',
+                'heroicon-o-clipboard-document',
+            );
         }
     }
 
@@ -602,20 +624,19 @@ class TakeQuiz extends Page
         }
     }
 
-    protected function alertInstructor(): void
+    protected function alertInstructor(string $what, string $detail, string $icon): void
     {
         $instructor = $this->quiz->courseOffering?->instructor;
         if (! $instructor) {
             return;
         }
         $student = Auth::user();
-        $times = $this->attempt->focus_leaves === 1 ? 'once' : "{$this->attempt->focus_leaves} times";
 
         Notification::make()
-            ->title("{$student->name} left the exam page")
-            ->body(trim(($student->student_id ? "{$student->student_id}, " : '')."{$this->quiz->title}: left {$times} so far."))
+            ->title("{$student->name} {$what}")
+            ->body(($student->student_id ? "{$student->student_id}, " : '')."{$this->quiz->title}: {$detail}")
             ->warning()
-            ->icon('heroicon-o-eye-slash')
+            ->icon($icon)
             ->actions([
                 NotificationAction::make('view')
                     ->label('View attempts')

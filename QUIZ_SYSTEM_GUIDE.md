@@ -85,7 +85,13 @@ student's browser tab was closed, since there's no background queue worker runni
 
 ## Exam Supervision
 
-On assessments of type **Exam**, the page records each time a student switches to another tab or minimizes the browser while an attempt is in progress, and for how long (measured by the server). Students see a line saying so. The instructor gets a notification the 1st, 3rd, 5th and 10th time a student leaves, and the **Attempts & Submissions** tab shows a **Left page** column with the count, total time away, and the times on hover. Quizzes and activities are not tracked. Nothing is blocked and no screenshots are taken: treat it as a prompt to walk over, not proof of cheating, since a notification or a dropped connection can also hide the page.
+On assessments of type **Exam**, the page logs three things during an attempt, measured by the server, and students see a line saying so:
+
+- **Leaving the page:** switching to another tab or minimizing the browser, and for how long. A student's own phpMyAdmin tab for a database question does not count, unless they move on from it to something else.
+- **Another window:** a window placed beside the exam taking focus while the exam stays visible. Clicking into the code preview, a file picker or a confirm box does not count.
+- **Pasting from outside the exam:** pastes of 40 characters or more that were not copied from the exam itself, with their size. Moving code between the exam's own files is not logged.
+
+The instructor gets a notification the 1st, 3rd, 5th and 10th time a student leaves or pastes, and the **Attempts & Submissions** tab shows **Left page** and **Pasted** columns, with the times on hover. Quizzes and activities are not tracked. Nothing is blocked and no screenshots are taken: treat it as a prompt to walk over, not proof of cheating. The app cannot see other tabs or a phone; running exams on Wi-Fi without internet access is what keeps AI sites out of reach.
 
 ## Grading
 

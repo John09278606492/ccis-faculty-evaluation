@@ -821,7 +821,7 @@ it('logs leaving the exam page and alerts the instructor', function () {
     $this->actingAs($student);
 
     $page = Livewire::test(TakeQuiz::class, ['quiz' => $quiz])->call('beginAttempt')
-        ->assertSee('Leaving this page during the exam is recorded');
+        ->assertSee('Leaving this page, switching windows and pasting');
     $page->call('recordFocusLost')->call('recordFocusLost');
     $this->travel(30)->seconds();
     $page->call('recordFocusReturned');
@@ -843,9 +843,33 @@ it('does not track leaving the page on quizzes', function () {
     $this->actingAs($student);
 
     Livewire::test(TakeQuiz::class, ['quiz' => $quiz])->call('beginAttempt')
-        ->assertDontSee('Leaving this page during the exam is recorded')
+        ->assertDontSee('Leaving this page, switching windows and pasting')
         ->call('recordFocusLost');
 
     expect($quiz->attempts()->first()->focus_leaves)->toBe(0)
         ->and($instructor->notifications()->count())->toBe(0);
+});
+
+it('logs pasting from outside the exam and switching windows', function () {
+    extract(quizWorkflowFixture());
+    $quiz->update(['type' => 'exam']);
+    $this->actingAs($student);
+
+    $page = Livewire::test(TakeQuiz::class, ['quiz' => $quiz])->call('beginAttempt');
+    $page->call('recordPaste', 12)                // too short to be an answer
+        ->call('recordPaste', 640, 18)
+        ->call('recordFocusLost', 'window')
+        ->call('recordFocusReturned');
+
+    $attempt = $quiz->attempts()->first();
+    expect($attempt->pastes)->toBe(1)
+        ->and($attempt->pasted_chars)->toBe(640)
+        ->and($attempt->paste_log[0]['lines'])->toBe(18)
+        ->and($attempt->focus_log[0]['kind'])->toBe('window')
+        ->and($instructor->notifications()->pluck('data')->pluck('title')->all())
+        ->toContain("{$student->name} pasted text into the exam", "{$student->name} switched to another window");
+
+    $this->actingAs($instructor);
+    Livewire::test(AttemptsRelationManager::class, ['ownerRecord' => $quiz, 'pageClass' => EditQuiz::class])
+        ->assertSee('Pasted')->assertSee('640 characters');
 });

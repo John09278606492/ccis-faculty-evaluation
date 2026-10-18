@@ -38,7 +38,13 @@ class QuizAttempt extends Model
         'focus_leaves',
         'focus_away_seconds',
         'focus_log',
+        'pastes',
+        'pasted_chars',
+        'paste_log',
     ];
+
+    /** Pastes shorter than this are ignored: a word or a variable name is not an answer. */
+    public const PASTE_MIN_CHARS = 40;
 
     /** Instructors are alerted when a student's exam-page leaves reach these counts. */
     public const FOCUS_ALERT_AT = [1, 3, 5, 10];
@@ -56,6 +62,9 @@ class QuizAttempt extends Model
         'focus_leaves' => 'integer',
         'focus_away_seconds' => 'integer',
         'focus_log' => 'array',
+        'pastes' => 'integer',
+        'pasted_chars' => 'integer',
+        'paste_log' => 'array',
     ];
 
     public function quiz(): BelongsTo
@@ -74,20 +83,22 @@ class QuizAttempt extends Model
     }
 
     /**
-     * Record that the student left the exam page. Returns false when a leave is
-     * already open, so one departure is never counted twice.
+     * Record that the student left the exam: 'tab' when the page was hidden (another
+     * tab, minimized), 'window' when another window took focus while the page stayed
+     * visible (side by side). Returns false when a leave is already open, so one
+     * departure is never counted twice.
      *
      * Saved quietly: a live update to the whole class on every tab switch would
      * reload every student's page. The instructor is told by notification instead.
      */
-    public function recordFocusLost(): bool
+    public function recordFocusLost(string $kind = 'tab'): bool
     {
         $log = $this->focus_log ?? [];
         if ($log !== [] && end($log)['back_at'] === null) {
             return false;
         }
 
-        $log[] = ['left_at' => now()->toIso8601String(), 'back_at' => null];
+        $log[] = ['left_at' => now()->toIso8601String(), 'back_at' => null, 'kind' => $kind === 'window' ? 'window' : 'tab'];
         $this->focus_log = array_slice($log, -self::FOCUS_LOG_LIMIT);
         $this->focus_leaves++;
         $this->saveQuietly();
@@ -114,6 +125,19 @@ class QuizAttempt extends Model
         $this->saveQuietly();
 
         return true;
+    }
+
+    /**
+     * Record text pasted into the exam that was not copied from the exam itself.
+     */
+    public function recordPaste(int $chars, int $lines): void
+    {
+        $log = $this->paste_log ?? [];
+        $log[] = ['at' => now()->toIso8601String(), 'chars' => $chars, 'lines' => $lines];
+        $this->paste_log = array_slice($log, -self::FOCUS_LOG_LIMIT);
+        $this->pastes++;
+        $this->pasted_chars += $chars;
+        $this->saveQuietly();
     }
 
     public function isExpired(): bool

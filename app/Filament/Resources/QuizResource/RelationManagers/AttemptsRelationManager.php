@@ -95,8 +95,22 @@ class AttemptsRelationManager extends RelationManager
                     ->formatStateUsing(fn (int $state) => $state === 0 ? 'Never' : ($state === 1 ? 'Once' : "{$state} times"))
                     ->description(fn (QuizAttempt $record) => $record->focus_leaves ? 'Away '.CarbonInterval::seconds($record->focus_away_seconds)->cascade()->forHumans(short: true) : null)
                     ->tooltip(fn (QuizAttempt $record) => collect($record->focus_log ?? [])
-                        ->map(fn (array $leave) => Carbon::parse($leave['left_at'])->timezone(config('app.timezone'))->format('g:i:s A').' to '
+                        ->map(fn (array $leave) => (($leave['kind'] ?? 'tab') === 'window' ? 'Other window ' : 'Left page ')
+                            .Carbon::parse($leave['left_at'])->timezone(config('app.timezone'))->format('g:i:s A').' to '
                             .($leave['back_at'] ? Carbon::parse($leave['back_at'])->timezone(config('app.timezone'))->format('g:i:s A') : 'not back'))
+                        ->implode("\n") ?: null),
+
+                Tables\Columns\TextColumn::make('pastes')
+                    ->label('Pasted')
+                    ->visible(fn () => $this->getOwnerRecord()->type === 'exam')
+                    ->sortable()
+                    ->badge()
+                    ->color(fn (int $state) => $state === 0 ? 'gray' : 'danger')
+                    ->formatStateUsing(fn (int $state) => $state === 0 ? 'Never' : ($state === 1 ? 'Once' : "{$state} times"))
+                    ->description(fn (QuizAttempt $record) => $record->pastes ? number_format($record->pasted_chars).' characters' : null)
+                    ->tooltip(fn (QuizAttempt $record) => collect($record->paste_log ?? [])
+                        ->map(fn (array $paste) => Carbon::parse($paste['at'])->timezone(config('app.timezone'))->format('g:i:s A')
+                            .': '.number_format($paste['chars']).' characters, '.$paste['lines'].' '.str('line')->plural($paste['lines']))
                         ->implode("\n") ?: null),
 
                 Tables\Columns\TextColumn::make('started_at')

@@ -232,13 +232,13 @@
                     {{-- Logs leaving this page during an exam and alerts the instructor. No screenshots, no lockdown. --}}
                     <div
                         wire:key="exam-supervision-{{ $attempt->id }}"
+                        data-exam-supervision
                         x-data
                         x-init="$wire.recordFocusReturned()"
-                        x-on:visibilitychange.document="document.hidden ? $wire.recordFocusLost() : $wire.recordFocusReturned()"
                         class="inline-flex items-center gap-1.5 text-xs text-gray-500"
                     >
                         <x-heroicon-o-eye class="h-4 w-4" />
-                        <span>Leaving this page during the exam is recorded and your instructor is notified.</span>
+                        <span>Leaving this page, switching windows and pasting from outside the exam are recorded, and your instructor is notified.</span>
                     </div>
                 @endif
                 @if (!$reviewMode)
@@ -338,7 +338,8 @@
                                         <span class="text-xs text-gray-400">Each student gets their own database here.</span>
                                     @else
                                         <x-filament::button tag="a" size="sm" target="_blank" icon="heroicon-o-arrow-top-right-on-square"
-                                            href="{{ route('student-databases.open', $databaseAnswer) }}">
+                                            href="{{ route('student-databases.open', $databaseAnswer) }}"
+                                            x-on:click.prevent="window.examPhpMyAdmin = window.open($el.href, 'ccis-phpmyadmin')">
                                             Open phpMyAdmin
                                         </x-filament::button>
                                     @endif
@@ -419,4 +420,88 @@
         .quiz-progress-bar { position: sticky; top: 4.5rem; z-index: 10; box-shadow: 0 2px 8px #00000008; }
         [id^="question-"] { scroll-margin-top: 13rem; }
     </style>
+
+{{-- Exam supervision: logs only, nothing is blocked. Active while the page shows the
+     [data-exam-supervision] notice, i.e. during an exam attempt. The script must start
+     with a declaration: Livewire evaluates it through Alpine, which wraps anything else. --}}
+@script
+<script>
+    const active = () => document.querySelector('[data-exam-supervision]') !== null
+    const squash = (text) => (text || '').replace(/\s+/g, ' ').trim()
+    let away = false
+    let watchingPhpMyAdmin = null
+    let ignoreBlurUntil = 0
+    let copiedHere = ''
+
+    const leave = (kind) => {
+        if (away || ! active()) return
+        away = true
+        $wire.recordFocusLost(kind)
+    }
+    const back = () => {
+        clearInterval(watchingPhpMyAdmin)
+        watchingPhpMyAdmin = null
+        if (! away) return
+        away = false
+        $wire.recordFocusReturned()
+    }
+    // The student's own phpMyAdmin tab (database questions) is part of the exam.
+    const phpMyAdminVisible = () => {
+        try {
+            const tab = window.examPhpMyAdmin
+            return !! tab && ! tab.closed && tab.location.pathname.startsWith('/phpmyadmin') && tab.document.visibilityState === 'visible'
+        } catch {
+            return false
+        }
+    }
+
+    document.addEventListener('visibilitychange', () => {
+        if (! document.hidden) return back()
+        setTimeout(() => {
+            if (! document.hidden) return
+            if (! phpMyAdminVisible()) return leave('tab')
+            // In phpMyAdmin: count it only once the student moves on to anything else.
+            watchingPhpMyAdmin = setInterval(() => {
+                if (! document.hidden) return back()
+                if (! phpMyAdminVisible()) {
+                    clearInterval(watchingPhpMyAdmin)
+                    watchingPhpMyAdmin = null
+                    leave('tab')
+                }
+            }, 1000)
+        }, 400)
+    })
+
+    // Another window side by side: the page stays visible but loses focus.
+    window.addEventListener('blur', () => setTimeout(() => {
+        if (document.hidden || document.hasFocus() || Date.now() < ignoreBlurUntil) return
+        if (document.activeElement?.tagName === 'IFRAME') return // the code preview
+        if (phpMyAdminVisible()) return
+        leave('window')
+    }, 250))
+    window.addEventListener('focus', () => { if (! document.hidden) back() })
+    // File pickers and confirm dialogs take focus briefly; they are part of the exam.
+    document.addEventListener('click', (event) => {
+        if (event.target.closest?.('input[type=file], [wire\\:confirm]')) ignoreBlurUntil = Date.now() + 1500
+    }, true)
+
+    const selectionText = () => {
+        const field = document.activeElement
+        if (field && typeof field.selectionStart === 'number' && typeof field.value === 'string') {
+            return field.value.slice(field.selectionStart, field.selectionEnd)
+        }
+        return window.getSelection()?.toString() ?? ''
+    }
+    document.addEventListener('copy', () => { copiedHere = squash(selectionText()) }, true)
+    document.addEventListener('cut', () => { copiedHere = squash(selectionText()) }, true)
+    document.addEventListener('paste', (event) => {
+        if (! active()) return
+        const text = event.clipboardData?.getData('text') ?? ''
+        const squashed = squash(text)
+        // Moving code around inside the exam is fine; only text from elsewhere is logged.
+        if (squashed.length < 40 || squashed === copiedHere) return
+        $wire.recordPaste(text.length, text.split('\n').length)
+    }, true)
+</script>
+@endscript
 </x-filament-panels::page>
