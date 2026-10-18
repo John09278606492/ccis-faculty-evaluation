@@ -14,6 +14,12 @@ This controller uses the existing classroom project at `C:\dev\laravel projects\
 
 Code questions can give each student their own MySQL database, used through phpMyAdmin. Set it up once in the classroom project with `php artisan classroom:student-db install`; it uses the MySQL and phpMyAdmin from Laragon and keeps its data in `storage/app/student-db`. From then on the desktop host starts that separate MySQL server (127.0.0.1:3307, never the classroom database) and serves phpMyAdmin at `/phpmyadmin` on the sharing port. Students reach it only through one-time sign-on links from their quiz. After grading, `php artisan classroom:student-db prune` drops graded workspaces; their SQL exports stay with the answers.
 
+## Backups
+
+While the server is open it makes one backup a day of the classroom database and uploaded files (class-record workbooks, student files) and keeps the last 14 days. Set `BACKUP_PATH` in the classroom project's `.env` to a second drive or USB stick, for example `BACKUP_PATH=E:\ccis-backups`; without it, backups go to `storage/app/backups` on the same disk. Each backup is a zip named `ccis-backup-<date>-<time>.zip` holding `database.sql` and a `files` folder. Make one by hand with `php artisan classroom:backup`. If a backup fails, super admins get a notification in the app.
+
+To restore, stop the server, import `database.sql` into an empty classroom database (for example with HeidiSQL or `mysql ccis < database.sql`), and copy `files/private` and `files/public` back into `storage/app`.
+
 ## Operation
 
 The public gateway shares HTTP and WebSockets on port 8088. Four PHP workers and Reverb run on loopback behind it. NativePHP's desktop controls stay private to the host. Closing the desktop app stops its managed process tree. Startup checks the database and ports without killing unrelated applications. NativePHP's environment is stripped before launching the classroom workers so its SQLite settings and encryption key cannot override the classroom configuration.

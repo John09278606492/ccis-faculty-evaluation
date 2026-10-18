@@ -95,6 +95,8 @@ async function main() {
         }
     }
     launch(['artisan', 'reverb:start', '--host=127.0.0.1', `--port=${wsPort}`], project);
+    // Runs scheduled work such as the daily backup while the server is open.
+    launch(['artisan', 'schedule:work'], project);
     for (const value of workerPorts) launch(['-S', `127.0.0.1:${value}`, path.join(project, 'vendor/laravel/framework/src/Illuminate/Foundation/resources/server.php')], path.join(project, 'public'));
     await Promise.all([wsPort, ...workerPorts, ...(studentDb ? [studentDb.mysql_port, ...phpMyAdminPorts] : [])].map(waitReady));
     gateway = http.createServer((req, res) => {
