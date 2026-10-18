@@ -23,33 +23,42 @@ for %%F in ("%PHP_EXE%") do set "PATH=%%~dpF;%PATH%"
 echo Using PHP:
 "%PHP_EXE%" -r "echo '  ', PHP_VERSION, '  ', PHP_BINARY, PHP_EOL;"
 set "ARTISAN="%PHP_EXE%" -d opcache.enable_cli=0 artisan"
+set "STATE="%PHP_EXE%" scripts\local-test-state.php"
 REM Unpacking big packages into this long folder path can take over Composer's 5-minute limit.
 set COMPOSER_PROCESS_TIMEOUT=0
+REM Without Git's unzip.exe on PATH, Composer unpacks with PHP's zip extension, which is much faster here.
+set "PATH=%PATH:D:\laragon\bin\git\usr\bin;=%"
+set "PATH=%PATH:C:\laragon\bin\git\usr\bin;=%"
+set "PATH=%PATH:C:\Program Files\Git\usr\bin;=%"
 
+REM Each setup step is skipped when nothing it depends on changed since it last succeeded.
 echo.
-echo [1/6] Installing PHP packages...
-call composer install --no-interaction
-if errorlevel 1 goto fail
+%STATE% check composer && (echo [1/6] PHP packages are up to date.) || (
+    echo [1/6] Installing PHP packages... the first time can take several minutes.
+    call composer install --no-interaction --no-progress || goto fail
+    %STATE% save composer
+)
 
-echo.
-echo [2/6] Installing Node packages...
-call npm install --no-audit --no-fund
-if errorlevel 1 goto fail
+%STATE% check npm && (echo [2/6] Node packages are up to date.) || (
+    echo [2/6] Installing Node packages...
+    call npm install --no-audit --no-fund || goto fail
+    %STATE% save npm
+)
 
-echo.
-echo [3/6] Building the code runners and page assets...
-call npm run build
-if errorlevel 1 goto fail
+%STATE% check build && (echo [3/6] Code runners and page assets are up to date.) || (
+    echo [3/6] Building the code runners and page assets...
+    call npm run build || goto fail
+    %STATE% save build
+)
 
-echo.
 echo [4/6] Updating the database...
-%ARTISAN% migrate --force
-if errorlevel 1 goto fail
+%ARTISAN% migrate --force || goto fail
 
-echo.
-echo [5/6] Updating role permissions...
-%ARTISAN% db:seed --class=RolesSeeder --force
-if errorlevel 1 goto fail
+%STATE% check roles && (echo [5/6] Role permissions are up to date.) || (
+    echo [5/6] Updating role permissions...
+    %ARTISAN% db:seed --class=RolesSeeder --force || goto fail
+    %STATE% save roles
+)
 %ARTISAN% optimize:clear >nul
 
 echo.
