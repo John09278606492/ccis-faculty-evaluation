@@ -2,11 +2,14 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Resources\QuizResource;
 use App\Models\Quiz;
 use App\Models\QuizAnswer;
 use App\Models\QuizAttempt;
 use App\Models\QuizQuestion;
+use App\Services\ClassroomUpdates;
 use App\Services\StudentDatabase\StudentDatabases;
+use Filament\Notifications\Actions\Action as NotificationAction;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Support\Enums\MaxWidth;
@@ -126,7 +129,7 @@ class TakeQuiz extends Page
     #[On('classroom-push')]
     public function refreshLiveState(string $kind = 'reconnected', ?int $quizId = null, ?int $courseId = null): void
     {
-        if (($quizId && $quizId !== $this->quiz->id) || ($courseId && $courseId !== $this->quiz->course_offering_id)) {
+        if ($kind === 'focus' || ($quizId && $quizId !== $this->quiz->id) || ($courseId && $courseId !== $this->quiz->course_offering_id)) {
             $this->skipRender();
 
             return;
@@ -544,12 +547,70 @@ class TakeQuiz extends Page
         }
     }
 
+    /**
+     * Exams record when the student leaves the page during an attempt: a log and
+     * an alert to the instructor, nothing more.
+     */
+    public function isSupervised(): bool
+    {
+        return ! $this->previewMode
+            && ! $this->reviewMode
+            && $this->quiz->type === 'exam'
+            && $this->attempt?->status === 'in_progress'
+            && $this->attempt->user_id === Auth::id();
+    }
+
+    public function recordFocusLost(): void
+    {
+        $this->skipRender();
+        if (! $this->isSupervised() || $this->attempt->isExpired() || ! $this->attempt->recordFocusLost()) {
+            return;
+        }
+        ClassroomUpdates::quiz($this->quiz->id, 'focus');
+        if (in_array($this->attempt->focus_leaves, QuizAttempt::FOCUS_ALERT_AT, true)) {
+            $this->alertInstructor();
+        }
+    }
+
+    public function recordFocusReturned(): void
+    {
+        $this->skipRender();
+        if ($this->attempt && $this->attempt->user_id === Auth::id() && $this->quiz->type === 'exam' && $this->attempt->recordFocusReturned()) {
+            ClassroomUpdates::quiz($this->quiz->id, 'focus');
+        }
+    }
+
+    protected function alertInstructor(): void
+    {
+        $instructor = $this->quiz->courseOffering?->instructor;
+        if (! $instructor) {
+            return;
+        }
+        $student = Auth::user();
+        $times = $this->attempt->focus_leaves === 1 ? 'once' : "{$this->attempt->focus_leaves} times";
+
+        Notification::make()
+            ->title("{$student->name} left the exam page")
+            ->body(trim(($student->student_id ? "{$student->student_id}, " : '')."{$this->quiz->title}: left {$times} so far."))
+            ->warning()
+            ->icon('heroicon-o-eye-slash')
+            ->actions([
+                NotificationAction::make('view')
+                    ->label('View attempts')
+                    ->url(QuizResource::getUrl('edit', ['record' => $this->quiz], panel: 'admin', tenant: $this->quiz->campus)),
+            ])
+            ->sendToDatabase($instructor);
+    }
+
     protected function finalizeAttempt(): void
     {
         if ($this->previewMode || ! $this->attempt || $this->attempt->status !== 'in_progress') {
             return;
         }
         $this->exportStudentDatabases();
+        if ($this->quiz->type === 'exam') {
+            $this->attempt->recordFocusReturned();
+        }
         DB::transaction(function (): void {
             $attempt = QuizAttempt::query()->lockForUpdate()->findOrFail($this->attempt->id);
             if ($attempt->status !== 'in_progress') {

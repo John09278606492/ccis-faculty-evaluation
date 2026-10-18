@@ -814,3 +814,38 @@ it('shows held-back scores only after the instructor releases them', function ()
     $this->actingAs($student);
     Livewire::test(TakeQuiz::class, ['quiz' => $quiz->fresh()])->assertSee('Final score: 7.00 / 10');
 });
+
+it('logs leaving the exam page and alerts the instructor', function () {
+    extract(quizWorkflowFixture());
+    $quiz->update(['type' => 'exam']);
+    $this->actingAs($student);
+
+    $page = Livewire::test(TakeQuiz::class, ['quiz' => $quiz])->call('beginAttempt')
+        ->assertSee('Leaving this page during the exam is recorded');
+    $page->call('recordFocusLost')->call('recordFocusLost');
+    $this->travel(30)->seconds();
+    $page->call('recordFocusReturned');
+
+    $attempt = $quiz->attempts()->first();
+    expect($attempt->focus_leaves)->toBe(1)
+        ->and($attempt->focus_away_seconds)->toBe(30)
+        ->and($attempt->focus_log[0]['back_at'])->not->toBeNull()
+        ->and($instructor->notifications()->count())->toBe(1)
+        ->and($instructor->notifications()->first()->data['title'])->toContain('left the exam page');
+
+    $this->actingAs($instructor);
+    Livewire::test(AttemptsRelationManager::class, ['ownerRecord' => $quiz, 'pageClass' => EditQuiz::class])
+        ->assertSee('Left page')->assertSee('Once');
+});
+
+it('does not track leaving the page on quizzes', function () {
+    extract(quizWorkflowFixture());
+    $this->actingAs($student);
+
+    Livewire::test(TakeQuiz::class, ['quiz' => $quiz])->call('beginAttempt')
+        ->assertDontSee('Leaving this page during the exam is recorded')
+        ->call('recordFocusLost');
+
+    expect($quiz->attempts()->first()->focus_leaves)->toBe(0)
+        ->and($instructor->notifications()->count())->toBe(0);
+});

@@ -83,6 +83,10 @@ error page. Answers autosave as they're entered, so a dropped WiFi connection do
 auto-submitted, and this is also enforced server-side (checked on page load / autosave) in case the
 student's browser tab was closed, since there's no background queue worker running in this setup.
 
+## Exam Supervision
+
+On assessments of type **Exam**, the page records each time a student switches to another tab or minimizes the browser while an attempt is in progress, and for how long (measured by the server). Students see a line saying so. The instructor gets a notification the 1st, 3rd, 5th and 10th time a student leaves, and the **Attempts & Submissions** tab shows a **Left page** column with the count, total time away, and the times on hover. Quizzes and activities are not tracked. Nothing is blocked and no screenshots are taken: treat it as a prompt to walk over, not proof of cheating, since a notification or a dropped connection can also hide the page.
+
 ## Grading
 
 Multiple choice / true-false / short-answer (the answer key set in the builder) are graded

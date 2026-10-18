@@ -33,7 +33,7 @@ class EditQuiz extends EditRecord
     #[On('classroom-push')]
     public function checkRemoteChanges(string $kind = 'reconnected', ?int $quizId = null, ?int $courseId = null): void
     {
-        if (($quizId && $quizId !== $this->getRecord()->id) || ($courseId && $courseId !== $this->getRecord()->course_offering_id)) {
+        if ($kind === 'focus' || ($quizId && $quizId !== $this->getRecord()->id) || ($courseId && $courseId !== $this->getRecord()->course_offering_id)) {
             $this->skipRender();
 
             return;

@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 
 class QuizAttempt extends Model
 {
@@ -34,7 +35,16 @@ class QuizAttempt extends Model
         'score',
         'max_score',
         'ip_address',
+        'focus_leaves',
+        'focus_away_seconds',
+        'focus_log',
     ];
+
+    /** Instructors are alerted when a student's exam-page leaves reach these counts. */
+    public const FOCUS_ALERT_AT = [1, 3, 5, 10];
+
+    /** Entries kept in focus_log; the counters keep counting past it. */
+    public const FOCUS_LOG_LIMIT = 100;
 
     protected $casts = [
         'attempt_number' => 'integer',
@@ -43,6 +53,9 @@ class QuizAttempt extends Model
         'submitted_at' => 'datetime',
         'score' => 'decimal:2',
         'max_score' => 'integer',
+        'focus_leaves' => 'integer',
+        'focus_away_seconds' => 'integer',
+        'focus_log' => 'array',
     ];
 
     public function quiz(): BelongsTo
@@ -58,6 +71,49 @@ class QuizAttempt extends Model
     public function answers(): HasMany
     {
         return $this->hasMany(QuizAnswer::class);
+    }
+
+    /**
+     * Record that the student left the exam page. Returns false when a leave is
+     * already open, so one departure is never counted twice.
+     *
+     * Saved quietly: a live update to the whole class on every tab switch would
+     * reload every student's page. The instructor is told by notification instead.
+     */
+    public function recordFocusLost(): bool
+    {
+        $log = $this->focus_log ?? [];
+        if ($log !== [] && end($log)['back_at'] === null) {
+            return false;
+        }
+
+        $log[] = ['left_at' => now()->toIso8601String(), 'back_at' => null];
+        $this->focus_log = array_slice($log, -self::FOCUS_LOG_LIMIT);
+        $this->focus_leaves++;
+        $this->saveQuietly();
+
+        return true;
+    }
+
+    /**
+     * Record that the student came back, adding the time away. The server's clock
+     * measures it, so a student cannot shorten it.
+     */
+    public function recordFocusReturned(): bool
+    {
+        $log = $this->focus_log ?? [];
+        $last = array_key_last($log);
+        if ($last === null || $log[$last]['back_at'] !== null) {
+            return false;
+        }
+
+        $back = $this->expires_at && now()->gt($this->expires_at) ? $this->expires_at : now();
+        $log[$last]['back_at'] = $back->toIso8601String();
+        $this->focus_away_seconds += max(0, (int) Carbon::parse($log[$last]['left_at'])->diffInSeconds($back));
+        $this->focus_log = $log;
+        $this->saveQuietly();
+
+        return true;
     }
 
     public function isExpired(): bool

@@ -6,6 +6,7 @@ use App\Filament\Concerns\ReceivesClassroomUpdates;
 use App\Models\QuizAnswer;
 use App\Models\QuizAttempt;
 use App\Models\QuizQuestion;
+use Carbon\CarbonInterval;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
@@ -13,6 +14,7 @@ use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\HtmlString;
@@ -32,6 +34,11 @@ class AttemptsRelationManager extends RelationManager
     public function form(Form $form): Form
     {
         return $form->schema([]);
+    }
+
+    protected function receivesFocusUpdates(): bool
+    {
+        return true;
     }
 
     public function table(Table $table): Table
@@ -78,6 +85,19 @@ class AttemptsRelationManager extends RelationManager
                         'Failed' => 'danger',
                         default => 'gray',
                     }),
+
+                Tables\Columns\TextColumn::make('focus_leaves')
+                    ->label('Left page')
+                    ->visible(fn () => $this->getOwnerRecord()->type === 'exam')
+                    ->sortable()
+                    ->badge()
+                    ->color(fn (int $state) => $state === 0 ? 'gray' : ($state >= 3 ? 'danger' : 'warning'))
+                    ->formatStateUsing(fn (int $state) => $state === 0 ? 'Never' : ($state === 1 ? 'Once' : "{$state} times"))
+                    ->description(fn (QuizAttempt $record) => $record->focus_leaves ? 'Away '.CarbonInterval::seconds($record->focus_away_seconds)->cascade()->forHumans(short: true) : null)
+                    ->tooltip(fn (QuizAttempt $record) => collect($record->focus_log ?? [])
+                        ->map(fn (array $leave) => Carbon::parse($leave['left_at'])->timezone(config('app.timezone'))->format('g:i:s A').' to '
+                            .($leave['back_at'] ? Carbon::parse($leave['back_at'])->timezone(config('app.timezone'))->format('g:i:s A') : 'not back'))
+                        ->implode("\n") ?: null),
 
                 Tables\Columns\TextColumn::make('started_at')
                     ->dateTime()

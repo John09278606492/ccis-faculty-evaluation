@@ -223,6 +223,20 @@
                         <span>{{ $answeredCount }} of {{ $totalCount }} answered</span>
                     </div>
                 @endif
+
+                @if ($this->isSupervised())
+                    {{-- Logs leaving this page during an exam and alerts the instructor. No screenshots, no lockdown. --}}
+                    <div
+                        wire:key="exam-supervision-{{ $attempt->id }}"
+                        x-data
+                        x-init="$wire.recordFocusReturned()"
+                        x-on:visibilitychange.document="document.hidden ? $wire.recordFocusLost() : $wire.recordFocusReturned()"
+                        class="inline-flex items-center gap-1.5 text-xs text-gray-500"
+                    >
+                        <x-heroicon-o-eye class="h-4 w-4" />
+                        <span>Leaving this page during the exam is recorded and your instructor is notified.</span>
+                    </div>
+                @endif
                 @if (!$reviewMode)
                     <details class="w-full text-sm">
                         <summary class="cursor-pointer text-primary-600">Jump to a question · {{ $totalCount - $answeredCount }} unanswered</summary>
