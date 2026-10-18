@@ -51,7 +51,7 @@ php artisan test
 vendor\bin\pint --test
 npm run build
 composer audit --locked
-npm audit --audit-level=high
+npm audit --omit=dev --audit-level=high
 ```
 
 GitHub Actions runs the same tests, formatting check, production asset build, and dependency audits on pushes to `main` and on pull requests.
