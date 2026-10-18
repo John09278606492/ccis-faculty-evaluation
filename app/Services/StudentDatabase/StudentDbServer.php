@@ -169,6 +169,8 @@ class StudentDbServer
             throw new RuntimeException("Port {$this->port()} is already in use. Is the student database server already running?");
         }
         $this->writeMyIni($this->mysqlBin());
+        $this->writeSignOn();
+        File::ensureDirectoryExists($this->path('tokens'));
         $processes = [$this->process([$this->mysqlBin().DIRECTORY_SEPARATOR.$this->exe('mysqld'), '--defaults-file='.$this->path('my.ini')])];
         if ($phpMyAdminPort) {
             $processes[] = $this->process([PHP_BINARY, ...$this->phpMyAdminServerArguments($phpMyAdminPort)]);
@@ -308,6 +310,16 @@ class StudentDbServer
         throw new RuntimeException('MySQL did not start within 30 seconds.');
     }
 
+    /**
+     * The sign-on page that turns the app's one-time links into phpMyAdmin sessions.
+     * Rewritten on every start, so a copy left by an older version or another folder
+     * cannot reject every link as expired.
+     */
+    protected function writeSignOn(): void
+    {
+        File::copy(resource_path('student-db/signon.php.stub'), $this->path('web/phpmyadmin/signon.php'));
+    }
+
     protected function installPhpMyAdmin(string $source): void
     {
         $target = $this->path('web/phpmyadmin');
@@ -329,9 +341,7 @@ class StudentDbServer
             '{{blowfish_secret}}' => bin2hex(random_bytes(16)),
             '{{port}}' => (string) $this->port(),
         ]));
-        file_put_contents("{$target}/signon.php", strtr(file_get_contents("{$stubs}/signon.php.stub"), [
-            '{{tokens_path}}' => var_export($this->path('tokens'), true),
-        ]));
+        $this->writeSignOn();
         File::copy("{$stubs}/signed-out.html", "{$target}/signed-out.html");
     }
 
