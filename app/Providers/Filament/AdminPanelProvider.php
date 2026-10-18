@@ -115,6 +115,20 @@ class AdminPanelProvider extends PanelProvider
                 DispatchServingFilamentEvent::class,
             ])
             ->sidebarCollapsibleOnDesktop(true)
+            // Moving between panel pages swaps only the page content instead of reloading everything.
+            ->spa()
+            // Pages outside the panel, and exams, which should always start from a fresh page.
+            ->spaUrlExceptions([
+                '*/evaluate/*',
+                '*/form-preview/*',
+                '*/quiz-submissions/*',
+                '*/student-databases/*',
+                '*/phpmyadmin*',
+                '*/change-password',
+                '*/take-assessment/*',
+            ])
+            ->unsavedChangesAlerts()
+            ->globalSearchKeyBindings(['command+k', 'ctrl+k'])
             ->authMiddleware([
                 Authenticate::class,
                 EnsurePasswordIsChanged::class,

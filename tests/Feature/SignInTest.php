@@ -8,6 +8,7 @@ use App\Services\StudentPins;
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\Hash;
 use Livewire\Livewire;
+use Livewire\Mechanisms\ComponentRegistry;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
@@ -97,4 +98,12 @@ it('makes staff on the shared starting password choose their own', function () {
 
     expect($admin->fresh()->must_change_password)->toBeFalse()
         ->and(Hash::check('a-new-secret', $admin->fresh()->password))->toBeTrue();
+});
+
+it('finds the My Profile forms on form requests, before the panel boots', function () {
+    $registry = app(ComponentRegistry::class);
+
+    foreach (['personal_info', 'update_password', 'two_factor_authentication'] as $name) {
+        expect($registry->getClass($name))->not->toBeNull();
+    }
 });

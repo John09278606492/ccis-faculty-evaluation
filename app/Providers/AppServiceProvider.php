@@ -19,6 +19,10 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
+use Jeffgreco13\FilamentBreezy\Livewire\PersonalInfo;
+use Jeffgreco13\FilamentBreezy\Livewire\TwoFactorAuthentication;
+use Jeffgreco13\FilamentBreezy\Livewire\UpdatePassword;
+use Livewire\Livewire;
 use SocialiteProviders\Google\Provider;
 use SocialiteProviders\Manager\SocialiteWasCalled;
 
@@ -41,6 +45,12 @@ class AppServiceProvider extends ServiceProvider
     {
         // Prevent N+1 queries in development - helps identify slow loading issues
         Model::preventLazyLoading(! app()->isProduction());
+
+        // Breezy registers the My Profile forms only while the panel boots, which happens after
+        // Livewire looks them up on form requests, so every save or upload there failed with 419.
+        Livewire::component('personal_info', PersonalInfo::class);
+        Livewire::component('update_password', UpdatePassword::class);
+        Livewire::component('two_factor_authentication', TwoFactorAuthentication::class);
 
         // Filament 3 equivalent of stackedOnMobile: labels follow each column's
         // configured/translated label and survive Livewire updates without JS.

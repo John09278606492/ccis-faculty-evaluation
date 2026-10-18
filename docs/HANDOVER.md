@@ -276,6 +276,12 @@ their own database, opened from the exam with **Open phpMyAdmin**. No passwords 
 
 ## 6. Gotchas on this machine (important)
 
+0. **The panel runs in SPA mode** (`->spa()` in `AdminPanelProvider`): panel links swap the page
+   with `wire:navigate` and the document stays loaded. Page scripts must not rely on
+   `DOMContentLoaded`/`alpine:init` having not fired yet, and document/window listeners must be
+   removed on `livewire:navigating` (see the exam script in `take-quiz.blade.php`). Non-panel pages
+   and exams are listed in `spaUrlExceptions` so they always load fresh.
+
 1. **CLI OPcache serves stale code.** `C:\php\php.ini` has `opcache.enable_cli=1` and
    `opcache.validate_timestamps=0`, so `php artisan …` can run old code after edits. Always use
    `php -d opcache.enable_cli=0 artisan …`, or fix php.ini (`validate_timestamps=1`).

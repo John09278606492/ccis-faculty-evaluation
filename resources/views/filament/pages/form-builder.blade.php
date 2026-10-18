@@ -1882,7 +1882,8 @@
 
     @push('scripts')
         <script>
-            document.addEventListener('alpine:init', () => {
+            (() => {
+            const register = () => {
                 Alpine.data('richTextEditor', (columnKey, initialContent) => ({
                     content: initialContent || '',
                     columnKey: columnKey,
@@ -1912,7 +1913,10 @@
                         @this.call('updateColumnValue', this.columnKey, this.content);
                     }
                 }));
-            });
+            };
+            // After a page change without a full reload, Alpine is already running.
+            window.Alpine ? register() : document.addEventListener('alpine:init', register);
+            })();
         </script>
     @endpush
 </x-filament-panels::page>

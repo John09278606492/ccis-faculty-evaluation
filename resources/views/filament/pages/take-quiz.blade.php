@@ -432,6 +432,13 @@
     let watchingPhpMyAdmin = null
     let ignoreBlurUntil = 0
     let copiedHere = ''
+    // Moving to another panel page keeps this document, so stop listening when the exam page goes.
+    const page = new AbortController()
+    const on = { signal: page.signal }
+    document.addEventListener('livewire:navigating', () => {
+        clearInterval(watchingPhpMyAdmin)
+        page.abort()
+    }, { once: true })
 
     const leave = (kind) => {
         if (away || ! active()) return
@@ -470,7 +477,7 @@
                 }
             }, 1000)
         }, 400)
-    })
+    }, on)
 
     // Another window side by side: the page stays visible but loses focus.
     window.addEventListener('blur', () => setTimeout(() => {
@@ -478,12 +485,12 @@
         if (document.activeElement?.tagName === 'IFRAME') return // the code preview
         if (phpMyAdminVisible()) return
         leave('window')
-    }, 250))
-    window.addEventListener('focus', () => { if (! document.hidden) back() })
+    }, 250), on)
+    window.addEventListener('focus', () => { if (! document.hidden) back() }, on)
     // File pickers and confirm dialogs take focus briefly; they are part of the exam.
     document.addEventListener('click', (event) => {
         if (event.target.closest?.('input[type=file], [wire\\:confirm]')) ignoreBlurUntil = Date.now() + 1500
-    }, true)
+    }, { capture: true, ...on })
 
     const selectionText = () => {
         const field = document.activeElement
@@ -492,8 +499,8 @@
         }
         return window.getSelection()?.toString() ?? ''
     }
-    document.addEventListener('copy', () => { copiedHere = squash(selectionText()) }, true)
-    document.addEventListener('cut', () => { copiedHere = squash(selectionText()) }, true)
+    document.addEventListener('copy', () => { copiedHere = squash(selectionText()) }, { capture: true, ...on })
+    document.addEventListener('cut', () => { copiedHere = squash(selectionText()) }, { capture: true, ...on })
     document.addEventListener('paste', (event) => {
         if (! active()) return
         const text = event.clipboardData?.getData('text') ?? ''
@@ -501,7 +508,7 @@
         // Moving code around inside the exam is fine; only text from elsewhere is logged.
         if (squashed.length < 40 || squashed === copiedHere) return
         $wire.recordPaste(text.length, text.split('\n').length)
-    }, true)
+    }, { capture: true, ...on })
 </script>
 @endscript
 </x-filament-panels::page>
