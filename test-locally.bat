@@ -67,8 +67,14 @@ echo [6/6] Starting the app at http://127.0.0.1:8000
 echo       Keep this window open while testing. Close it to stop the app.
 echo.
 start "" cmd /c "timeout /t 4 >nul & start http://127.0.0.1:8000"
-set PHP_CLI_SERVER_WORKERS=4
-%ARTISAN% serve --host=127.0.0.1 --port=8000
+REM Serve with OPcache so pages do not recompile every PHP file on each request (slow on Windows,
+REM where this server answers one request at a time). Timestamps are checked, so edits show at once.
+set "OPCACHE=-d opcache.enable_cli=1 -d opcache.validate_timestamps=1 -d opcache.revalidate_freq=0"
+"%PHP_EXE%" -r "exit(extension_loaded('Zend OPcache') ? 0 : 1);" || (
+    "%PHP_EXE%" -d zend_extension=opcache -r "exit(extension_loaded('Zend OPcache') ? 0 : 1);" >nul 2>&1 && set "OPCACHE=-d zend_extension=opcache %OPCACHE%" || set "OPCACHE="
+)
+cd public
+"%PHP_EXE%" %OPCACHE% -S 127.0.0.1:8000 ..\vendor\laravel\framework\src\Illuminate\Foundation\resources\server.php
 goto end
 
 :fail
