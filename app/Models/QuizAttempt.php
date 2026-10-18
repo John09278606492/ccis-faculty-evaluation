@@ -148,6 +148,18 @@ class QuizAttempt extends Model
     /**
      * Whether any answers on this attempt still need manual grading.
      */
+    /**
+     * Total the answers' points; the attempt is graded once no manually graded
+     * answer is waiting for points.
+     */
+    public function recalculateScore(): void
+    {
+        $this->update([
+            'score' => $this->answers()->sum('points_awarded'),
+            'status' => $this->hasUngradedAnswers() ? 'submitted' : 'graded',
+        ]);
+    }
+
     public function hasUngradedAnswers(): bool
     {
         return $this->answers()

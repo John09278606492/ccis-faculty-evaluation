@@ -177,6 +177,9 @@ class QuizBuilder extends Page
             'allow_run' => $question->type !== 'code' || ($question->options['allow_run'] ?? true),
             'database_enabled' => $question->hasDatabase(),
             'database_starter' => CodeProject::encode([['name' => 'setup.sql', 'content' => $question->databaseStarterSql()]]),
+            'auto_check' => (bool) ($question->options['checks']['enabled'] ?? false),
+            'check_cases' => $question->type === 'code' ? array_values($question->options['checks']['cases'] ?? []) : [],
+            'check_ignore_case' => $question->checkIgnoresCase(),
         ];
         $this->savedQuestionData = $this->selectedQuestionData;
         $this->showProperties = true;
@@ -216,6 +219,9 @@ class QuizBuilder extends Page
             'selectedQuestionData.starter_files' => ['nullable', 'string', 'json'],
             'selectedQuestionData.reference_files' => ['nullable', 'string', 'json'],
             'selectedQuestionData.database_starter' => ['nullable', 'string', 'json'],
+            'selectedQuestionData.check_cases' => ['nullable', 'array', 'max:'.QuizQuestion::MAX_CHECK_CASES],
+            'selectedQuestionData.check_cases.*.label' => ['nullable', 'string', 'max:80'],
+            'selectedQuestionData.check_cases.*.input' => ['nullable', 'string', 'max:'.QuizQuestion::MAX_CHECK_INPUT],
         ]);
         if (! $this->selectedQuestionId) {
             return;
@@ -259,6 +265,14 @@ class QuizBuilder extends Page
                     'enabled' => (bool) ($this->selectedQuestionData['database_enabled'] ?? false),
                     'starter_sql' => $this->decodeFiles($this->selectedQuestionData['database_starter'] ?? null)[0]['content'] ?? '',
                 ],
+                'checks' => [
+                    'enabled' => (bool) ($this->selectedQuestionData['auto_check'] ?? false) && ! ($this->selectedQuestionData['database_enabled'] ?? false),
+                    'cases' => collect($this->selectedQuestionData['check_cases'] ?? [])
+                        ->map(fn ($case) => ['label' => trim((string) ($case['label'] ?? '')), 'input' => (string) ($case['input'] ?? '')])
+                        ->values()
+                        ->all(),
+                    'ignore_case' => (bool) ($this->selectedQuestionData['check_ignore_case'] ?? false),
+                ],
             ];
             $reference = $this->decodeFiles($this->selectedQuestionData['reference_files'] ?? null);
             $data['correct_answer'] = $reference && CodeProject::length($reference) > 0 ? ['files' => $reference] : null;
@@ -273,6 +287,21 @@ class QuizBuilder extends Page
         $this->dispatch('question-saved');
         $this->loadQuestions();
         $this->dispatch('notify', message: 'Question saved');
+    }
+
+    public function addCheckCase(): void
+    {
+        $cases = $this->selectedQuestionData['check_cases'] ?? [];
+        if (count($cases) < QuizQuestion::MAX_CHECK_CASES) {
+            $this->selectedQuestionData['check_cases'] = [...array_values($cases), ['label' => '', 'input' => '']];
+        }
+    }
+
+    public function removeCheckCase(int $index): void
+    {
+        $cases = array_values($this->selectedQuestionData['check_cases'] ?? []);
+        unset($cases[$index]);
+        $this->selectedQuestionData['check_cases'] = array_values($cases);
     }
 
     /**

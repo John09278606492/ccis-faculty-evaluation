@@ -8,10 +8,12 @@ use App\Filament\Pages\TakeQuiz;
 use App\Filament\Resources\QuizResource\Pages\EditQuiz;
 use App\Filament\Resources\QuizResource\Pages\ListQuizzes;
 use App\Filament\Resources\QuizResource\RelationManagers\AttemptsRelationManager;
+use App\Filament\Resources\QuizResource\RelationManagers\QuestionsRelationManager;
 use App\Models\ClassRecordUpload;
 use App\Models\Quiz;
 use App\Models\QuizAnswer;
 use App\Models\QuizAttempt;
+use App\Models\QuizQuestion;
 use App\Models\User;
 use App\Services\ClassRecordSyncService;
 use App\Services\StudentDatabase\MySqlStudentDatabases;
@@ -28,6 +30,7 @@ use Livewire\Livewire;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use Spatie\Permission\Models\Permission;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 function quizWorkflowFixture(): array
 {
@@ -872,4 +875,100 @@ it('logs pasting from outside the exam and switching windows', function () {
     $this->actingAs($instructor);
     Livewire::test(AttemptsRelationManager::class, ['ownerRecord' => $quiz, 'pageClass' => EditQuiz::class])
         ->assertSee('Pasted')->assertSee('640 characters');
+});
+
+it('fills in scores from automatic code checks but keeps scores set by hand', function () {
+    extract(quizWorkflowFixture());
+    $code = $quiz->questions()->create(['type' => 'code', 'question_text' => 'Print the total', 'points' => 10, 'order' => 2,
+        'options' => ['language' => 'php', 'files' => [['name' => 'index.php', 'content' => '']], 'checks' => ['enabled' => true, 'cases' => [['label' => 'Three items', 'input' => 'index.php?n=3'], ['label' => '', 'input' => '']]]],
+        'correct_answer' => ['files' => [['name' => 'index.php', 'content' => '<?php echo $_GET["n"] ?? 0;']]]]);
+    expect($code->refresh()->autoChecks())->toBeTrue()
+        ->and($code->checkConfig()['cases'])->toHaveCount(2)
+        ->and($code->checkConfig()['runner'])->toBe('php');
+    $essay = $quiz->questions()->create(['type' => 'essay', 'question_text' => 'Explain', 'points' => 5, 'order' => 3]);
+    $attempt = gradedAttempt($quiz, $student, status: 'submitted', score: 10);
+    $attempt->update(['max_score' => 20]);
+    $attempt->answers()->create(['quiz_question_id' => $question->id, 'answer_text' => 'echo', 'points_awarded' => 10, 'is_correct' => true]);
+    $answer = $attempt->answers()->create(['quiz_question_id' => $code->id, 'answer_text' => CodeProject::encode([['name' => 'index.php', 'content' => '<?= $_GET["n"] ?? 0 ?>']])]);
+    $this->actingAs($instructor);
+    $cases = fn (bool ...$passed) => array_map(fn (bool $pass) => ['label' => 'Test', 'passed' => $pass, 'expected' => '3', 'actual' => $pass ? '3' : '0'], $passed);
+    $manager = Livewire::test(AttemptsRelationManager::class, ['ownerRecord' => $quiz, 'pageClass' => EditQuiz::class]);
+
+    expect($manager->instance()->codeCheckFiles($answer->id)[0]['name'])->toBe('index.php');
+    expect($manager->instance()->recordAutoCheck($answer->id, $cases(true, false), apply: true))
+        ->toMatchArray(['passed' => 1, 'total' => 2, 'suggested' => 5.0, 'applied' => true]);
+    expect((float) $answer->refresh()->points_awarded)->toBe(5.0)
+        ->and($attempt->refresh()->status)->toBe('graded')
+        ->and((float) $attempt->score)->toBe(15.0);
+
+    // A later check replaces the score it set itself.
+    $manager->instance()->recordAutoCheck($answer->id, $cases(true, true), apply: true);
+    expect((float) $answer->refresh()->points_awarded)->toBe(10.0);
+
+    // A score given by hand is kept; the check result is still recorded.
+    $answer->update(['points_awarded' => 7]);
+    expect($manager->instance()->recordAutoCheck($answer->id, $cases(false, false), apply: true)['applied'])->toBeFalse();
+    expect((float) $answer->refresh()->points_awarded)->toBe(7.0)
+        ->and($answer->auto_check['passed'])->toBe(0);
+
+    // Checking from the grading form only records the result.
+    $answer->update(['points_awarded' => null]);
+    $manager->instance()->recordAutoCheck($answer->id, $cases(true, true));
+    expect($answer->refresh()->points_awarded)->toBeNull()->and($answer->auto_check['suggested'])->toEqual(10);
+
+    // Answers to questions without automatic checking are refused.
+    $other = $attempt->answers()->create(['quiz_question_id' => $essay->id, 'answer_text' => 'Because']);
+    expect(fn () => $manager->instance()->recordAutoCheck($other->id, $cases(true), apply: true))
+        ->toThrow(HttpException::class);
+});
+
+it('requires a reference solution and a runnable language for automatic checking', function () {
+    $question = new QuizQuestion(['type' => 'code', 'question_text' => 'Write it', 'points' => 5,
+        'options' => ['language' => 'php', 'files' => [['name' => 'index.php', 'content' => '']], 'checks' => ['enabled' => true]]]);
+    expect($question->validationIssues())->toContain('Add a reference solution to check answers automatically.');
+
+    $question->options = ['language' => 'python', 'files' => [['name' => 'main.py', 'content' => '']], 'checks' => ['enabled' => true]];
+    $question->correct_answer = ['files' => [['name' => 'main.py', 'content' => 'print(1)']]];
+    expect($question->validationIssues())->toContain('Automatic checking works for PHP, web page and SQL questions without a student database.')
+        ->and($question->autoChecks())->toBeFalse();
+});
+
+it('saves test cases for automatic checking from the question form', function () {
+    extract(quizWorkflowFixture());
+    $this->actingAs($instructor);
+    Livewire::test(QuestionsRelationManager::class, ['ownerRecord' => $quiz, 'pageClass' => EditQuiz::class])
+        ->callTableAction('create', data: [
+            'type' => 'code', 'question_text' => 'Print the total', 'points' => 10, 'code_language' => 'php',
+            'starter_files' => CodeProject::encode([['name' => 'index.php', 'content' => '<?php']]),
+            'reference_files' => CodeProject::encode([['name' => 'index.php', 'content' => '<?php echo 3 * 25;']]),
+            'auto_check' => true, 'check_ignore_case' => true,
+            'check_cases' => [['label' => 'Three', 'input' => 'index.php?n=3']],
+        ])
+        ->assertHasNoTableActionErrors();
+    $question = $quiz->questions()->where('type', 'code')->sole();
+    expect($question->autoChecks())->toBeTrue()
+        ->and($question->checkCases())->toBe([['label' => 'Three', 'input' => 'index.php?n=3']])
+        ->and($question->checkIgnoresCase())->toBeTrue();
+});
+
+it('keeps automatic checking settings when a code question is edited in the builder', function () {
+    extract(quizWorkflowFixture());
+    $code = $quiz->questions()->create(['type' => 'code', 'question_text' => 'Print the total', 'points' => 10, 'order' => 2,
+        'options' => ['language' => 'php', 'files' => [['name' => 'index.php', 'content' => '<?php']]],
+        'correct_answer' => ['files' => [['name' => 'index.php', 'content' => '<?php echo 75;']]]]);
+    $this->actingAs($instructor);
+    Livewire::test(QuizBuilder::class, ['record' => $quiz->id])->call('selectQuestion', $code->id)
+        ->assertSee('Check answers automatically')
+        ->set('selectedQuestionData.auto_check', true)
+        ->call('addCheckCase')->call('addCheckCase')
+        ->set('selectedQuestionData.check_cases.0.input', 'index.php?n=3')
+        ->set('selectedQuestionData.check_cases.1.label', 'Remove me')
+        ->call('removeCheckCase', 1)
+        ->assertSee('Add Test Case')
+        ->call('saveQuestionProperties')->assertHasNoErrors();
+    expect($code->refresh()->autoChecks())->toBeTrue()->and($code->checkCases())->toBe([['label' => '', 'input' => 'index.php?n=3']]);
+
+    Livewire::test(QuizBuilder::class, ['record' => $quiz->id])->call('selectQuestion', $code->id)
+        ->set('selectedQuestionData.question_text', 'Print the grand total')->call('saveQuestionProperties')->assertHasNoErrors();
+    expect($code->refresh()->autoChecks())->toBeTrue();
 });

@@ -61,6 +61,7 @@ class AppServiceProvider extends ServiceProvider
         // public/js/app/components by `php artisan filament:assets` — no CDN needed.
         FilamentAsset::register([
             AlpineComponent::make('code-editor', resource_path('js/dist/components/code-editor.js')),
+            AlpineComponent::make('code-checker', resource_path('js/dist/components/code-checker.js')),
             Js::make('chart-js', resource_path('js/dist/chart.js'))->loadedOnRequest(),
         ]);
 

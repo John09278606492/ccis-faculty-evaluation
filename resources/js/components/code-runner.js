@@ -138,6 +138,27 @@ export async function runSql(baseUrl, files) {
     return result.results ?? []
 }
 
+/**
+ * Runs the .sql files, then `checkSql` on the same database, for automatic
+ * checking. Returns the rows of the check query, or of the files' own queries
+ * when there is no check query; an error in the files is reported in `error`
+ * and the check query still runs.
+ *
+ * @returns {Promise<{ tables: Array<{ columns: string[], values: any[][] }>, error: string|null }>}
+ */
+export async function runSqlCheck(baseUrl, files, checkSql = '') {
+    const sqlPool = pool(`${baseUrl}/sql/worker.sql-wasm.js`, 'classic')
+    const sql = files.filter((file) => extensionOf(file.name) === 'sql').map((file) => file.content).join('\n;\n')
+    await sqlPool.call({ action: 'open' })
+    const own = await sqlPool.call({ action: 'exec', sql })
+    if (! checkSql.trim()) {
+        return { tables: own.results ?? [], error: own.error ?? null }
+    }
+    const check = await sqlPool.call({ action: 'exec', sql: checkSql })
+
+    return { tables: check.results ?? [], error: check.error ?? own.error ?? null }
+}
+
 const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 /**
@@ -238,6 +259,20 @@ function bridgeSource(nonce, scriptNames, pageName) {
     });
     window.addEventListener('unhandledrejection', function (event) {
         send({ type: 'console', level: 'error', text: 'Uncaught (in promise) ' + format(event.reason) });
+    });
+    window.addEventListener('load', function () { send({ type: 'loaded' }); });
+    window.addEventListener('message', function (event) {
+        var data = event.data;
+        if (event.source !== parent || ! data || data.nonce !== nonce || data.type !== 'check') return;
+        var code = String(data.code).replace(/[;\\s]+$/, ''), run;
+        try { run = new Function('return (async function () { return (' + code + '\\n); })();'); }
+        catch (e) {
+            try { run = new Function('return (async function () { ' + code + '\\n })();'); }
+            catch (error) { send({ type: 'check-result', error: format(error) }); return; }
+        }
+        Promise.resolve().then(run).then(function (value) {
+            send({ type: 'check-result', value: value === undefined || value === null ? '' : format(value) });
+        }, function (error) { send({ type: 'check-result', error: format(error) }); });
     });
     ['localStorage', 'sessionStorage'].forEach(function (name) {
         try { window[name].length; } catch (e) {

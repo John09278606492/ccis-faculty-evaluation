@@ -417,6 +417,58 @@
                                 min-height="8rem" max-height="24rem"
                                 wire:key="reference-{{ $selectedQuestionId }}-{{ $codeLanguage }}" />
                         </div>
+                        @unless ($selectedQuestionData['database_enabled'] ?? false)
+                            @php($checkRunner = \App\Support\CodeProject::runner(\App\Support\CodeProject::decode($selectedQuestionData['starter_files'] ?? null, [])))
+                            <div class="qb-prop-group">
+                                <label class="qb-tf-option">
+                                    <input @disabled($questionsLocked) type="checkbox" wire:model.live="selectedQuestionData.auto_check">
+                                    <span>Check answers automatically</span>
+                                </label>
+                                <span class="qb-prop-help">Runs each student's code and your reference solution on the same test cases and suggests a score from how many outputs match. Only the output is compared, so students may write the code their own way. Works for PHP, web page and SQL questions.</span>
+                            </div>
+                            @if ($selectedQuestionData['auto_check'] ?? false)
+                                <div class="qb-prop-group">
+                                    <span class="qb-prop-label">Test Cases</span>
+                                    <span class="qb-prop-help">{{ match ($checkRunner) {
+                                        'php' => 'Input: the page to open, with a query string if needed, such as index.php?n=5. Add form fields on the next lines as name=value to send them as a POST.',
+                                        'sql' => "Input: a query run after the student's SQL, such as SELECT * FROM products ORDER BY id. Leave it empty to compare the rows the student's own queries return.",
+                                        'web' => "Input: JavaScript run on the page once it loads; its result is compared, for example document.querySelector('#total').textContent. Leave it empty to compare the page's text and console output.",
+                                        default => 'Automatic checking works for PHP, web page and SQL questions.',
+                                    } }} With no test cases, the code is run once as it is.</span>
+                                    <div class="qb-options-list">
+                                        @foreach ($selectedQuestionData['check_cases'] ?? [] as $index => $case)
+                                            <div class="qb-option-row" wire:key="check-case-{{ $selectedQuestionId }}-{{ $index }}" style="align-items:flex-start">
+                                                <div style="flex:1;display:flex;flex-direction:column;gap:4px">
+                                                    <input @disabled($questionsLocked) type="text" class="qb-prop-input" maxlength="80"
+                                                        wire:model="selectedQuestionData.check_cases.{{ $index }}.label" placeholder="Test {{ $index + 1 }} name (optional)">
+                                                    <textarea @disabled($questionsLocked) class="qb-prop-input" rows="2" style="font-family:ui-monospace,monospace"
+                                                        wire:model="selectedQuestionData.check_cases.{{ $index }}.input" placeholder="Input"></textarea>
+                                                </div>
+                                                <button @disabled($questionsLocked) wire:click="removeCheckCase({{ $index }})" class="qb-option-remove" title="Remove test case">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                        @endforeach
+                                    </div>
+                                    @if (count($selectedQuestionData['check_cases'] ?? []) < \App\Models\QuizQuestion::MAX_CHECK_CASES)
+                                        <button @disabled($questionsLocked) wire:click="addCheckCase" class="qb-add-option-btn">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                                            </svg>
+                                            Add Test Case
+                                        </button>
+                                    @endif
+                                </div>
+                                <div class="qb-prop-group">
+                                    <label class="qb-tf-option">
+                                        <input @disabled($questionsLocked) type="checkbox" wire:model="selectedQuestionData.check_ignore_case">
+                                        <span>Ignore upper and lower case when comparing</span>
+                                    </label>
+                                </div>
+                            @endif
+                        @endunless
                     @else
                         <div class="qb-prop-group">
                             <div class="qb-prop-readonly">

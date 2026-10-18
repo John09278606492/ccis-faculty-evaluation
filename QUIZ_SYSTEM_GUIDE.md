@@ -107,6 +107,27 @@ points) above the essay/file grading fields, so you see the full score breakdown
 just the essays in isolation. Enter points and optional feedback per answer; the attempt's total
 score recomputes automatically and its status flips from partial to final.
 
+### Automatic checking of code answers
+
+PHP, web page (HTML/CSS/JS) and SQL code questions can be checked against your reference
+solution. Turn on **Check answers automatically** under the reference solution and add test cases:
+
+| Language | Test case input | What is compared |
+|---|---|---|
+| PHP | The page to open, such as `index.php?n=5`; `name=value` lines below it are sent as a POST | The text of the page it returns (tags and spacing ignored) |
+| SQL | A query run after the student's SQL, such as `SELECT name FROM products ORDER BY name` | The rows it returns (column names ignored) |
+| Web page | JavaScript run on the loaded page, such as `document.querySelector('#total').textContent` | Its result |
+
+An empty input runs the code as it is (PHP: the first page; SQL: the student's own queries; web: the
+page's text and console output). Students may write the code their own way: only the output counts.
+
+The score suggested is the question's points times the share of test cases that match. In the
+**Attempts** tab, **Auto-check code** checks every submitted answer and fills in that score where you
+have not graded the answer yet; scores you set by hand are never replaced. The **Grade** form also
+checks the answer, shows which tests failed with both outputs side by side, and fills the points
+field when it is empty. The code runs in your own browser with the same runners students use, never
+on the server. Questions with a student MySQL database are not checked automatically.
+
 ## Signing in with a Student ID
 
 Students sign in with their ID number and a 6-digit PIN. Imported students have no usable PIN until

@@ -141,6 +141,11 @@ One row per student: `user_id`, `mysql_user` (`stu{userId}`), `password` (encryp
 - Code answers are **graded manually** (`QuizQuestion::MANUALLY_GRADED_TYPES`). Grading happens in the
   **Attempts & Submissions** tab (`AttemptsRelationManager.php`), which shows the student's files read-only
   with Run, the reference solution, and the database export with an "Open in phpMyAdmin" link.
+- **Automatic checking** (`options.checks` = `{"enabled", "cases": [{"label", "input"}], "ignore_case"}`):
+  `resources/js/components/code-checker.js` runs the reference solution and each answer on the test cases
+  in the grader's browser and compares outputs; `AttemptsRelationManager::recordAutoCheck()` stores the
+  result in `quiz_answers.auto_check` and fills in the suggested points unless they were set by hand.
+  Only PHP, web and SQL questions without a student database (`QuizQuestion::canAutoCheck()`).
 
 ### 4.2 VS Code-style workspace (the editor)
 
