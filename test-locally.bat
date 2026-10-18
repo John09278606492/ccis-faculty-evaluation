@@ -80,6 +80,16 @@ set "OPCACHE=-d opcache.enable_cli=1 -d opcache.validate_timestamps=1 -d opcache
 "%PHP_EXE%" -r "exit(extension_loaded('Zend OPcache') ? 0 : 1);" || (
     "%PHP_EXE%" -d zend_extension=opcache -r "exit(extension_loaded('Zend OPcache') ? 0 : 1);" >nul 2>&1 && set "OPCACHE=-d zend_extension=opcache %OPCACHE%" || set "OPCACHE="
 )
+REM Student databases for SQL questions: a separate MySQL on port 3307 plus phpMyAdmin on 8095,
+REM set up once from Laragon's MySQL and phpMyAdmin. The desktop host serves these itself.
+%ARTISAN% classroom:student-db host-config | findstr /c:"\"installed\":true" >nul || (
+    echo       Setting up student databases from Laragon's MySQL and phpMyAdmin...
+    %ARTISAN% classroom:student-db install || echo       Student databases are not available: questions with a database will not open phpMyAdmin.
+)
+set "STUDENT_DB_PHPMYADMIN_URL=http://127.0.0.1:8095/phpmyadmin"
+%ARTISAN% classroom:student-db host-config | findstr /c:"\"installed\":true" >nul && (
+    start "CCIS student databases" /min "%PHP_EXE%" artisan classroom:student-db serve --phpmyadmin-port=8095
+)
 REM Live updates: pages refresh by themselves when someone else changes data. Closes with this window.
 start "CCIS live updates" /min "%PHP_EXE%" artisan reverb:start --host=127.0.0.1 --port=8085
 cd public
