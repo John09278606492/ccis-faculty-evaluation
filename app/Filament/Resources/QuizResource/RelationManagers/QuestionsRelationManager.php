@@ -113,7 +113,8 @@ class QuestionsRelationManager extends RelationManager
 
                 Forms\Components\Toggle::make('autocomplete')
                     ->label('Code suggestions (autocomplete)')
-                    ->helperText('Shows keyword and tag suggestions while typing. Leave off when the exam tests what students remember.')
+                    ->helperText('Shows keyword and tag suggestions while typing. On by default; turn it off when the exam tests what students remember.')
+                    ->default(true)
                     ->columnSpanFull()
                     ->visible(fn (Forms\Get $get) => $get('type') === 'code'),
 

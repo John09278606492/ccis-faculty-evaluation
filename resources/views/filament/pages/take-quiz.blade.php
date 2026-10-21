@@ -324,7 +324,7 @@
                                     :can-manage-files="$question->studentsCanManageFiles()"
                                     :autocomplete="$question->allowsAutocomplete()"
                                     :can-run="$question->studentsCanRunCode()"
-                                    :commit-debounce="$reviewMode ? null : 750"
+                                    :commit-debounce="$reviewMode ? null : 500"
                                     placeholder="Write your code here..."
                                     wire:key="code-{{ $question->id }}-{{ $reviewMode ? 'review' : 'edit' }}"
                                 />

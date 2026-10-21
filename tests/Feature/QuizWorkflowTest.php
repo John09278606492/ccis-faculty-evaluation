@@ -643,6 +643,31 @@ it('lets students create their own files and folders unless the instructor turns
     expect((new QuizQuestion(['type' => 'code', 'options' => [...$code->options, 'allow_student_files' => false]]))->studentsCanManageFiles())->toBeFalse();
 });
 
+it('saves the code as the student types, before the attempt is submitted', function () {
+    extract(quizWorkflowFixture());
+    $code = $quiz->questions()->create(['type' => 'code', 'question_text' => 'Build a page', 'points' => 5, 'order' => 2, 'options' => [
+        'language' => 'web',
+        'files' => [['name' => 'index.html', 'content' => '<h1>Start</h1>']],
+    ]]);
+    $this->actingAs($student);
+    Livewire::test(TakeQuiz::class, ['quiz' => $quiz])->call('beginAttempt');
+
+    // The editor sends the project on every pause in typing, so the work is
+    // saved without the student having to submit or press Ctrl+S.
+    Livewire::test(TakeQuiz::class, ['quiz' => $quiz])
+        ->set('answers.'.$code->id, json_encode(['files' => [
+            ['name' => 'index.html', 'content' => '<h1>Half typed</h1>'],
+        ]]))
+        ->assertHasNoErrors();
+
+    $saved = QuizAnswer::where('quiz_question_id', $code->id)->value('answer_text');
+    expect($saved)->not->toBeNull()
+        ->and($code->answerFiles($saved))->toBe([['name' => 'index.html', 'content' => '<h1>Half typed</h1>']]);
+
+    // The attempt is still open: the work is saved, not submitted.
+    expect($quiz->attempts()->first()->status)->toBe('in_progress');
+});
+
 it('turns on student files for code questions saved before it was the default', function () {
     extract(quizWorkflowFixture());
     $code = $quiz->questions()->create(['type' => 'code', 'question_text' => 'Build a site', 'points' => 5, 'order' => 2, 'options' => [
@@ -761,7 +786,7 @@ it('signs a student in to phpMyAdmin with their own database loaded from the sta
     $token = str($response->headers->get('Location'))->after('token=')->toString();
     $issued = json_decode(file_get_contents(app(StudentDbServer::class)->path("tokens/{$token}.json")), true);
     expect($issued['user'])->toBe("stu{$fixture['student']->id}")->and($issued['database'])->toBe($database)
-        ->and($issued['expires'])->toBeLessThanOrEqual(time() + 60);
+        ->and($issued['expires'])->toBeLessThanOrEqual(time() + StudentDbServer::SIGN_ON_LIFETIME);
 });
 
 it('keeps student databases private and closes them when the attempt ends', function () {
@@ -875,8 +900,11 @@ it('logs leaving the exam page and alerts the instructor', function () {
     $page->call('recordFocusReturned');
 
     $attempt = $quiz->attempts()->first();
+    // The clock is frozen a moment after the leave was recorded, so the time
+    // away lands on 30 or 31 seconds depending on the sub-second boundary.
     expect($attempt->focus_leaves)->toBe(1)
-        ->and($attempt->focus_away_seconds)->toBe(30)
+        ->and($attempt->focus_away_seconds)->toBeGreaterThanOrEqual(30)
+        ->and($attempt->focus_away_seconds)->toBeLessThanOrEqual(31)
         ->and($attempt->focus_log[0]['back_at'])->not->toBeNull()
         ->and($instructor->notifications()->count())->toBe(1)
         ->and($instructor->notifications()->first()->data['title'])->toContain('left the exam page');

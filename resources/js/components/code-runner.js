@@ -17,14 +17,23 @@ const extensionOf = (name) => (name.split('.').pop() || '').toLowerCase()
 export function runnerFor(files) {
     const extensions = files.map((file) => extensionOf(file.name))
 
-    if (extensions.includes('php')) {
+    if (extensions.includes('php') && files.some((file) => hasPhpCode(file))) {
         return 'php'
     }
-    if (extensions.some((extension) => ['html', 'htm', 'css', 'js'].includes(extension))) {
+    if (extensions.some((extension) => ['html', 'htm', 'css', 'js', 'php'].includes(extension))) {
         return 'web'
     }
 
     return extensions.includes('sql') ? 'sql' : null
+}
+
+/**
+ * Does this file actually run PHP? A .php file that holds only HTML is a web
+ * page: it is shown in the preview straight away, without waiting for the PHP
+ * runtime to start, and it updates as the student types.
+ */
+export function hasPhpCode(file) {
+    return /<\?php|<\?=/.test(file.content ?? '')
 }
 
 /** Files that can be opened as a page in the preview, entry page first. */
@@ -162,6 +171,33 @@ export async function runSqlCheck(baseUrl, files, checkSql = '') {
 const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 /**
+ * Finds a tag that was never closed, like "</form" without its ">".
+ *
+ * A tag left open swallows everything after it, so a <script> that follows
+ * shows up as plain text in the preview instead of running. The student is
+ * told about it here, rather than left wondering why their code does nothing.
+ *
+ * @returns {string|null} the name of the tag that is not closed, or null
+ */
+export function unclosedTag(html) {
+    // A close tag with no ">" after it: "</form" followed by something that
+    // is not the end of the tag.
+    const match = html.match(/<\/([a-zA-Z][a-zA-Z0-9-]*)\b[^<>]*?(?=<|$)/g)
+    if (! match) {
+        return null
+    }
+
+    for (const tag of match) {
+        const name = tag.match(/^<\/([a-zA-Z][a-zA-Z0-9-]*)/)?.[1]
+        if (name && ! tag.endsWith('>')) {
+            return name
+        }
+    }
+
+    return null
+}
+
+/**
  * A link's target inside the project, resolved from the page it appears on:
  * from pages/about.html, "../css/site.css" is css/site.css. Null for links
  * that leave the project (other sites, mailto:, #anchors).
@@ -204,11 +240,15 @@ export function buildDocument(html, files, nonce, pageName = null) {
         if (js === undefined) {
             return tag
         }
-        // A data: URL is a separate script, so its errors count lines within the file.
-        const url = `data:text/javascript;charset=utf-8,${encodeURIComponent(js)}`
-        scriptNames[url] = projectPath(src, pageName)
+        // The script's own text is put in the tag rather than in a data: URL:
+        // Chrome refuses to run data: URL scripts inside a sandboxed srcdoc
+        // frame, which is exactly how the preview is shown, so a separate .js
+        // file would never run at all.
+        const name = projectPath(src, pageName)
+        // The file name is kept for the error message the bridge reports.
+        scriptNames[name] = name
 
-        return `<script${before} src="${url}"${after}></script>`
+        return `<script${before}${after}>${js.replace(/<\/script/gi, '<\\/script')}</script>`
     })
 
     const bridge = `<script>${bridgeSource(nonce, scriptNames, pageName).replace(/\n\s*/g, ' ')}</script>`

@@ -7,8 +7,8 @@
  * State is a JSON string {"files": [{"name", "content"}], "folders": [...]},
  * see App\Support\CodeProject. File names are paths such as css/style.css.
  */
-import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from '@codemirror/autocomplete'
-import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
+import { acceptCompletion, autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, completionStatus } from '@codemirror/autocomplete'
+import { defaultKeymap, history, historyKeymap, indentLess, indentMore } from '@codemirror/commands'
 import { cpp } from '@codemirror/lang-cpp'
 import { css } from '@codemirror/lang-css'
 import { html } from '@codemirror/lang-html'
@@ -46,9 +46,20 @@ import {
     runPhp,
     runSql,
     shellDocument,
+    unclosedTag,
 } from './code-runner.js'
 import { vscodeDark, vscodeLight } from './vscode-theme.js'
+import { htmlCompletion, javascriptCompletion } from './js-completions.js'
+import { unclosedTags } from './html-tag-check.js'
 
+/**
+ * The language support for each file type.
+ *
+ * The HTML one keeps the package's own nesting, so the JavaScript and CSS
+ * inside a <script> or <style> block are highlighted and completed as
+ * themselves - without that, writing a tag's body in a .html file gives no
+ * suggestions.
+ */
 const languages = {
     python: () => python(),
     java: () => java(),
@@ -58,7 +69,10 @@ const languages = {
     javascript: () => javascript(),
     php: () => php(),
     sql: () => sql(),
-    html: () => html(),
+    html: () => html({
+        matchClosingTags: true,
+        autoCloseTags: true,
+    }),
     css: () => css(),
     plaintext: () => [],
 }
@@ -76,6 +90,8 @@ const extensions = {
 }
 const MAX_FILES = 30
 const MAX_DEPTH = 4
+// How long the live preview waits after the last keystroke before it updates.
+const LIVE_PREVIEW_DELAY = 250
 const SEGMENT_PATTERN = /^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*$/
 
 /** Small coloured labels in the Explorer and tabs, like VS Code's file icons. */
@@ -143,6 +159,8 @@ export default function codeEditorComponent({
     let themeObserver = null
     let resizeObserver = null
     let commitTimer = null
+    let retryTimer = null
+    let liveTimer = null
     let messageListener = null
     // Livewire, taken from the root: $wire from a handler inside the Explorer (a name input that is
     // removed once it is confirmed) resolves to no component, so those changes were never saved.
@@ -182,6 +200,9 @@ export default function codeEditorComponent({
 
         saveState: 'saved',
 
+        // A save is in flight; another one waits for it.
+        saving: false,
+
         run: {
             visible: false,
             running: false,
@@ -192,6 +213,12 @@ export default function codeEditorComponent({
             hasPreview: false,
             nonce: null,
         },
+
+        // The preview sits next to the editor instead of below it.
+        sideBySide: false,
+
+        // The preview follows the code as it is typed.
+        livePreview: false,
 
         init() {
             wire = this.$wire
@@ -228,6 +255,16 @@ export default function codeEditorComponent({
             resizeObserver.observe(this.$root)
             this.sidebarOpen = this.canManageFiles || this.files.length > 1
 
+            // A web or PHP project is shown next to its preview from the start,
+            // and the preview follows the code as it is typed. SQL needs the
+            // server, so it keeps the output panel below the editor.
+            this.sideBySide = this.runner !== 'sql' && this.canRun
+            this.livePreview = this.sideBySide
+            if (this.sideBySide) {
+                // Show the page as it is, before the student changes anything.
+                this.$nextTick(() => this.refreshLivePreview())
+            }
+
             this.$watch('state', (value) => {
                 if (typeof value !== 'string' || value === this.serialize()) {
                     return
@@ -241,6 +278,8 @@ export default function codeEditorComponent({
 
         destroy() {
             clearTimeout(commitTimer)
+            clearTimeout(retryTimer)
+            clearTimeout(liveTimer)
             themeObserver?.disconnect()
             resizeObserver?.disconnect()
             window.removeEventListener('message', messageListener)
@@ -347,6 +386,7 @@ export default function codeEditorComponent({
         },
 
         extensionsFor(name) {
+            const language = languageOf(name)
             return [
                 lineNumbers(),
                 highlightActiveLineGutter(),
@@ -355,24 +395,50 @@ export default function codeEditorComponent({
                 foldGutter(),
                 drawSelection(),
                 indentOnInput(),
-                indentUnit.of(['html', 'css'].includes(languageOf(name)) ? '  ' : '    '),
+                indentUnit.of(['html', 'css'].includes(language) ? '  ' : '    '),
                 EditorState.tabSize.of(4),
                 bracketMatching(),
+                // Marks the tags that are not closed, so a forgotten ">" is seen
+                // right away instead of quietly swallowing the rest of the page.
+                language === 'html' ? unclosedTags() : [],
                 closeBrackets(),
-                // Suggestions are off unless the instructor allows them for this question.
-                autocomplete ? autocompletion() : [],
+                // Suggestions are off unless the instructor allows them for this
+                // question. The language's own completion sources are always
+                // registered, so turning suggestions on shows them straight away.
+                autocomplete ? autocompletion({ activateOnTyping: true }) : [],
+                // The browser globals, for JavaScript and for the <script> blocks
+                // of an HTML file.
+                autocomplete && language === 'javascript' ? javascriptCompletion : [],
+                autocomplete && language === 'html' ? [htmlCompletion, javascriptCompletion] : [],
                 highlightActiveLine(),
                 highlightSelectionMatches(),
                 keymap.of([
                     { key: 'Mod-s', preventDefault: true, run: () => { this.saveNow(); return true } },
                     { key: 'Mod-Enter', preventDefault: true, run: () => { this.runCode(); return true } },
+                    // Tab takes the highlighted suggestion when the list is open,
+                    // and indents the line when it is not. Without this, Tab
+                    // always indents and the suggestion can only be taken with
+                    // Enter or Ctrl-Space.
+                    {
+                        key: 'Tab',
+                        preventDefault: true,
+                        run: (view) => {
+                            const status = completionStatus(view.state)
+                            if (status === 'active' || status === 'pending') {
+                                acceptCompletion(view)
+                                return true
+                            }
+
+                            return indentMore(view)
+                        },
+                    },
+                    { key: 'Shift-Tab', preventDefault: true, run: (view) => indentLess(view) },
                     ...closeBracketsKeymap,
                     ...(autocomplete ? completionKeymap : []),
                     ...defaultKeymap,
                     ...searchKeymap,
                     ...historyKeymap,
                     ...foldKeymap,
-                    indentWithTab,
                 ]),
                 languages[languageOf(name)](),
                 placeholder ? placeholderExtension(placeholder) : [],
@@ -408,6 +474,7 @@ export default function codeEditorComponent({
                         file.content = update.state.doc.toString()
                     }
                     this.changed()
+                    this.scheduleLivePreview()
                 }),
             ]
         },
@@ -716,13 +783,35 @@ export default function codeEditorComponent({
                 return
             }
             clearTimeout(commitTimer)
+            // A save that is already running is not started again; the state is
+            // saved either way, so wait for this one to finish.
+            if (this.saving) {
+                return
+            }
+            this.saving = true
             this.saveState = 'saving'
             rejected = false
             try {
                 await wire.$commit()
                 this.saveState = rejected ? 'rejected' : 'saved'
             } catch {
+                // The request failed: keep the work and try again shortly, so a
+                // dropped connection does not lose what the student typed.
                 this.saveState = 'unsaved'
+                clearTimeout(retryTimer)
+                retryTimer = setTimeout(() => this.saveNow(), 2000)
+            } finally {
+                this.saving = false
+            }
+        },
+
+        /**
+         * Save when the student leaves the editor or the page, so the last
+         * words are never lost to a closed tab.
+         */
+        saveOnLeave() {
+            if (this.saveState === 'unsaved') {
+                this.saveNow()
             }
         },
 
@@ -747,15 +836,82 @@ export default function codeEditorComponent({
                 } else if (this.runner === 'php') {
                     await this.runPhpPage(files, request ?? { method: 'GET', url: `/${this.run.page ?? 'index.php'}` })
                 } else {
-                    const source = this.run.page ? files.find((file) => file.name === this.run.page).content : shellDocument(files)
-                    this.showPreview(source, files, this.run.page)
-                    this.run.status = this.run.page ? `Showing ${this.run.page}` : 'Running scripts and styles on an empty page.'
+                    this.renderWebPreview(files)
                 }
             } catch (error) {
                 this.run.status = ''
                 this.run.console.push({ level: 'error', text: error.message })
             } finally {
                 this.run.running = false
+            }
+        },
+
+        /**
+         * Show the web project in the preview frame. Used by Run and by the
+         * live preview, which calls it again as the student types.
+         */
+        renderWebPreview(files) {
+            const page = this.run.page
+            const source = page ? files.find((file) => file.name === page)?.content : null
+            this.showPreview(source ?? shellDocument(files), files, page)
+            this.run.status = page ? `Showing ${page}` : 'Running scripts and styles on an empty page.'
+        },
+
+        /**
+         * A tag the student left open swallows everything after it, so the
+         * script that follows shows up as plain text. Say so plainly, because
+         * the preview alone looks like the code simply did not run.
+         */
+        warnAboutUnclosedTag(html) {
+            const tag = unclosedTag(html)
+            if (! tag) {
+                return false
+            }
+            const message = `Your <${tag}> tag is not closed. Add a ">" after it, otherwise everything after it is treated as part of the tag and your code will not run.`
+            if (! this.run.console.some((line) => line.text === message)) {
+                this.run.console.push({ level: 'error', text: message })
+            }
+
+            return true
+        },
+
+        /**
+         * Refresh the preview while the student types.
+         *
+         * The web runner is quick. PHP runs in the browser too, so it follows
+         * as well once the runtime has started; SQL needs the server and is
+         * left to the Run button.
+         */
+        scheduleLivePreview() {
+            if (! this.livePreview || ! this.canRun || this.runner === 'sql' || this.run.running) {
+                return
+            }
+            clearTimeout(liveTimer)
+            liveTimer = setTimeout(() => this.refreshLivePreview(), LIVE_PREVIEW_DELAY)
+        },
+
+        async refreshLivePreview() {
+            if (! this.livePreview || this.run.running) {
+                return
+            }
+            const files = this.files.map(({ name, content }) => ({ name, content }))
+            if (! this.run.page) {
+                this.run.page = this.pages[0] ?? null
+            }
+            if (! this.run.page) {
+                return
+            }
+            this.run.visible = true
+            this.run.console = []
+            try {
+                if (this.runner === 'php') {
+                    await this.runPhpPage(files, { method: 'GET', url: `/${this.run.page}` })
+                } else {
+                    this.renderWebPreview(files)
+                }
+            } catch (error) {
+                this.run.status = ''
+                this.run.console.push({ level: 'error', text: error.message })
             }
         },
 
@@ -772,6 +928,7 @@ export default function codeEditorComponent({
                     this.run.page = target.path
                     continue
                 }
+                this.warnAboutUnclosedTag(response.body)
                 this.showPreview(response.body, files, request.url.slice(1).split('?')[0])
                 this.run.status = `${request.method} ${request.url.slice(1)} → ${response.status}`
 
@@ -780,9 +937,59 @@ export default function codeEditorComponent({
             this.run.console.push({ level: 'error', text: 'Too many redirects, or a redirect outside this project.' })
         },
 
+        /**
+         * The preview frame. It is created once and moved between the panel
+         * below the editor and the side-by-side host next to it, so switching
+         * the layout never reloads the page.
+         */
+        previewFrame() {
+            if (! this.$refs.preview) {
+                const frame = document.createElement('iframe')
+                frame.className = 'cq-preview'
+                frame.title = 'Program output'
+                frame.setAttribute('sandbox', 'allow-scripts allow-forms allow-modals')
+                this.$refs.preview = frame
+            }
+
+            return this.$refs.preview
+        },
+
+        /**
+         * Put the preview frame where it belongs for the current layout.
+         */
+        placePreview() {
+            const frame = this.previewFrame()
+            const host = this.sideBySide ? this.$refs.splitHost : this.$refs.panelHost
+            if (host && frame.parentElement !== host) {
+                host.appendChild(frame)
+            }
+            frame.classList.toggle('cq-preview-split', this.sideBySide)
+        },
+
+        /**
+         * Show the preview next to the code, or below it again.
+         */
+        toggleSideBySide() {
+            this.sideBySide = ! this.sideBySide
+            this.run.visible = true
+            this.$nextTick(() => this.placePreview())
+        },
+
+        /**
+         * Update the preview as the student types.
+         */
+        toggleLivePreview() {
+            this.livePreview = ! this.livePreview
+            if (this.livePreview) {
+                this.run.visible = true
+                this.refreshLivePreview()
+            }
+        },
+
         showPreview(source, files, pageName = null) {
             this.run.nonce = Math.random().toString(36).slice(2)
             this.run.hasPreview = true
+            this.placePreview()
             this.$refs.preview.srcdoc = buildDocument(source, files, this.run.nonce, pageName)
         },
 

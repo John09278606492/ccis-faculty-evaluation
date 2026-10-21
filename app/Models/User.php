@@ -229,7 +229,9 @@ class User extends Authenticatable implements FilamentUser, HasAvatar, HasTenant
      */
     public function isInstructor(): bool
     {
-        return $this->is_instructor;
+        // A user created in this request does not carry the column yet, so the
+        // cast can be null until it is read back from the database.
+        return (bool) $this->is_instructor;
     }
 
     /**

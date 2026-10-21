@@ -260,7 +260,7 @@ class QuizBuilder extends Page
                 'folders' => CodeProject::decodeFolders($this->selectedQuestionData['starter_files'] ?? null),
                 'allow_run' => (bool) ($this->selectedQuestionData['allow_run'] ?? true),
                 'allow_student_files' => (bool) ($this->selectedQuestionData['allow_student_files'] ?? true),
-                'autocomplete' => (bool) ($this->selectedQuestionData['autocomplete'] ?? false),
+                'autocomplete' => (bool) ($this->selectedQuestionData['autocomplete'] ?? true),
                 'database' => [
                     'enabled' => (bool) ($this->selectedQuestionData['database_enabled'] ?? false),
                     'starter_sql' => $this->decodeFiles($this->selectedQuestionData['database_starter'] ?? null)[0]['content'] ?? '',

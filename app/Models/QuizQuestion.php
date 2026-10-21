@@ -246,10 +246,12 @@ class QuizQuestion extends Model
 
     /**
      * Whether the editor offers code suggestions (autocomplete) for this question.
+     * On unless the instructor turned it off, so a student gets help writing
+     * their code without the instructor having to set anything up.
      */
     public function allowsAutocomplete(): bool
     {
-        return (bool) ($this->options['autocomplete'] ?? false);
+        return (bool) ($this->options['autocomplete'] ?? true);
     }
 
     /** Runners whose output automatic checking can compare (see resources/js/components/code-checker.js). */

@@ -43,6 +43,9 @@
     x-bind:class="{ 'cq-maximized': maximized }"
     x-bind:style="{ height: workspaceHeight, minHeight: @js($minHeight) }"
     x-on:keydown="shortcut($event)"
+    x-on:visibilitychange.window="document.visibilityState === 'hidden' && saveOnLeave()"
+    x-on:beforeunload.window="saveOnLeave()"
+    x-on:pagehide.window="saveOnLeave()"
     wire:ignore
 >
     <div class="cq-body">
@@ -129,6 +132,20 @@
                     </template>
                 </div>
                 <div class="cq-tabbar-actions">
+                    <button type="button" class="cq-toggle" x-show="canRun && runner !== 'sql'"
+                        x-on:click="toggleLivePreview()"
+                        x-bind:class="{ 'cq-toggle-on': livePreview }"
+                        x-bind:aria-pressed="livePreview ? 'true' : 'false'"
+                        title="Update the preview as you type">
+                        <span>Live</span>
+                    </button>
+                    <button type="button" class="cq-toggle" x-show="canRun && run.hasPreview"
+                        x-on:click="toggleSideBySide()"
+                        x-bind:class="{ 'cq-toggle-on': sideBySide }"
+                        x-bind:aria-pressed="sideBySide ? 'true' : 'false'"
+                        title="Show the preview next to the code">
+                        <span>Split</span>
+                    </button>
                     <button type="button" class="cq-run" x-show="canRun" x-on:click="runCode()" x-bind:disabled="run.running" title="Run (Ctrl+Enter)">
                         <span x-text="run.running ? 'Running…' : '▶ Run'"></span>
                     </button>
@@ -144,16 +161,27 @@
                 </template>
             </div>
 
-            <div class="cq-editor-area">
-                <div x-ref="editor" class="cq-cm" x-show="activeName"></div>
-                <div class="cq-empty" x-show="! activeName" x-cloak>
-                    <p>No file is open.</p>
-                    <p>Open one from the Explorer, or press <kbd>Ctrl</kbd>+<kbd>P</kbd>.</p>
+            <div class="cq-editor-area" :class="{ 'cq-editor-area-split': sideBySide }">
+                <div class="cq-editor-pane">
+                    <div x-ref="editor" class="cq-cm" x-show="activeName"></div>
+                    <div class="cq-empty" x-show="! activeName" x-cloak>
+                        <p>No file is open.</p>
+                        <p>Open one from the Explorer, or press <kbd>Ctrl</kbd>+<kbd>P</kbd>.</p>
+                    </div>
+                </div>
+
+                {{-- The preview, next to the code when it is split --}}
+                <div class="cq-split-preview" x-ref="splitHost" x-show="sideBySide" x-cloak>
+                    <ol class="cq-console cq-console-split" x-show="run.console.length" aria-label="Console output">
+                        <template x-for="(line, lineIndex) in run.console" :key="lineIndex">
+                            <li :class="'cq-console-' + line.level" x-text="line.text"></li>
+                        </template>
+                    </ol>
                 </div>
             </div>
 
             {{-- Output panel --}}
-            <div class="cq-panel" x-show="run.visible" x-cloak>
+            <div class="cq-panel" x-show="run.visible && ! sideBySide" x-cloak>
                 <div class="cq-panel-bar">
                     <span class="cq-panel-title">Output</span>
                     <select x-show="pages.length > 1" aria-label="Page to open" x-on:change="runCode($event.target.value)">
@@ -164,9 +192,7 @@
                     <span class="cq-status" x-text="run.status" role="status"></span>
                     <button type="button" x-on:click="run.visible = false" aria-label="Close output" title="Close panel">×</button>
                 </div>
-                <div class="cq-panel-body">
-                    <iframe x-ref="preview" x-show="run.hasPreview" class="cq-preview" title="Program output"
-                        sandbox="allow-scripts allow-forms allow-modals"></iframe>
+                <div class="cq-panel-body" x-ref="panelHost">
                     <template x-for="(table, tableIndex) in run.tables" :key="tableIndex">
                         <div class="cq-table-wrap">
                             <table class="cq-table">
