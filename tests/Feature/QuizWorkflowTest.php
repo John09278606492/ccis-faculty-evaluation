@@ -1,5 +1,6 @@
 <?php
 
+use App\Events\ClassroomChanged;
 use App\Filament\Pages\ClassRecords;
 use App\Filament\Pages\MyQuizzes;
 use App\Filament\Pages\QuizBuilder;
@@ -7,24 +8,29 @@ use App\Filament\Pages\TakeQuiz;
 use App\Filament\Resources\QuizResource\Pages\EditQuiz;
 use App\Filament\Resources\QuizResource\Pages\ListQuizzes;
 use App\Filament\Resources\QuizResource\RelationManagers\AttemptsRelationManager;
+use App\Filament\Resources\QuizResource\RelationManagers\QuestionsRelationManager;
 use App\Models\ClassRecordUpload;
 use App\Models\Quiz;
+use App\Models\QuizAnswer;
 use App\Models\QuizAttempt;
+use App\Models\QuizQuestion;
 use App\Models\User;
 use App\Services\ClassRecordSyncService;
-use App\Services\WorkbookPreviewService;
 use App\Services\StudentDatabase\MySqlStudentDatabases;
 use App\Services\StudentDatabase\StudentDatabases;
 use App\Services\StudentDatabase\StudentDbServer;
+use App\Services\WorkbookPreviewService;
 use App\Support\CodeProject;
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use Spatie\Permission\Models\Permission;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 function quizWorkflowFixture(): array
 {
@@ -521,18 +527,17 @@ it('warns about remote quiz edits without replacing unsaved form data or overwri
 
 it('pushes quiz changes only after commit and never broadcasts rolled-back changes', function () {
     extract(quizWorkflowFixture());
-    \Illuminate\Support\Facades\Event::fake([\App\Events\ClassroomChanged::class]);
+    Event::fake([ClassroomChanged::class]);
     DB::beginTransaction();
     $quiz->update(['title' => 'Committed title']);
-    \Illuminate\Support\Facades\Event::assertNotDispatched(\App\Events\ClassroomChanged::class);
+    Event::assertNotDispatched(ClassroomChanged::class);
     DB::commit();
-    \Illuminate\Support\Facades\Event::assertDispatched(\App\Events\ClassroomChanged::class, fn ($event) =>
-        $event->quizId === $quiz->id && $event->courseId === $offering->id && $event->kind === 'quiz');
-    \Illuminate\Support\Facades\Event::fake([\App\Events\ClassroomChanged::class]);
+    Event::assertDispatched(ClassroomChanged::class, fn ($event) => $event->quizId === $quiz->id && $event->courseId === $offering->id && $event->kind === 'quiz');
+    Event::fake([ClassroomChanged::class]);
     DB::beginTransaction();
     $quiz->update(['title' => 'Rolled back']);
     DB::rollBack();
-    \Illuminate\Support\Facades\Event::assertNotDispatched(\App\Events\ClassroomChanged::class);
+    Event::assertNotDispatched(ClassroomChanged::class);
     expect($quiz->refresh()->title)->toBe('Committed title');
 });
 
@@ -546,20 +551,20 @@ it('authorizes live channels by campus and environment without broadcasting priv
     $this->postJson('/broadcasting/auth', ['socket_id' => '123.456', 'channel_name' => 'private-production.campus.'.$offering->campus->id])->assertForbidden();
     $outsider = User::factory()->create();
     $this->actingAs($outsider)->postJson('/broadcasting/auth', ['socket_id' => '123.456', 'channel_name' => $channel])->assertForbidden();
-    $event = new \App\Events\ClassroomChanged($offering->campus->id, $offering->id, $quiz->id, 'attempt');
+    $event = new ClassroomChanged($offering->campus->id, $offering->id, $quiz->id, 'attempt');
     expect($event->broadcastWith())->toBe(['courseId' => $offering->id, 'quizId' => $quiz->id, 'kind' => 'attempt']);
 });
 
 it('pushes roster and individual assignment changes including removals', function () {
     extract(quizWorkflowFixture());
-    \Illuminate\Support\Facades\Event::fake([\App\Events\ClassroomChanged::class]);
+    Event::fake([ClassroomChanged::class]);
     $quiz->assignedStudents()->attach($student);
     $quiz->assignedStudents()->detach($student);
     $offering->students()->detach($student);
     $student->courseOfferings()->attach($offering);
-    \Illuminate\Support\Facades\Event::assertDispatchedTimes(\App\Events\ClassroomChanged::class, 4);
-    \Illuminate\Support\Facades\Event::assertDispatched(\App\Events\ClassroomChanged::class, fn ($event) => $event->kind === 'assignment' && $event->quizId === $quiz->id);
-    \Illuminate\Support\Facades\Event::assertDispatched(\App\Events\ClassroomChanged::class, fn ($event) => $event->kind === 'enrollment' && $event->courseId === $offering->id);
+    Event::assertDispatchedTimes(ClassroomChanged::class, 4);
+    Event::assertDispatched(ClassroomChanged::class, fn ($event) => $event->kind === 'assignment' && $event->quizId === $quiz->id);
+    Event::assertDispatched(ClassroomChanged::class, fn ($event) => $event->kind === 'enrollment' && $event->courseId === $offering->id);
 });
 
 it('builds a multi-file code question with starter files, a reference solution and a run setting', function () {
@@ -594,6 +599,7 @@ it('saves only the question files from a student answer and leaves it for manual
     extract(quizWorkflowFixture());
     $code = $quiz->questions()->create(['type' => 'code', 'question_text' => 'Build a page', 'points' => 5, 'order' => 2, 'options' => [
         'language' => 'web',
+        'allow_student_files' => false,
         'files' => [['name' => 'index.html', 'content' => '<h1>Start</h1>'], ['name' => 'style.css', 'content' => '']],
     ]]);
     $this->actingAs($student);
@@ -609,6 +615,75 @@ it('saves only the question files from a student answer and leaves it for manual
     $saved = $code->answerFiles($attempt->answers()->where('quiz_question_id', $code->id)->value('answer_text'));
     expect($attempt->status)->toBe('submitted')->and((float) $attempt->score)->toBe(10.0)
         ->and($saved)->toBe([['name' => 'index.html', 'content' => '<h1>Done</h1>'], ['name' => 'style.css', 'content' => '']]);
+});
+
+it('lets students create their own files and folders unless the instructor turns it off', function () {
+    extract(quizWorkflowFixture());
+    $code = $quiz->questions()->create(['type' => 'code', 'question_text' => 'Build a site', 'points' => 5, 'order' => 2, 'options' => [
+        'language' => 'web',
+        'files' => [['name' => 'index.html', 'content' => '<h1>Start</h1>']],
+    ]]);
+    expect($code->studentsCanManageFiles())->toBeTrue();
+    $this->actingAs($student);
+    $page = Livewire::test(TakeQuiz::class, ['quiz' => $quiz])->call('beginAttempt');
+    $page->set('answers.'.$code->id, json_encode(['files' => [
+        ['name' => 'index.html', 'content' => '<link rel="stylesheet" href="css/site.css">'],
+        ['name' => 'css/site.css', 'content' => 'h1 { color: red; }'],
+        ['name' => 'about.html', 'content' => '<p>About</p>'],
+    ], 'folders' => ['images']]))->assertHasNoErrors();
+    $saved = QuizAnswer::where('quiz_question_id', $code->id)->value('answer_text');
+    expect(array_column($code->answerFiles($saved), 'name'))->toBe(['index.html', 'css/site.css', 'about.html'])
+        ->and(CodeProject::decodeFolders($saved))->toBe(['images']);
+    $page->set('answers.'.$code->id, json_encode(['files' => [['name' => '../evil.php', 'content' => '']]]))
+        ->assertHasErrors('answers.'.$code->id)
+        ->assertSee('is not a valid file name')
+        ->assertDispatched('code-save-rejected', path: 'answers.'.$code->id);
+    expect(QuizAnswer::where('quiz_question_id', $code->id)->value('answer_text'))->toBe($saved);
+
+    expect((new QuizQuestion(['type' => 'code', 'options' => [...$code->options, 'allow_student_files' => false]]))->studentsCanManageFiles())->toBeFalse();
+});
+
+it('saves the code as the student types, before the attempt is submitted', function () {
+    extract(quizWorkflowFixture());
+    $code = $quiz->questions()->create(['type' => 'code', 'question_text' => 'Build a page', 'points' => 5, 'order' => 2, 'options' => [
+        'language' => 'web',
+        'files' => [['name' => 'index.html', 'content' => '<h1>Start</h1>']],
+    ]]);
+    $this->actingAs($student);
+    Livewire::test(TakeQuiz::class, ['quiz' => $quiz])->call('beginAttempt');
+
+    // The editor sends the project on every pause in typing, so the work is
+    // saved without the student having to submit or press Ctrl+S.
+    Livewire::test(TakeQuiz::class, ['quiz' => $quiz])
+        ->set('answers.'.$code->id, json_encode(['files' => [
+            ['name' => 'index.html', 'content' => '<h1>Half typed</h1>'],
+        ]]))
+        ->assertHasNoErrors();
+
+    $saved = QuizAnswer::where('quiz_question_id', $code->id)->value('answer_text');
+    expect($saved)->not->toBeNull()
+        ->and($code->answerFiles($saved))->toBe([['name' => 'index.html', 'content' => '<h1>Half typed</h1>']]);
+
+    // The attempt is still open: the work is saved, not submitted.
+    expect($quiz->attempts()->first()->status)->toBe('in_progress');
+});
+
+it('turns on student files for code questions saved before it was the default', function () {
+    extract(quizWorkflowFixture());
+    $code = $quiz->questions()->create(['type' => 'code', 'question_text' => 'Build a site', 'points' => 5, 'order' => 2, 'options' => [
+        'language' => 'web', 'allow_student_files' => false, 'files' => [['name' => 'index.html', 'content' => '']],
+    ]]);
+    (require database_path('migrations/2026_10_18_000006_let_students_create_files_in_code_questions.php'))->up();
+    expect($code->fresh()->studentsCanManageFiles())->toBeTrue()
+        ->and($code->fresh()->options['files'][0]['name'])->toBe('index.html');
+});
+
+it('turns on student files for new code questions in the builder', function () {
+    extract(quizWorkflowFixture());
+    $this->actingAs($instructor);
+    Livewire::test(QuizBuilder::class, ['record' => $quiz->id])->call('addQuestion', 'code')
+        ->assertSet('selectedQuestionData.allow_student_files', true);
+    expect($quiz->questions()->where('type', 'code')->firstOrFail()->studentsCanManageFiles())->toBeTrue();
 });
 
 it('loads single-file code questions and answers saved before file tabs', function () {
@@ -664,7 +739,7 @@ function fakeStudentDatabases(bool $available = true): object
             return $this->isAvailable;
         }
 
-        public function workspace(App\Models\QuizAnswer $answer): array
+        public function workspace(QuizAnswer $answer): array
         {
             $database = MySqlStudentDatabases::databaseName($answer);
             $answer->update(['database_name' => $database]);
@@ -673,7 +748,7 @@ function fakeStudentDatabases(bool $available = true): object
             return ['user' => "stu{$answer->attempt->user_id}", 'password' => 'secret', 'database' => $database];
         }
 
-        public function export(App\Models\QuizAnswer $answer): ?string
+        public function export(QuizAnswer $answer): ?string
         {
             return $answer->database_name ? "CREATE TABLE `{$answer->database_name}`;" : null;
         }
@@ -711,7 +786,7 @@ it('signs a student in to phpMyAdmin with their own database loaded from the sta
     $token = str($response->headers->get('Location'))->after('token=')->toString();
     $issued = json_decode(file_get_contents(app(StudentDbServer::class)->path("tokens/{$token}.json")), true);
     expect($issued['user'])->toBe("stu{$fixture['student']->id}")->and($issued['database'])->toBe($database)
-        ->and($issued['expires'])->toBeLessThanOrEqual(time() + 60);
+        ->and($issued['expires'])->toBeLessThanOrEqual(time() + StudentDbServer::SIGN_ON_LIFETIME);
 });
 
 it('keeps student databases private and closes them when the attempt ends', function () {
@@ -779,4 +854,194 @@ it('ignores live updates that reach a lazy table before it has loaded', function
     Livewire::test(AttemptsRelationManager::class, ['ownerRecord' => $quiz, 'pageClass' => EditQuiz::class])
         ->dispatch('classroom-push', kind: 'attempt', quizId: $quiz->id)
         ->assertOk()->assertSee('Submitted');
+});
+
+it('holds scores back from students until the assessment closes', function () {
+    extract(quizWorkflowFixture());
+    $quiz->update(['type' => 'exam', 'results_visibility' => 'after_close', 'available_until' => now()->addHour()]);
+    gradedAttempt($quiz, $student, score: 7);
+    $this->actingAs($student);
+
+    Livewire::test(TakeQuiz::class, ['quiz' => $quiz])
+        ->assertSet('reviewMode', true)
+        ->assertSee('Your instructor will release scores after')
+        ->assertDontSee('Final score');
+    Livewire::test(MyQuizzes::class)->assertSee('Submitted — score released later')->assertDontSee('7.00 / 10');
+
+    $this->travel(2)->hours();
+    Livewire::test(TakeQuiz::class, ['quiz' => $quiz->fresh()])->assertSee('Final score: 7.00 / 10');
+});
+
+it('shows held-back scores only after the instructor releases them', function () {
+    extract(quizWorkflowFixture());
+    $quiz->update(['results_visibility' => 'manual']);
+    gradedAttempt($quiz, $student, score: 7);
+
+    $this->actingAs($student);
+    Livewire::test(TakeQuiz::class, ['quiz' => $quiz])->assertDontSee('Final score');
+
+    $this->actingAs($instructor);
+    Livewire::test(ListQuizzes::class)->callTableAction('releaseResults', $quiz);
+    expect($quiz->fresh()->results_released_at)->not->toBeNull();
+
+    $this->actingAs($student);
+    Livewire::test(TakeQuiz::class, ['quiz' => $quiz->fresh()])->assertSee('Final score: 7.00 / 10');
+});
+
+it('logs leaving the exam page and alerts the instructor', function () {
+    extract(quizWorkflowFixture());
+    $quiz->update(['type' => 'exam']);
+    $this->actingAs($student);
+
+    $page = Livewire::test(TakeQuiz::class, ['quiz' => $quiz])->call('beginAttempt')
+        ->assertSee('Leaving this page, switching windows and pasting');
+    $page->call('recordFocusLost')->call('recordFocusLost');
+    $this->travel(30)->seconds();
+    $page->call('recordFocusReturned');
+
+    $attempt = $quiz->attempts()->first();
+    // The clock is frozen a moment after the leave was recorded, so the time
+    // away lands on 30 or 31 seconds depending on the sub-second boundary.
+    expect($attempt->focus_leaves)->toBe(1)
+        ->and($attempt->focus_away_seconds)->toBeGreaterThanOrEqual(30)
+        ->and($attempt->focus_away_seconds)->toBeLessThanOrEqual(31)
+        ->and($attempt->focus_log[0]['back_at'])->not->toBeNull()
+        ->and($instructor->notifications()->count())->toBe(1)
+        ->and($instructor->notifications()->first()->data['title'])->toContain('left the exam page');
+
+    $this->actingAs($instructor);
+    Livewire::test(AttemptsRelationManager::class, ['ownerRecord' => $quiz, 'pageClass' => EditQuiz::class])
+        ->assertSee('Left page')->assertSee('Once');
+});
+
+it('does not track leaving the page on quizzes', function () {
+    extract(quizWorkflowFixture());
+    $this->actingAs($student);
+
+    Livewire::test(TakeQuiz::class, ['quiz' => $quiz])->call('beginAttempt')
+        ->assertDontSee('Leaving this page, switching windows and pasting')
+        ->call('recordFocusLost');
+
+    expect($quiz->attempts()->first()->focus_leaves)->toBe(0)
+        ->and($instructor->notifications()->count())->toBe(0);
+});
+
+it('logs pasting from outside the exam and switching windows', function () {
+    extract(quizWorkflowFixture());
+    $quiz->update(['type' => 'exam']);
+    $this->actingAs($student);
+
+    $page = Livewire::test(TakeQuiz::class, ['quiz' => $quiz])->call('beginAttempt');
+    $page->call('recordPaste', 12)                // too short to be an answer
+        ->call('recordPaste', 640, 18)
+        ->call('recordFocusLost', 'window')
+        ->call('recordFocusReturned');
+
+    $attempt = $quiz->attempts()->first();
+    expect($attempt->pastes)->toBe(1)
+        ->and($attempt->pasted_chars)->toBe(640)
+        ->and($attempt->paste_log[0]['lines'])->toBe(18)
+        ->and($attempt->focus_log[0]['kind'])->toBe('window')
+        ->and($instructor->notifications()->pluck('data')->pluck('title')->all())
+        ->toContain("{$student->name} pasted text into the exam", "{$student->name} switched to another window");
+
+    $this->actingAs($instructor);
+    Livewire::test(AttemptsRelationManager::class, ['ownerRecord' => $quiz, 'pageClass' => EditQuiz::class])
+        ->assertSee('Pasted')->assertSee('640 characters');
+});
+
+it('fills in scores from automatic code checks but keeps scores set by hand', function () {
+    extract(quizWorkflowFixture());
+    $code = $quiz->questions()->create(['type' => 'code', 'question_text' => 'Print the total', 'points' => 10, 'order' => 2,
+        'options' => ['language' => 'php', 'files' => [['name' => 'index.php', 'content' => '']], 'checks' => ['enabled' => true, 'cases' => [['label' => 'Three items', 'input' => 'index.php?n=3'], ['label' => '', 'input' => '']]]],
+        'correct_answer' => ['files' => [['name' => 'index.php', 'content' => '<?php echo $_GET["n"] ?? 0;']]]]);
+    expect($code->refresh()->autoChecks())->toBeTrue()
+        ->and($code->checkConfig()['cases'])->toHaveCount(2)
+        ->and($code->checkConfig()['runner'])->toBe('php');
+    $essay = $quiz->questions()->create(['type' => 'essay', 'question_text' => 'Explain', 'points' => 5, 'order' => 3]);
+    $attempt = gradedAttempt($quiz, $student, status: 'submitted', score: 10);
+    $attempt->update(['max_score' => 20]);
+    $attempt->answers()->create(['quiz_question_id' => $question->id, 'answer_text' => 'echo', 'points_awarded' => 10, 'is_correct' => true]);
+    $answer = $attempt->answers()->create(['quiz_question_id' => $code->id, 'answer_text' => CodeProject::encode([['name' => 'index.php', 'content' => '<?= $_GET["n"] ?? 0 ?>']])]);
+    $this->actingAs($instructor);
+    $cases = fn (bool ...$passed) => array_map(fn (bool $pass) => ['label' => 'Test', 'passed' => $pass, 'expected' => '3', 'actual' => $pass ? '3' : '0'], $passed);
+    $manager = Livewire::test(AttemptsRelationManager::class, ['ownerRecord' => $quiz, 'pageClass' => EditQuiz::class]);
+
+    expect($manager->instance()->codeCheckFiles($answer->id)[0]['name'])->toBe('index.php');
+    expect($manager->instance()->recordAutoCheck($answer->id, $cases(true, false), apply: true))
+        ->toMatchArray(['passed' => 1, 'total' => 2, 'suggested' => 5.0, 'applied' => true]);
+    expect((float) $answer->refresh()->points_awarded)->toBe(5.0)
+        ->and($attempt->refresh()->status)->toBe('graded')
+        ->and((float) $attempt->score)->toBe(15.0);
+
+    // A later check replaces the score it set itself.
+    $manager->instance()->recordAutoCheck($answer->id, $cases(true, true), apply: true);
+    expect((float) $answer->refresh()->points_awarded)->toBe(10.0);
+
+    // A score given by hand is kept; the check result is still recorded.
+    $answer->update(['points_awarded' => 7]);
+    expect($manager->instance()->recordAutoCheck($answer->id, $cases(false, false), apply: true)['applied'])->toBeFalse();
+    expect((float) $answer->refresh()->points_awarded)->toBe(7.0)
+        ->and($answer->auto_check['passed'])->toBe(0);
+
+    // Checking from the grading form only records the result.
+    $answer->update(['points_awarded' => null]);
+    $manager->instance()->recordAutoCheck($answer->id, $cases(true, true));
+    expect($answer->refresh()->points_awarded)->toBeNull()->and($answer->auto_check['suggested'])->toEqual(10);
+
+    // Answers to questions without automatic checking are refused.
+    $other = $attempt->answers()->create(['quiz_question_id' => $essay->id, 'answer_text' => 'Because']);
+    expect(fn () => $manager->instance()->recordAutoCheck($other->id, $cases(true), apply: true))
+        ->toThrow(HttpException::class);
+});
+
+it('requires a reference solution and a runnable language for automatic checking', function () {
+    $question = new QuizQuestion(['type' => 'code', 'question_text' => 'Write it', 'points' => 5,
+        'options' => ['language' => 'php', 'files' => [['name' => 'index.php', 'content' => '']], 'checks' => ['enabled' => true]]]);
+    expect($question->validationIssues())->toContain('Add a reference solution to check answers automatically.');
+
+    $question->options = ['language' => 'python', 'files' => [['name' => 'main.py', 'content' => '']], 'checks' => ['enabled' => true]];
+    $question->correct_answer = ['files' => [['name' => 'main.py', 'content' => 'print(1)']]];
+    expect($question->validationIssues())->toContain('Automatic checking works for PHP, web page and SQL questions without a student database.')
+        ->and($question->autoChecks())->toBeFalse();
+});
+
+it('saves test cases for automatic checking from the question form', function () {
+    extract(quizWorkflowFixture());
+    $this->actingAs($instructor);
+    Livewire::test(QuestionsRelationManager::class, ['ownerRecord' => $quiz, 'pageClass' => EditQuiz::class])
+        ->callTableAction('create', data: [
+            'type' => 'code', 'question_text' => 'Print the total', 'points' => 10, 'code_language' => 'php',
+            'starter_files' => CodeProject::encode([['name' => 'index.php', 'content' => '<?php']]),
+            'reference_files' => CodeProject::encode([['name' => 'index.php', 'content' => '<?php echo 3 * 25;']]),
+            'auto_check' => true, 'check_ignore_case' => true,
+            'check_cases' => [['label' => 'Three', 'input' => 'index.php?n=3']],
+        ])
+        ->assertHasNoTableActionErrors();
+    $question = $quiz->questions()->where('type', 'code')->sole();
+    expect($question->autoChecks())->toBeTrue()
+        ->and($question->checkCases())->toBe([['label' => 'Three', 'input' => 'index.php?n=3']])
+        ->and($question->checkIgnoresCase())->toBeTrue();
+});
+
+it('keeps automatic checking settings when a code question is edited in the builder', function () {
+    extract(quizWorkflowFixture());
+    $code = $quiz->questions()->create(['type' => 'code', 'question_text' => 'Print the total', 'points' => 10, 'order' => 2,
+        'options' => ['language' => 'php', 'files' => [['name' => 'index.php', 'content' => '<?php']]],
+        'correct_answer' => ['files' => [['name' => 'index.php', 'content' => '<?php echo 75;']]]]);
+    $this->actingAs($instructor);
+    Livewire::test(QuizBuilder::class, ['record' => $quiz->id])->call('selectQuestion', $code->id)
+        ->assertSee('Check answers automatically')
+        ->set('selectedQuestionData.auto_check', true)
+        ->call('addCheckCase')->call('addCheckCase')
+        ->set('selectedQuestionData.check_cases.0.input', 'index.php?n=3')
+        ->set('selectedQuestionData.check_cases.1.label', 'Remove me')
+        ->call('removeCheckCase', 1)
+        ->assertSee('Add Test Case')
+        ->call('saveQuestionProperties')->assertHasNoErrors();
+    expect($code->refresh()->autoChecks())->toBeTrue()->and($code->checkCases())->toBe([['label' => '', 'input' => 'index.php?n=3']]);
+
+    Livewire::test(QuizBuilder::class, ['record' => $quiz->id])->call('selectQuestion', $code->id)
+        ->set('selectedQuestionData.question_text', 'Print the grand total')->call('saveQuestionProperties')->assertHasNoErrors();
+    expect($code->refresh()->autoChecks())->toBeTrue();
 });

@@ -21,6 +21,12 @@ use Symfony\Component\Process\Process;
  */
 class StudentDbServer
 {
+    /**
+     * How long a phpMyAdmin sign-on link stays usable, in seconds. Long enough
+     * for a student to open it, look around and reload the page.
+     */
+    public const SIGN_ON_LIFETIME = 300;
+
     public function path(string $relative = ''): string
     {
         $base = rtrim(config('classroom.student_db.path'), '\\/');
@@ -169,6 +175,8 @@ class StudentDbServer
             throw new RuntimeException("Port {$this->port()} is already in use. Is the student database server already running?");
         }
         $this->writeMyIni($this->mysqlBin());
+        $this->writeSignOn();
+        File::ensureDirectoryExists($this->path('tokens'));
         $processes = [$this->process([$this->mysqlBin().DIRECTORY_SEPARATOR.$this->exe('mysqld'), '--defaults-file='.$this->path('my.ini')])];
         if ($phpMyAdminPort) {
             $processes[] = $this->process([PHP_BINARY, ...$this->phpMyAdminServerArguments($phpMyAdminPort)]);
@@ -197,9 +205,12 @@ class StudentDbServer
     public function phpMyAdminServerArguments(int $port): array
     {
         return [
-            '-d', 'session.save_path='.$this->path('sessions'),
-            '-d', 'upload_max_filesize=64M',
-            '-d', 'post_max_size=64M',
+            // "-d" and its value travel as one argument: a separate value is cut
+            // short at the apostrophe in a project folder like "Val's PC", and
+            // the session files then land in a folder that does not exist.
+            '-d session.save_path="'.$this->path('sessions').'"',
+            '-d upload_max_filesize=64M',
+            '-d post_max_size=64M',
             '-S', "127.0.0.1:{$port}",
             '-t', $this->path('web'),
         ];
@@ -216,7 +227,11 @@ class StudentDbServer
     }
 
     /**
-     * Issue a one-time phpMyAdmin sign-on link, valid for one minute.
+     * Issue a phpMyAdmin sign-on link.
+     *
+     * The link stays usable for a few minutes so a student who reloads the page
+     * or opens it in a second tab still gets in; the app deletes expired tokens
+     * as it issues new ones.
      */
     public function signOnUrl(string $user, string $password, string $database): string
     {
@@ -232,7 +247,7 @@ class StudentDbServer
             'user' => $user,
             'password' => $password,
             'database' => $database,
-            'expires' => time() + 60,
+            'expires' => time() + self::SIGN_ON_LIFETIME,
         ]));
 
         return rtrim(config('classroom.student_db.phpmyadmin_url'), '/')."/signon.php?token={$token}";
@@ -308,6 +323,17 @@ class StudentDbServer
         throw new RuntimeException('MySQL did not start within 30 seconds.');
     }
 
+    /**
+     * The sign-on page that turns the app's links into phpMyAdmin sessions, and
+     * the page shown when a session is gone. Both are rewritten on every start,
+     * so a copy left by an older version cannot reject every link as expired.
+     */
+    protected function writeSignOn(): void
+    {
+        File::copy(resource_path('student-db/signon.php.stub'), $this->path('web/phpmyadmin/signon.php'));
+        File::copy(resource_path('student-db/signed-out.html'), $this->path('web/phpmyadmin/signed-out.html'));
+    }
+
     protected function installPhpMyAdmin(string $source): void
     {
         $target = $this->path('web/phpmyadmin');
@@ -329,9 +355,7 @@ class StudentDbServer
             '{{blowfish_secret}}' => bin2hex(random_bytes(16)),
             '{{port}}' => (string) $this->port(),
         ]));
-        file_put_contents("{$target}/signon.php", strtr(file_get_contents("{$stubs}/signon.php.stub"), [
-            '{{tokens_path}}' => var_export($this->path('tokens'), true),
-        ]));
+        $this->writeSignOn();
         File::copy("{$stubs}/signed-out.html", "{$target}/signed-out.html");
     }
 

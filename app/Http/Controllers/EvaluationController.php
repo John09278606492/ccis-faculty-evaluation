@@ -192,7 +192,7 @@ class EvaluationController extends Controller
         $commentsRequired = ($scoringConfig['field_comments'] ?? 'optional') === 'required';
 
         foreach ($fields as $field) {
-            $rules["fields.{$field->name}"] = $this->fieldRules($field);
+            $rules["fields.{$field->name}"] = $this->fieldRules($field, $form->rating_scale ?? []);
             if (in_array($field->type, ['multiselect', 'checkboxlist'], true)) {
                 $options = collect($field->options ?? [])->map(
                     static fn (mixed $option): mixed => is_array($option) ? ($option['value'] ?? null) : $option,
@@ -213,13 +213,15 @@ class EvaluationController extends Controller
         return $rules;
     }
 
-    private function fieldRules(FormField $field): array
+    private function fieldRules(FormField $field, array $ratingScale = []): array
     {
         $presence = $field->is_required ? 'required' : 'nullable';
         $options = collect($field->options ?? [])->map(
             static fn (mixed $option): mixed => is_array($option) ? ($option['value'] ?? null) : $option,
         )->filter(static fn (mixed $value): bool => $value !== null)->values()->all();
-        $scale = collect($field->form->rating_scale ?? [])->pluck('value')->all();
+        // The scale belongs to the form, which is already loaded: reading it from
+        // the field's relation would lazy-load it once per field.
+        $scale = collect($ratingScale)->pluck('value')->all();
 
         $rules = match ($field->type) {
             'text', 'textarea', 'tel' => [$presence, 'string', 'max:5000'],

@@ -10,6 +10,7 @@ use Filament\Actions\Imports\Models\Import;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Get;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 
 class UserImporter extends Importer
 {
@@ -128,8 +129,14 @@ class UserImporter extends Importer
 
         // Set common fields
         if (! $this->record->password) {
-            // Set a default password for new users (they should reset it)
-            $this->record->password = Hash::make('password123');
+            if ($profileType === 'student') {
+                // Students sign in with a PIN their instructor issues from the class list.
+                $this->record->password = Hash::make(Str::random(40));
+            } else {
+                // Shared starting password; the user must choose their own at first sign-in.
+                $this->record->password = Hash::make('password123');
+                $this->record->must_change_password = true;
+            }
         }
 
         // Set profile-specific fields

@@ -32,8 +32,9 @@ return new class extends Migration
 
         // Drop the old campus_id column
         Schema::table('forms', function (Blueprint $table) {
-            $table->dropIndex(['campus_id', 'is_active']);
+            // MySQL keeps this index for the foreign key, so drop the key first.
             $table->dropForeign(['campus_id']);
+            $table->dropIndex(['campus_id', 'is_active']);
             $table->dropColumn('campus_id');
         });
     }

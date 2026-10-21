@@ -44,12 +44,19 @@ class UserRegistrationChart extends ChartWidget
 
         // One grouped query instead of 3 count() queries per month (36 total) —
         // this chart renders on every Dashboard visit, so the saving compounds.
+        // The month expression differs per driver: MySQL has DATE_FORMAT and
+        // SQLite has strftime, so the same query works on either.
+        $month = match (DB::connection()->getDriverName()) {
+            'sqlite' => "strftime('%Y-%m', campus_user.created_at)",
+            default => "DATE_FORMAT(campus_user.created_at, '%Y-%m')",
+        };
+
         if ($tenant) {
             $rows = DB::table('campus_user')
                 ->join('users', 'users.id', '=', 'campus_user.user_id')
                 ->where('campus_user.campus_id', $tenant->id)
                 ->where('campus_user.created_at', '>=', $rangeStart)
-                ->selectRaw("DATE_FORMAT(campus_user.created_at, '%Y-%m') as ym,
+                ->selectRaw("{$month} as ym,
                     SUM(CASE WHEN users.is_student = 1 THEN 1 ELSE 0 END) as students,
                     SUM(CASE WHEN users.is_instructor = 1 THEN 1 ELSE 0 END) as instructors,
                     SUM(CASE WHEN users.is_student = 0 AND users.is_instructor = 0 THEN 1 ELSE 0 END) as others")
@@ -57,9 +64,13 @@ class UserRegistrationChart extends ChartWidget
                 ->get()
                 ->keyBy('ym');
         } else {
+            $userMonth = match (DB::connection()->getDriverName()) {
+                'sqlite' => "strftime('%Y-%m', created_at)",
+                default => "DATE_FORMAT(created_at, '%Y-%m')",
+            };
             $rows = User::query()
                 ->where('created_at', '>=', $rangeStart)
-                ->selectRaw("DATE_FORMAT(created_at, '%Y-%m') as ym,
+                ->selectRaw("{$userMonth} as ym,
                     SUM(CASE WHEN is_student = 1 THEN 1 ELSE 0 END) as students,
                     SUM(CASE WHEN is_instructor = 1 THEN 1 ELSE 0 END) as instructors,
                     SUM(CASE WHEN is_student = 0 AND is_instructor = 0 THEN 1 ELSE 0 END) as others")

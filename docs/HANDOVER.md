@@ -2,7 +2,7 @@
 
 Written 2026-10-16 for whoever continues this work in another worktree or environment.
 Project: **CCIS Faculty Evaluation** (Laravel 12, Filament 3.3, Livewire 3, PHP 8.3) at
-`C:\dev\laravel projects\ccis-faculty-evaluation`, GitHub `John09278606492/ccis-faculty-evaluation`, branch `main`.
+`D:\lenovo's drive c old files\dev\laravel projects\ccis-faculty-evaluation`, GitHub `John09278606492/ccis-faculty-evaluation`, branch `main`.
 
 The instructor runs the whole system from **one Windows laptop** shared to students over the classroom
 Wi-Fi/LAN (often with no internet). Every feature below is designed for that: nothing depends on a CDN
@@ -98,7 +98,7 @@ Internally everything is still named "quiz" (tables, models, classes). Only the 
 | `files` | Starter files: `[{"name": "css/style.css", "content": "..."}]`. Names are paths |
 | `folders` | Starter folders that contain no files yet |
 | `allow_run` | Students see the Run button (default true; only matters for web/PHP/SQL) |
-| `allow_student_files` | Students may add, rename and delete files and folders (default false) |
+| `allow_student_files` | Students may add, rename and delete files and folders (default true; new questions store true) |
 | `autocomplete` | Code suggestions in the student editor (default false) |
 | `database` | `{"enabled": bool, "starter_sql": "..."}`: each student gets their own MySQL database |
 | `starter_code` | **Legacy** single-file starter (questions from before file tabs); still read |
@@ -141,6 +141,11 @@ One row per student: `user_id`, `mysql_user` (`stu{userId}`), `password` (encryp
 - Code answers are **graded manually** (`QuizQuestion::MANUALLY_GRADED_TYPES`). Grading happens in the
   **Attempts & Submissions** tab (`AttemptsRelationManager.php`), which shows the student's files read-only
   with Run, the reference solution, and the database export with an "Open in phpMyAdmin" link.
+- **Automatic checking** (`options.checks` = `{"enabled", "cases": [{"label", "input"}], "ignore_case"}`):
+  `resources/js/components/code-checker.js` runs the reference solution and each answer on the test cases
+  in the grader's browser and compares outputs; `AttemptsRelationManager::recordAutoCheck()` stores the
+  result in `quiz_answers.auto_check` and fills in the suggested points unless they were set by hand.
+  Only PHP, web and SQL questions without a student database (`QuizQuestion::canAutoCheck()`).
 
 ### 4.2 VS Code-style workspace (the editor)
 
@@ -271,6 +276,14 @@ their own database, opened from the exam with **Open phpMyAdmin**. No passwords 
 
 ## 6. Gotchas on this machine (important)
 
+0. **The panel runs in SPA mode** (`->spa()` in `AdminPanelProvider`): panel links swap the page
+   with `wire:navigate` and the document stays loaded. Page scripts must not rely on
+   `DOMContentLoaded`/`alpine:init` having not fired yet, and document/window listeners must be
+   removed on `livewire:navigating` (see the exam script in `take-quiz.blade.php`). Non-panel pages
+   and exams are listed in `spaUrlExceptions` so they always load fresh.
+   `public/build` (Vite output) is committed so the classroom PC needs no Node.js: run
+   `npm run build` and commit it after changing anything in `resources/css` or `resources/js`.
+
 1. **CLI OPcache serves stale code.** `C:\php\php.ini` has `opcache.enable_cli=1` and
    `opcache.validate_timestamps=0`, so `php artisan …` can run old code after edits. Always use
    `php -d opcache.enable_cli=0 artisan …`, or fix php.ini (`validate_timestamps=1`).
@@ -296,6 +309,13 @@ their own database, opened from the exam with **Open phpMyAdmin**. No passwords 
 7. `@php-wasm/web` is GPL-2.0-or-later, which is fine for internal school use.
 8. Live updates log "Live update could not be delivered" whenever Reverb is not running; that is
    harmless.
+9. Live updates cover the whole panel: quiz/class-record changes go to the campus channel
+   (`ClassroomChanged`); evaluations, forms, setup data, users and posts go to `{env}.panel` or
+   `{env}.panel.staff` (`PanelDataChanged`, listeners in `AppServiceProvider`), and any table or
+   widget on screen reloads unless a modal is open or the viewer is typing. Bell notifications must
+   use `App\Notifications\BellNotification`: Filament's own is queued, and the classroom server runs
+   no queue worker, so those never appeared. `classroom:live-keys` fills empty Reverb keys in `.env`
+   (run by `classroom:install`, `test-locally.bat` and the desktop host).
 
 ---
 

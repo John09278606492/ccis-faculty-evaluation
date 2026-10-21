@@ -8,6 +8,7 @@ use Filament\Resources\Pages\EditRecord;
 use Illuminate\Contracts\View\View;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Locked;
+use Livewire\Attributes\On;
 
 class EditQuiz extends EditRecord
 {
@@ -29,10 +30,10 @@ class EditQuiz extends EditRecord
         return hash('sha256', json_encode($this->getRecord()->fresh()->except(['updated_at', 'class_record_synced_at', 'class_record_sync_error'])));
     }
 
-    #[\Livewire\Attributes\On('classroom-push')]
+    #[On('classroom-push')]
     public function checkRemoteChanges(string $kind = 'reconnected', ?int $quizId = null, ?int $courseId = null): void
     {
-        if (($quizId && $quizId !== $this->getRecord()->id) || ($courseId && $courseId !== $this->getRecord()->course_offering_id)) {
+        if (in_array($kind, ['focus', 'progress'], true) || ($quizId && $quizId !== $this->getRecord()->id) || ($courseId && $courseId !== $this->getRecord()->course_offering_id)) {
             $this->skipRender();
 
             return;
@@ -67,6 +68,7 @@ class EditQuiz extends EditRecord
             QuizResource::previewHeaderAction(),
             QuizResource::copyLinkHeaderAction(),
             QuizResource::syncClassRecordHeaderAction(),
+            QuizResource::releaseResultsHeaderAction(),
             Actions\DeleteAction::make(),
         ];
     }

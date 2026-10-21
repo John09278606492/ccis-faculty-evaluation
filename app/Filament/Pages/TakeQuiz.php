@@ -2,11 +2,15 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Resources\QuizResource;
 use App\Models\Quiz;
 use App\Models\QuizAnswer;
 use App\Models\QuizAttempt;
 use App\Models\QuizQuestion;
+use App\Notifications\BellNotification;
+use App\Services\ClassroomUpdates;
 use App\Services\StudentDatabase\StudentDatabases;
+use Filament\Notifications\Actions\Action as NotificationAction;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Support\Enums\MaxWidth;
@@ -17,6 +21,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Locked;
+use Livewire\Attributes\On;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Livewire\WithFileUploads;
 
@@ -44,6 +49,20 @@ class TakeQuiz extends Page
         return [
             'maxWidth' => $hasCode ? MaxWidth::SevenExtraLarge : MaxWidth::FourExtraLarge,
         ];
+    }
+
+    /**
+     * The PHP runtime (about 18 MB) to download in the background before the
+     * attempt starts, so the whole class is not fetching it when Run is first pressed.
+     */
+    public function phpRuntimeToPrefetch(): ?string
+    {
+        $runsPhp = $this->quiz->questions->contains(
+            fn (QuizQuestion $question) => $question->type === 'code' && $question->codeRunner() === 'php' && $question->studentsCanRunCode()
+        );
+        $runtime = $runsPhp ? (glob(public_path('code-runner/*/php_*.wasm')) ?: [null])[0] : null;
+
+        return $runtime ? asset(str_replace('\\', '/', substr($runtime, strlen(public_path()) + 1))) : null;
     }
 
     #[Locked]
@@ -122,10 +141,12 @@ class TakeQuiz extends Page
         $this->refreshLiveState();
     }
 
-    #[\Livewire\Attributes\On('classroom-push')]
+    #[On('classroom-push')]
     public function refreshLiveState(string $kind = 'reconnected', ?int $quizId = null, ?int $courseId = null): void
     {
-        if (($quizId && $quizId !== $this->quiz->id) || ($courseId && $courseId !== $this->quiz->course_offering_id)) {
+        // Classmates starting and submitting send 'attempt' updates; they change nothing on an attempt in progress.
+        $activeAttempt = $kind === 'attempt' && $this->attempt?->status === 'in_progress' && ! $this->reviewMode;
+        if (in_array($kind, ['focus', 'progress'], true) || $activeAttempt || ($quizId && $quizId !== $this->quiz->id) || ($courseId && $courseId !== $this->quiz->course_offering_id)) {
             $this->skipRender();
 
             return;
@@ -459,20 +480,30 @@ class TakeQuiz extends Page
             }
             $answerValue = is_null($value) ? null : (string) $value;
             if ($answerValue !== null && $question->type === 'code') {
-                $answerValue = $question->normalizeCodeAnswer($answerValue);
-                if ($answerValue === null) {
-                    $this->addError($name, 'Your code could not be saved: it may not exceed '.number_format(QuizQuestion::MAX_CODE_LENGTH).' characters in total.');
+                if (($issue = $question->codeAnswerIssue($answerValue)) !== null) {
+                    $this->addError($name, $issue);
+                    // The editor's status bar would otherwise still say "Saved".
+                    $this->dispatch('code-save-rejected', path: $name);
 
                     return;
                 }
+                $answerValue = $question->normalizeCodeAnswer($answerValue);
             } elseif ($answerValue !== null && mb_strlen($answerValue) > 10_000) {
                 $this->addError($name, 'Answers may not exceed 10,000 characters.');
 
                 return;
             }
-            QuizAnswer::where('quiz_attempt_id', $this->attempt->id)
-                ->where('quiz_question_id', $questionId)
-                ->update(['answer_text' => $answerValue]);
+            $answer = QuizAnswer::where('quiz_attempt_id', $this->attempt->id)
+                ->where('quiz_question_id', $questionId);
+            $wasAnswered = filled($answer->clone()->value('answer_text'));
+            $answer->update(['answer_text' => $answerValue]);
+            // Autosaves while typing need no new page: re-render only when the
+            // answered count changes, so a full classroom typing stays fast.
+            if ($wasAnswered === filled($answerValue)) {
+                $this->skipRender();
+            } else {
+                ClassroomUpdates::course($this->quiz->course_offering_id, 'progress', $this->quiz->id);
+            }
         }
         if (str_starts_with($name, 'files.') && $value) {
             $questionId = (int) Str::after($name, 'files.');
@@ -543,12 +574,91 @@ class TakeQuiz extends Page
         }
     }
 
+    /**
+     * Exams record when the student leaves the page during an attempt: a log and
+     * an alert to the instructor, nothing more.
+     */
+    public function isSupervised(): bool
+    {
+        return ! $this->previewMode
+            && ! $this->reviewMode
+            && $this->quiz->type === 'exam'
+            && $this->attempt?->status === 'in_progress'
+            && $this->attempt->user_id === Auth::id();
+    }
+
+    public function recordFocusLost(string $kind = 'tab'): void
+    {
+        $this->skipRender();
+        if (! $this->isSupervised() || $this->attempt->isExpired() || ! $this->attempt->recordFocusLost($kind)) {
+            return;
+        }
+        ClassroomUpdates::quiz($this->quiz->id, 'focus');
+        if (in_array($this->attempt->focus_leaves, QuizAttempt::FOCUS_ALERT_AT, true)) {
+            $times = $this->attempt->focus_leaves === 1 ? 'once' : "{$this->attempt->focus_leaves} times";
+            $this->alertInstructor(
+                $kind === 'window' ? 'switched to another window' : 'left the exam page',
+                "left {$times} so far.",
+                'heroicon-o-eye-slash',
+            );
+        }
+    }
+
+    public function recordPaste(int $chars, int $lines = 1): void
+    {
+        $this->skipRender();
+        if (! $this->isSupervised() || $this->attempt->isExpired() || $chars < QuizAttempt::PASTE_MIN_CHARS) {
+            return;
+        }
+        $this->attempt->recordPaste(min($chars, 1_000_000), max(1, min($lines, 100_000)));
+        ClassroomUpdates::quiz($this->quiz->id, 'focus');
+        if (in_array($this->attempt->pastes, QuizAttempt::FOCUS_ALERT_AT, true)) {
+            $this->alertInstructor(
+                'pasted text into the exam',
+                number_format($chars).' characters pasted from outside the exam ('.$this->attempt->pastes.' '.str('paste')->plural($this->attempt->pastes).' so far).',
+                'heroicon-o-clipboard-document',
+            );
+        }
+    }
+
+    public function recordFocusReturned(): void
+    {
+        $this->skipRender();
+        if ($this->attempt && $this->attempt->user_id === Auth::id() && $this->quiz->type === 'exam' && $this->attempt->recordFocusReturned()) {
+            ClassroomUpdates::quiz($this->quiz->id, 'focus');
+        }
+    }
+
+    protected function alertInstructor(string $what, string $detail, string $icon): void
+    {
+        $instructor = $this->quiz->courseOffering?->instructor;
+        if (! $instructor) {
+            return;
+        }
+        $student = Auth::user();
+
+        BellNotification::make()
+            ->title("{$student->name} {$what}")
+            ->body(($student->student_id ? "{$student->student_id}, " : '')."{$this->quiz->title}: {$detail}")
+            ->warning()
+            ->icon($icon)
+            ->actions([
+                NotificationAction::make('view')
+                    ->label('View attempts')
+                    ->url(QuizResource::getUrl('edit', ['record' => $this->quiz], panel: 'admin', tenant: $this->quiz->campus)),
+            ])
+            ->sendToDatabase($instructor);
+    }
+
     protected function finalizeAttempt(): void
     {
         if ($this->previewMode || ! $this->attempt || $this->attempt->status !== 'in_progress') {
             return;
         }
         $this->exportStudentDatabases();
+        if ($this->quiz->type === 'exam') {
+            $this->attempt->recordFocusReturned();
+        }
         DB::transaction(function (): void {
             $attempt = QuizAttempt::query()->lockForUpdate()->findOrFail($this->attempt->id);
             if ($attempt->status !== 'in_progress') {

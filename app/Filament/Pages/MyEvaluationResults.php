@@ -5,6 +5,7 @@ namespace App\Filament\Pages;
 use App\Filament\Pages\Widgets\MyEvaluationResultsStatsOverview;
 use App\Models\CourseOffering;
 use App\Models\FormSubmission;
+use App\Services\EvaluationResultsRelease;
 use BezhanSalleh\FilamentShield\Traits\HasPageShield;
 use Filament\Pages\Page;
 use Filament\Tables;
@@ -113,22 +114,17 @@ class MyEvaluationResults extends Page implements HasTable
                         };
                     }),
 
-                Tables\Columns\TextColumn::make('submitted_at')
-                    ->label('Submitted')
-                    ->dateTime('M j, Y g:i A')
-                    ->sortable(),
             ])
-            ->defaultSort('submitted_at', 'desc')
+            // No submission times and no submission order: either could point to a student.
+            ->defaultSort(fn (Builder $query) => $query->orderBy('course_offering_id')->orderBy('data'))
             ->filters([
                 Tables\Filters\SelectFilter::make('course_offering_id')
                     ->label('Course')
                     ->options(function () {
                         $user = Auth::user();
 
-                        return CourseOffering::where('user_id', $user->id)
-                            ->whereHas('formSubmissions')
-                            ->with('course')
-                            ->get()
+                        return EvaluationResultsRelease::ownOfferings($user)
+                            ->filter(fn (CourseOffering $co) => EvaluationResultsRelease::isReleased($co))
                             ->mapWithKeys(fn ($co) => [$co->id => "{$co->course?->code} - {$co->section}"]);
                     })
                     ->searchable()
@@ -151,19 +147,40 @@ class MyEvaluationResults extends Page implements HasTable
                     ->modalCancelActionLabel('Close'),
             ])
             ->emptyStateHeading('No Evaluations Yet')
-            ->emptyStateDescription('You have not received any evaluations yet.')
+            ->emptyStateDescription('Results appear here after an evaluation closes and enough students have responded.')
             ->emptyStateIcon('heroicon-o-clipboard-document-list');
     }
 
     /**
-     * Query only submissions for course offerings where the current user is the instructor.
+     * Course offerings whose results are not open to the instructor yet, with the reason.
+     *
+     * @return array<int, array{label: string, reason: string}>
+     */
+    public function getPendingOfferingsProperty(): array
+    {
+        return EvaluationResultsRelease::ownOfferings(Auth::user())
+            ->map(fn (CourseOffering $co) => [
+                'label' => trim(($co->course?->code ?? $co->evaluatee_label ?? 'Evaluation').' '.$co->section),
+                'reason' => EvaluationResultsRelease::pendingReason($co),
+            ])
+            ->filter(fn (array $row) => $row['reason'] !== null)
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Submissions for the current user's course offerings whose results have been released.
      */
     protected function getTableQuery(): Builder
     {
         $user = Auth::user();
 
+        $released = EvaluationResultsRelease::ownOfferings($user)
+            ->filter(fn (CourseOffering $co) => EvaluationResultsRelease::isReleased($co))
+            ->modelKeys();
+
         return FormSubmission::query()
-            ->whereHas('courseOffering', fn ($q) => $q->where('user_id', $user->id))
+            ->whereIn('course_offering_id', $released)
             ->with(['form', 'courseOffering.course', 'courseOffering.semester.schoolYear']);
     }
 

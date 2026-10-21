@@ -19,11 +19,13 @@ class QuizAnswer extends Model
         'feedback',
         'database_name',
         'database_export',
+        'auto_check',
     ];
 
     protected $casts = [
         'is_correct' => 'boolean',
         'points_awarded' => 'decimal:2',
+        'auto_check' => 'array',
     ];
 
     public function attempt(): BelongsTo

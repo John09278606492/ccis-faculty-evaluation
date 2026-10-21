@@ -3,9 +3,9 @@
 namespace App\Models;
 
 use App\Filament\Pages\TakeQuiz;
+use App\Notifications\BellNotification;
 use App\Services\AutoSyncClassRecord;
 use Filament\Notifications\Actions\Action;
-use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -78,6 +78,8 @@ class Quiz extends Model
         'shuffle_questions',
         'max_attempts',
         'passing_score',
+        'results_visibility',
+        'results_released_at',
         'is_published',
         'assign_to_all',
     ];
@@ -88,6 +90,7 @@ class Quiz extends Model
         'duration_minutes' => 'integer',
         'available_from' => 'datetime',
         'available_until' => 'datetime',
+        'results_released_at' => 'datetime',
         'notify_minutes_before' => 'integer',
         'notified_at' => 'datetime',
         'shuffle_questions' => 'boolean',
@@ -100,6 +103,34 @@ class Quiz extends Model
     /**
      * Available quiz types.
      */
+    /**
+     * When students see their scores. Holding them back stops early finishers from
+     * passing answers to classmates who are still taking the assessment.
+     */
+    public const RESULTS_VISIBILITY = [
+        'immediately' => 'Right after submitting',
+        'after_close' => 'After the assessment closes',
+        'manual' => 'When I release them',
+    ];
+
+    public function resultsVisibleToStudents(): bool
+    {
+        if ($this->results_released_at) {
+            return true;
+        }
+
+        return match ($this->results_visibility ?? 'immediately') {
+            'after_close' => $this->hasWindowClosed(),
+            'manual' => false,
+            default => true,
+        };
+    }
+
+    public function holdsResults(): bool
+    {
+        return ($this->results_visibility ?? 'immediately') !== 'immediately';
+    }
+
     public const TYPES = [
         'quiz' => 'Quiz',
         'exam' => 'Exam',
@@ -272,7 +303,7 @@ class Quiz extends Model
             ? $this->courseOffering->students
             : $this->assignedStudents;
         foreach ($students as $student) {
-            Notification::make()
+            BellNotification::make()
                 ->title("\"{$this->title}\" starts soon")
                 ->body("{$this->courseOffering->display_name} — opens at {$this->available_from->format('F j, Y g:i A')}.")
                 ->icon('heroicon-o-clock')

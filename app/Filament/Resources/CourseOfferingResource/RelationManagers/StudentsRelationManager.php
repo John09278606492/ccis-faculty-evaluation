@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\CourseOfferingResource\RelationManagers;
 
 use App\Models\User;
+use App\Services\StudentPins;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
@@ -10,6 +11,7 @@ use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -37,6 +39,28 @@ class StudentsRelationManager extends RelationManager
         'id_number',
         'idnumber',
     ];
+
+    /**
+     * Instructors manage their own class list and its sign-in PINs here without
+     * needing access to every user account.
+     */
+    public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
+    {
+        return static::managesClassList($ownerRecord) || parent::canViewForRecord($ownerRecord, $pageClass);
+    }
+
+    /**
+     * Issuing PINs replaces students' sign-in, so only the class's own instructor
+     * or someone who manages user accounts may do it.
+     */
+    protected static function managesClassList(Model $offering): bool
+    {
+        $user = auth()->user();
+
+        return $user !== null
+            && $user->can('update', $offering)
+            && ($offering->user_id === $user->id || $user->can('viewAny', User::class));
+    }
 
     public function form(Form $form): Form
     {
@@ -79,6 +103,12 @@ class StudentsRelationManager extends RelationManager
 
                 Tables\Columns\TextColumn::make('year_level')
                     ->badge(),
+
+                Tables\Columns\IconColumn::make('pin_issued_at')
+                    ->label('PIN')
+                    ->boolean()
+                    ->getStateUsing(fn (User $record) => filled($record->pin_issued_at))
+                    ->tooltip(fn (User $record) => $record->pin_issued_at ? 'PIN issued '.$record->pin_issued_at->diffForHumans() : 'No PIN yet: this student cannot sign in'),
 
                 Tables\Columns\TextColumn::make('pivot.enrolled_at')
                     ->label('Enrolled At')
@@ -169,8 +199,63 @@ class StudentsRelationManager extends RelationManager
                             ->helperText('Needs a column named "student_id" (or "id_number"). Any ID that doesn\'t match an existing student is skipped — the rest are still attached.'),
                     ])
                     ->action(fn (array $data) => $this->attachFromIdFile($data['file'])),
+
+                // Students sign in with ID number + PIN. PINs are hashed, so the class list
+                // with PINs can only be downloaded at the moment they are issued.
+                Tables\Actions\Action::make('signInPins')
+                    ->label('Sign-in PINs')
+                    ->icon('heroicon-o-key')
+                    ->color('gray')
+                    ->visible(fn () => static::managesClassList($this->ownerRecord))
+                    ->modalHeading('Issue sign-in PINs')
+                    ->modalDescription('Students sign in with their ID number and this PIN. You get a CSV of the new PINs to print or share; PINs cannot be shown again later.')
+                    ->modalSubmitActionLabel('Issue and download')
+                    ->form([
+                        Forms\Components\Radio::make('scope')
+                            ->label('Issue PINs for')
+                            ->options([
+                                'missing' => 'Students who have not been given a PIN yet',
+                                'all' => 'Every student in this class (replaces existing PINs)',
+                            ])
+                            ->default('missing')
+                            ->required(),
+                    ])
+                    ->action(function (array $data) {
+                        $students = $this->ownerRecord->students()
+                            ->where('is_student', true)
+                            ->when($data['scope'] === 'missing', fn ($q) => $q->whereNull('pin_issued_at'))
+                            ->get();
+
+                        if ($students->isEmpty()) {
+                            Notification::make()->title('Every student in this class already has a PIN')->info()->send();
+
+                            return null;
+                        }
+
+                        $issued = StudentPins::issue($students);
+                        $offering = $this->ownerRecord->loadMissing('course');
+
+                        return StudentPins::download($issued, str('pins-'.($offering->course?->code ?? 'class').'-'.$offering->section)->slug().'.csv');
+                    }),
             ])
             ->actions([
+                Tables\Actions\Action::make('resetPin')
+                    ->label('New PIN')
+                    ->icon('heroicon-o-key')
+                    ->color('gray')
+                    ->visible(fn (User $record) => $record->is_student && static::managesClassList($this->ownerRecord))
+                    ->requiresConfirmation()
+                    ->modalDescription(fn (User $record) => "Give {$record->full_name} a new PIN? Their old PIN stops working.")
+                    ->action(function (User $record) {
+                        $pin = StudentPins::issue(collect([$record]))->first()['pin'];
+
+                        Notification::make()
+                            ->title("New PIN for {$record->full_name}: {$pin}")
+                            ->body('Write it down now. It will not be shown again.')
+                            ->success()
+                            ->persistent()
+                            ->send();
+                    }),
                 Tables\Actions\DetachAction::make(),
             ])
             ->bulkActions([

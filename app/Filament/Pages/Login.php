@@ -10,6 +10,7 @@ use Filament\Forms\Components\TextInput;
 use Filament\Http\Responses\Auth\Contracts\LoginResponse;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Pages\Auth\Login as BaseLogin;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 
 class Login extends BaseLogin
@@ -17,9 +18,8 @@ class Login extends BaseLogin
     protected static string $view = 'filament.pages.login';
 
     /**
-     * Staff (non-student) sign-in needs a password; students don't. This just
-     * controls whether the password field is shown — the server-side check in
-     * authenticate() is authoritative regardless of this toggle.
+     * Switches the labels between student sign-in (ID number + PIN) and staff sign-in
+     * (email + password). Both need a secret; authenticate() checks it either way.
      */
     public bool $showPasswordField = false;
 
@@ -54,19 +54,13 @@ class Login extends BaseLogin
             ]);
         }
 
-        // Students sign in with just their ID number — no password required or checked.
-        if ($user && $user->isStudent()) {
-            Filament::auth()->login($user, $data['remember'] ?? false);
-        } else {
-            $credentials = [
-                'email' => $user?->email ?? $login,
-                'password' => $data['password'] ?? '',
-            ];
-
-            if (! Filament::auth()->attempt($credentials, $data['remember'] ?? false)) {
-                $this->throwFailureValidationException();
-            }
+        // Students use the PIN their instructor issued; staff use their password. Both are
+        // checked against the same hashed password column.
+        if (! $user || ! Hash::check($data['password'] ?? '', $user->password)) {
+            $this->throwFailureValidationException();
         }
+
+        Filament::auth()->login($user, $data['remember'] ?? false);
 
         $user = Filament::auth()->user();
 
@@ -106,9 +100,9 @@ class Login extends BaseLogin
                     ->schema([
                         $this->getLoginFormComponent(),
                         $this->getPasswordFormComponent()
-                            ->visible(fn () => $this->showPasswordField)
-                            ->required(fn () => $this->showPasswordField)
-                            ->dehydrated(true),
+                            ->label(fn () => $this->showPasswordField ? 'Password' : 'PIN')
+                            ->helperText(fn () => $this->showPasswordField ? null : 'The PIN your instructor gave you.')
+                            ->extraInputAttributes(fn () => $this->showPasswordField ? ['tabindex' => 2] : ['tabindex' => 2, 'inputmode' => 'numeric', 'autocomplete' => 'one-time-code']),
                         $this->getRememberFormComponent(),
                     ])
                     ->statePath('data'),

@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Concerns\ReceivesClassroomUpdates;
 use App\Models\Quiz;
 use App\Models\QuizAttempt;
 use BezhanSalleh\FilamentShield\Traits\HasPageShield;
@@ -19,7 +20,7 @@ class MyQuizzes extends Page implements HasTable
     // of just isStudent(), so access is actually controllable via permissions.
     use HasPageShield;
     use InteractsWithTable;
-    use \App\Filament\Concerns\ReceivesClassroomUpdates;
+    use ReceivesClassroomUpdates;
 
     protected static ?string $navigationIcon = 'heroicon-o-pencil-square';
 
@@ -63,6 +64,7 @@ class MyQuizzes extends Page implements HasTable
                     ->color(fn (string $state): string => match (true) {
                         str_starts_with($state, 'Final score') => 'success',
                         str_starts_with($state, 'Partial score') => 'info',
+                        str_starts_with($state, 'Submitted') => 'info',
                         str_starts_with($state, 'Starts') => 'warning',
                         $state === 'In Progress' => 'warning',
                         $state === 'Closed' => 'gray',
@@ -126,6 +128,10 @@ class MyQuizzes extends Page implements HasTable
             }
 
             return $quiz->isAvailable() ? 'Not Started' : 'Closed';
+        }
+
+        if ($attempt->status !== 'in_progress' && ! $quiz->resultsVisibleToStudents()) {
+            return 'Submitted — score released later';
         }
 
         return match ($attempt->status) {

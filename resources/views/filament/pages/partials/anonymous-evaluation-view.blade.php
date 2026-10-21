@@ -120,12 +120,6 @@
                     Overall: {{ $methodLabels[$overallMethod] ?? $overallMethod }}
                 </p>
             </div>
-            <div class="text-right">
-                <p class="text-xs text-gray-500 dark:text-gray-400">Submitted</p>
-                <p class="text-xs font-medium text-gray-700 dark:text-gray-300">
-                    {{ $submission->submitted_at?->format('M j, Y g:i A') }}
-                </p>
-            </div>
         </div>
 
         {{-- Overall Score Card --}}

@@ -2,12 +2,13 @@
 
 namespace App\Events;
 
+use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 
 class ClassroomChanged implements ShouldBroadcastNow
 {
-    use \Illuminate\Broadcasting\InteractsWithSockets;
+    use InteractsWithSockets;
 
     public function __construct(public int $campusId, public int $courseId, public ?int $quizId, public string $kind) {}
 

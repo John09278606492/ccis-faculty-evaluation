@@ -2,9 +2,10 @@
  * Builds the quiz code editor and its in-browser runners into local files so
  * code questions work on a classroom LAN without internet:
  *
- *  - resources/js/dist/components/code-editor.js  (Filament publishes it to public/js/app)
+ *  - resources/js/dist/components/code-editor.js and code-checker.js  (Filament publishes them to public/js/app)
  *  - public/code-runner/php-worker.js + 8_3_33/php_8_3.wasm  (PHP 8.3 as WebAssembly)
  *  - public/code-runner/sql/  (SQLite as WebAssembly)
+ *  - resources/js/dist/chart.js  (Chart.js for the report pages)
  *
  * Run with `npm run build:code-editor`, then `php artisan filament:assets`.
  */
@@ -22,6 +23,24 @@ await build({
     outfile: join(root, 'resources/js/dist/components/code-editor.js'),
     bundle: true,
     format: 'esm',
+    minify: true,
+    target: 'es2020',
+})
+
+await build({
+    entryPoints: [join(root, 'resources/js/components/code-checker.js')],
+    outfile: join(root, 'resources/js/dist/components/code-checker.js'),
+    bundle: true,
+    format: 'esm',
+    minify: true,
+    target: 'es2020',
+})
+
+await build({
+    entryPoints: [join(root, 'resources/js/components/chart-global.js')],
+    outfile: join(root, 'resources/js/dist/chart.js'),
+    bundle: true,
+    format: 'iife',
     minify: true,
     target: 'es2020',
 })

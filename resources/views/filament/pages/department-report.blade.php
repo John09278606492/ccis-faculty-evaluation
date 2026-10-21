@@ -23,9 +23,10 @@
                 <x-filament-tables::empty-state icon="heroicon-o-chart-pie" heading="No data"
                     description="No evaluation data available." />
             @else
-                <div x-data="{
+                <div x-load-js="[@js(\Filament\Support\Facades\FilamentAsset::getScriptSrc('chart-js'))]" x-data="{
                                 chart: null,
-                                init() {
+                                async init() {
+                                    while (! window.Chart) await new Promise((resolve) => setTimeout(resolve, 50));
                                     const ctx = this.$refs.distChart.getContext('2d');
                                     this.chart = new Chart(ctx, {
                                         type: 'doughnut',
@@ -71,9 +72,10 @@
                 <x-filament-tables::empty-state icon="heroicon-o-arrow-trending-up" heading="No trend data"
                     description="Not enough semester data to show trends." />
             @else
-                <div x-data="{
+                <div x-load-js="[@js(\Filament\Support\Facades\FilamentAsset::getScriptSrc('chart-js'))]" x-data="{
                                 chart: null,
-                                init() {
+                                async init() {
+                                    while (! window.Chart) await new Promise((resolve) => setTimeout(resolve, 50));
                                     const ctx = this.$refs.trendChart.getContext('2d');
                                     this.chart = new Chart(ctx, {
                                         type: 'line',

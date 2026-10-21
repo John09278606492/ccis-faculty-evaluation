@@ -1,0 +1,33 @@
+{
+  "_vendor-DDVNtie3.js": {
+    "file": "assets/js/vendor-DDVNtie3.js",
+    "name": "vendor"
+  },
+  "resources/css/app.css": {
+    "file": "assets/css/app-BBhDRey6.css",
+    "src": "resources/css/app.css",
+    "isEntry": true,
+    "name": "app",
+    "names": [
+      "app.css"
+    ]
+  },
+  "resources/css/filament/admin/theme.css": {
+    "file": "assets/css/theme-D60ipuQN.css",
+    "src": "resources/css/filament/admin/theme.css",
+    "isEntry": true,
+    "name": "theme",
+    "names": [
+      "theme.css"
+    ]
+  },
+  "resources/js/live-updates.js": {
+    "file": "assets/js/live-updates-BkzjvRJx.js",
+    "name": "live-updates",
+    "src": "resources/js/live-updates.js",
+    "isEntry": true,
+    "imports": [
+      "_vendor-DDVNtie3.js"
+    ]
+  }
+}

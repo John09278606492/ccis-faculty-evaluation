@@ -2,11 +2,13 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\AvatarProviders\InitialsAvatarProvider;
 use App\Filament\Exports\UserExporter;
 use App\Filament\Imports\UserImporter;
 use App\Filament\Resources\UserResource\Pages;
 use App\Models\Department;
 use App\Models\User;
+use App\Services\StudentPins;
 use Filament\Forms\Components\Section;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -15,6 +17,7 @@ use Filament\Forms\Form;
 use Filament\Infolists\Components\Section as InfolistSection;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Infolists\Infolist;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Support\Enums\FontWeight;
 use Filament\Tables;
@@ -225,7 +228,7 @@ class UserResource extends Resource
                         ->grow(false)
                         ->getStateUsing(fn ($record) => $record->avatar_url
                             ? $record->avatar_url
-                            : 'https://ui-avatars.com/api/?name='.urlencode($record->name)),
+                            : app(InitialsAvatarProvider::class)->get($record)),
                     Tables\Columns\Layout\Stack::make([
                         Tables\Columns\TextColumn::make('name')
                             ->searchable()
@@ -289,6 +292,22 @@ class UserResource extends Resource
             ->actions([
                 Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make(),
+                Action::make('newPin')
+                    ->label('New PIN')
+                    ->icon('heroicon-o-key')
+                    ->visible(fn (User $record) => $record->is_student && auth()->user()?->can('update', $record))
+                    ->requiresConfirmation()
+                    ->modalDescription(fn (User $record) => "Give {$record->full_name} a new sign-in PIN? Their old PIN stops working.")
+                    ->action(function (User $record) {
+                        $pin = StudentPins::issue(collect([$record]))->first()['pin'];
+
+                        Notification::make()
+                            ->title("New PIN for {$record->full_name}: {$pin}")
+                            ->body('Write it down now. It will not be shown again.')
+                            ->success()
+                            ->persistent()
+                            ->send();
+                    }),
                 Action::make('Set Role')
                     ->icon('heroicon-m-adjustments-vertical')
                     ->form([
