@@ -32,6 +32,8 @@ it('keeps the session path and its flag in one argument', function () {
 });
 
 it('keeps the full session path when php reads it', function () {
+    // A folder name with an apostrophe, like the one on val's external drive, on any machine.
+    config(['classroom.student_db.path' => sys_get_temp_dir().DIRECTORY_SEPARATOR."lenovo's drive".DIRECTORY_SEPARATOR.'student-db']);
     $flag = sessionPathFlag(app(StudentDbServer::class)->phpMyAdminServerArguments(8095));
 
     // A script file keeps the code free of quotes that the command line would mangle.
