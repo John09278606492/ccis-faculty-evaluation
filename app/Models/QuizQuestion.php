@@ -230,6 +230,22 @@ class QuizQuestion extends Model
         return (string) ($this->options['database']['starter_sql'] ?? '');
     }
 
+    /**
+     * Pictures of what a finished answer should look like, shown to students
+     * under the question. Each path is a file under public/.
+     *
+     * @return list<array{url: string, caption: string}>
+     */
+    public function expectedOutputImages(): array
+    {
+        return collect($this->options['expected_output'] ?? [])
+            ->filter(fn ($image) => is_array($image) && is_string($image['path'] ?? null)
+                && ! str_contains($image['path'], '..') && is_file(public_path($image['path'])))
+            ->map(fn (array $image) => ['url' => asset($image['path']), 'caption' => mb_substr((string) ($image['caption'] ?? ''), 0, 200)])
+            ->values()
+            ->all();
+    }
+
     public function codeRunner(): ?string
     {
         return CodeProject::runner($this->starterFiles());

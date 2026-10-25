@@ -271,6 +271,22 @@
                         </p>
                     </div>
 
+                    @if ($expectedOutput = $question->expectedOutputImages())
+                        <div class="mb-4 pl-9">
+                            <p class="mb-2 text-sm font-semibold">Expected output</p>
+                            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                @foreach ($expectedOutput as $image)
+                                    <figure class="rounded-lg border border-gray-200 bg-white p-2 dark:border-gray-700">
+                                        <img src="{{ $image['url'] }}" alt="{{ $image['caption'] }}" loading="lazy" class="mx-auto max-w-full" style="max-height: 22rem; object-fit: contain">
+                                        @if ($image['caption'] !== '')
+                                            <figcaption class="mt-2 text-xs text-gray-600">{{ $image['caption'] }}</figcaption>
+                                        @endif
+                                    </figure>
+                                @endforeach
+                            </div>
+                        </div>
+                    @endif
+
                     <div class="pl-9">
                         @if ($question->type === 'multiple_choice')
                             <div class="space-y-1.5">

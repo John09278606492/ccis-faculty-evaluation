@@ -64,3 +64,23 @@ it('adds a prepared exam to the class as an unpublished draft that can be publis
         ->assertFailed();
     expect(Quiz::count())->toBe(1);
 });
+
+it('shows expected-output pictures under a question', function () {
+    ['offering' => $offering] = evaluationFixture();
+    $this->artisan('classroom:import-assessment', ['file' => assessmentDefinitionFile(), '--offering' => $offering->id])->assertSuccessful();
+    $quiz = Quiz::sole();
+    @mkdir(public_path('exam-images/testing'), 0777, true);
+    file_put_contents(public_path('exam-images/testing/list.png'), 'png');
+    try {
+        $this->artisan('classroom:set-expected-output', ['quiz' => $quiz->id, 'question' => 2, 'images' => ['exam-images/testing/list.png::The book list', 'exam-images/testing/missing.png']])
+            ->expectsOutputToContain('was not found')->assertFailed();
+        $this->artisan('classroom:set-expected-output', ['quiz' => $quiz->id, 'question' => 2, 'images' => ['exam-images/testing/list.png::The book list']])
+            ->assertSuccessful();
+        $question = $quiz->questions()->where('order', 2)->first();
+        expect($question->expectedOutputImages())->toBe([['url' => asset('exam-images/testing/list.png'), 'caption' => 'The book list']])
+            ->and($question->hasDatabase())->toBeTrue();
+    } finally {
+        @unlink(public_path('exam-images/testing/list.png'));
+        @rmdir(public_path('exam-images/testing'));
+    }
+});
