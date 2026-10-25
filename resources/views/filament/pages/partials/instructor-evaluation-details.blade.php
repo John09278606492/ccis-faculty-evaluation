@@ -8,7 +8,8 @@
         {{-- Overall Summary --}}
         @php
             $allScores = collect($courseOfferings)->pluck('overall_score')->filter(fn($v) => $v > 0);
-            $grandAvg = $allScores->isNotEmpty() ? $allScores->avg() : 0;
+            $completeCount = collect($courseOfferings)->sum('submission_count');
+            $grandAvg = $completeCount ? collect($courseOfferings)->sum(fn($row) => ($row['overall_score'] ?? 0) * $row['submission_count']) / $completeCount : 0;
             $totalEvals = collect($courseOfferings)->sum('submission_count');
             $firstCo = $courseOfferings[0] ?? [];
             $ratingScale = $firstCo['rating_scale'] ?? [];
@@ -41,10 +42,12 @@
             ];
         @endphp
 
+        @if(collect($courseOfferings)->pluck('evaluation_type')->unique()->count() > 1)
+        <div class="rounded-lg border p-4 text-sm text-gray-600 dark:text-gray-300">Results include different evaluation types. Review each assignment below, or open Preview / Print Report for separate type summaries.</div>
+        @else
         <div class="rounded-lg p-5 text-center"
             style="background-color: {{ $grandColor }}10; border: 2px solid {{ $grandColor }}30;">
-            <p class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1">Grand Average
-                Score</p>
+            <p class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1">Complete-response Mean / 5</p>
             <p class="text-4xl font-bold" style="color: {{ $grandColor }}">
                 {{ number_format($grandAvg, 2) }}{{ $scoreSuffix }}
             </p>
@@ -55,6 +58,7 @@
         </div>
 
         {{-- Per-Course Results --}}
+        @endif
         <div class="space-y-3">
             <p class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Results by Course</p>
 
@@ -63,6 +67,7 @@
                     {{-- Course Header --}}
                     <div class="bg-gray-100 dark:bg-gray-800 px-4 py-3 flex items-center justify-between">
                         <div>
+                            <p class="text-xs font-semibold text-indigo-600">{{ $co['evaluation_type'] ?? 'Other / Unspecified' }}</p>
                             <span class="text-sm font-bold text-gray-900 dark:text-white">{{ $co['course_code'] }}</span>
                             <span class="text-xs text-gray-600 dark:text-gray-300 ml-2">{{ $co['course_name'] }}</span>
                             @if($co['section'] !== '—')
@@ -70,11 +75,11 @@
                             @endif
                         </div>
                         <div class="flex items-center gap-3">
-                            <span class="text-xs text-gray-400">{{ $co['submission_count'] }}
+                            <span class="text-xs text-gray-400">{{ $co['submission_count'] }} complete
                                 eval{{ $co['submission_count'] !== 1 ? 's' : '' }}</span>
                             <span class="text-sm font-bold px-2 py-0.5 rounded-full"
                                 style="background-color: {{ $co['rating_color'] }}20; color: {{ $co['rating_color'] }}">
-                                {{ number_format($co['overall_score'], 2) }}{{ $co['score_suffix'] }} ·
+                                {{ $co['overall_score'] !== null ? number_format($co['overall_score'], 2) . ' / 5 · ' . number_format($co['percentage'], 2) . ' / 100' : 'Pending' }} ·
                                 {{ $co['overall_rating'] }}
                             </span>
                         </div>
@@ -86,9 +91,7 @@
                         <span class="text-xs text-gray-500 dark:text-gray-400">{{ $co['semester'] }} ·
                             {{ $co['school_year'] }}</span>
                         <span class="text-xs text-gray-400 dark:text-gray-500">
-                            {{ $co['form_name'] }} ·
-                            Section: {{ $methodLabels[$co['section_method']] ?? $co['section_method'] }} ·
-                            Overall: {{ $methodLabels[$co['scoring_method']] ?? $co['scoring_method'] }}
+                            {{ $co['form_name'] }} · {{ $co['incomplete_count'] ?? 0 }} incomplete · Raw {{ number_format($co['raw_total'] ?? 0, 2) }} / {{ number_format($co['maximum'] ?? 0, 0) }}
                         </span>
                     </div>
 
@@ -161,6 +164,9 @@
                     @endforeach
 
                     {{-- Evaluator Comments Section --}}
+                    @if(!empty($co['tally']['questions']))
+                        @include('filament.pages.partials.evaluator-tally', ['tally' => $co['tally']])
+                    @endif
                     @php
                         $fieldComments = $co['field_comments'] ?? [];
                         $overallComments = $co['overall_comments'] ?? [];

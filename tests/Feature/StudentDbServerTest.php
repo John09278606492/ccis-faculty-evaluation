@@ -1,7 +1,45 @@
 <?php
 
+use App\Models\User;
+use App\Services\StudentDatabase\MySqlStudentDatabases;
 use App\Services\StudentDatabase\StudentDbServer;
 use Symfony\Component\Process\Process;
+
+it('reports a stopped student server to a web host without claiming an occupied port', function () {
+    $server = Mockery::mock(StudentDbServer::class);
+    $server->shouldReceive('isRunning')->once()->andReturn(false);
+    $server->shouldReceive('isInstalled')->once()->andReturn(true);
+    $server->shouldReceive('port')->once()->andReturn(19400);
+    $server->shouldReceive('phpMyAdminServerArguments')->with(0)->once()->andReturn([]);
+    app()->instance(StudentDbServer::class, $server);
+    $this->artisan('classroom:student-db host-config')->expectsOutputToContain('"running":false')->assertSuccessful();
+});
+
+it('refuses to reuse a student database port when its credentials cannot be verified', function () {
+    $server = Mockery::mock(StudentDbServer::class);
+    $server->shouldReceive('isRunning')->once()->andReturn(true);
+    $server->shouldReceive('connect')->once()->andThrow(new PDOException('Student database credential check failed'));
+    app()->instance(StudentDbServer::class, $server);
+    $this->artisan('classroom:student-db host-config')->expectsOutputToContain('Student database credential check failed')->assertFailed();
+});
+
+it('refreshes the phpmyadmin port after moving or reconfiguring a classroom', function () {
+    $folder = storage_path('framework/testing/pma-port-'.uniqid());
+    config(['classroom.student_db.path' => $folder, 'classroom.student_db.port' => 19382]);
+    $server = new class extends StudentDbServer
+    {
+        public function refreshForTest(): void
+        {
+            $this->writeSignOn();
+        }
+    };
+    $server->refreshForTest();
+    expect(file_get_contents($folder.'/web/phpmyadmin/config.inc.php'))->toContain("['port'] = '19382'");
+    config(['classroom.student_db.port' => 19482]);
+    $server->refreshForTest();
+    expect(file_get_contents($folder.'/web/phpmyadmin/config.inc.php'))->toContain("['port'] = '19482'")
+        ->not->toContain("['port'] = '19382'");
+});
 
 /**
  * The separate MySQL server that gives every student their own database.
@@ -20,6 +58,32 @@ function sessionPathFlag(array $arguments): ?string
 
     return null;
 }
+
+it('reconnects and finishes provisioning when mysql loses the account connection', function () {
+    $error = new PDOException('MySQL server has gone away');
+    $error->errorInfo = ['HY000', 2006, 'MySQL server has gone away'];
+    $lost = Mockery::mock(PDO::class);
+    $lost->shouldReceive('quote')->once()->andReturn("'password'");
+    $lost->shouldReceive('exec')->once()->andThrow($error);
+    $fresh = Mockery::mock(PDO::class);
+    $fresh->shouldReceive('exec')->times(2)->andReturn(0);
+    $server = Mockery::mock(StudentDbServer::class);
+    $server->shouldReceive('connect')->twice()->andReturn($lost, $fresh);
+
+    $account = (new MySqlStudentDatabases($server))->account(User::factory()->create());
+    expect($account->mysql_user)->toStartWith('stu');
+});
+
+it('does not retry a mysql permission error as a lost connection', function () {
+    $error = new PDOException('Permission denied');
+    $error->errorInfo = ['42000', 1044, 'Permission denied'];
+    $pdo = Mockery::mock(PDO::class);
+    $pdo->shouldReceive('quote')->once()->andReturn("'password'");
+    $pdo->shouldReceive('exec')->once()->andThrow($error);
+    $server = Mockery::mock(StudentDbServer::class);
+    $server->shouldReceive('connect')->once()->andReturn($pdo);
+    expect(fn () => (new MySqlStudentDatabases($server))->account(User::factory()->create()))->toThrow(PDOException::class);
+});
 
 it('keeps the session path and its flag in one argument', function () {
     $arguments = app(StudentDbServer::class)->phpMyAdminServerArguments(8095);

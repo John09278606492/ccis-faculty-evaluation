@@ -2,12 +2,18 @@
 
 namespace App\Providers;
 
+use App\Livewire\DatabaseNotifications;
+use App\Livewire\PanelChrome;
+use App\Livewire\WorkspaceContext;
+use App\Models\AcademicSection;
+use App\Models\BackgroundTask;
 use App\Models\Campus;
 use App\Models\ClassRecordSheet;
 use App\Models\Contact;
 use App\Models\Course;
 use App\Models\CourseOffering;
 use App\Models\Department;
+use App\Models\EvaluationCycle;
 use App\Models\Form;
 use App\Models\FormField;
 use App\Models\FormSubmission;
@@ -19,8 +25,13 @@ use App\Models\Rating;
 use App\Models\RatingCriteria;
 use App\Models\SchoolYear;
 use App\Models\Semester;
+use App\Models\StudentAcademicRecord;
+use App\Models\StudentSectionMembership;
+use App\Models\StudentSubjectEnrolment;
 use App\Models\User;
+use App\Services\AssignedDataAccess;
 use App\Services\ClassroomUpdates;
+use App\Services\DatabaseNotificationActions;
 use App\Services\StudentDatabase\MySqlStudentDatabases;
 use App\Services\StudentDatabase\StudentDatabases;
 use App\Services\StudentDatabase\StudentDbServer;
@@ -28,9 +39,15 @@ use Filament\Support\Assets\AlpineComponent;
 use Filament\Support\Assets\Js;
 use Filament\Support\Facades\FilamentAsset;
 use Filament\Tables\Columns\Column;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\Request;
+use Illuminate\Queue\Events\JobFailed;
+use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Jeffgreco13\FilamentBreezy\Livewire\PersonalInfo;
 use Jeffgreco13\FilamentBreezy\Livewire\TwoFactorAuthentication;
@@ -38,6 +55,8 @@ use Jeffgreco13\FilamentBreezy\Livewire\UpdatePassword;
 use Livewire\Livewire;
 use SocialiteProviders\Google\Provider;
 use SocialiteProviders\Manager\SocialiteWasCalled;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -56,11 +75,47 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        RateLimiter::for('evaluation-identify', function (Request $request) {
+            $identifier = mb_strtolower(trim((string) $request->input('student_id', '')));
+
+            return [
+                Limit::perMinute(20000)->by('evaluation-network:'.$request->ip()),
+                Limit::perMinute(10)->by('evaluation-id:'.hash('sha256', $identifier.'|'.$request->ip())),
+            ];
+        });
+        RateLimiter::for('evaluation-access', function (Request $request) {
+            $identity = $request->user()?->id ?? $request->session()->getId();
+
+            return Limit::perMinute(120)->by('evaluation-access:'.$identity);
+        });
+        $this->app->scoped(AssignedDataAccess::class);
+        foreach ([AcademicSection::class, Department::class, Course::class, SchoolYear::class, Semester::class, CourseOffering::class,
+            Form::class, FormField::class, RatingCriteria::class, FormSubmission::class, Rating::class, User::class, Quiz::class, QuizQuestion::class,
+            QuizAttempt::class, ClassRecordSheet::class, Post::class, Contact::class] as $model) {
+            $model::addGlobalScope('assigned_data', function (Builder $query) {
+                $scope = app(AssignedDataAccess::class);
+                $campus = filament()->getTenant();
+                $actor = $scope->actor;
+                if ($actor && ! $actor->isStudent() && $campus) {
+                    $scope->apply($query, $actor, $campus);
+                }
+            });
+        }
+
         // Prevent N+1 queries in development - helps identify slow loading issues
         Model::preventLazyLoading(! app()->isProduction());
 
         // Breezy registers the My Profile forms only while the panel boots, which happens after
         // Livewire looks them up on form requests, so every save or upload there failed with 419.
+        Livewire::component('workspace-context', WorkspaceContext::class);
+        Livewire::component('panel-chrome', PanelChrome::class);
+        Livewire::component('database-notifications', DatabaseNotifications::class);
+        // Native Filament import/export chunks run in long-lived workers too.
+        Event::listen(JobProcessed::class, function () {
+            ClassroomUpdates::sendPanel();
+            app(DatabaseNotificationActions::class)->flushAll();
+        });
+        Event::listen(JobFailed::class, fn () => ClassroomUpdates::sendPanel());
         Livewire::component('personal_info', PersonalInfo::class);
         Livewire::component('update_password', UpdatePassword::class);
         Livewire::component('two_factor_authentication', TwoFactorAuthentication::class);
@@ -95,6 +150,14 @@ class AppServiceProvider extends ServiceProvider
             SchoolYear::class => ['setup', false],
             Semester::class => ['setup', false],
             User::class => ['users', true],
+            EvaluationCycle::class => ['setup', false],
+            BackgroundTask::class => ['tasks', true],
+            StudentAcademicRecord::class => ['users', true],
+            StudentSectionMembership::class => ['users', true],
+            AcademicSection::class => ['users', true],
+            StudentSubjectEnrolment::class => ['users', true],
+            Role::class => ['access', true],
+            Permission::class => ['access', true],
             Post::class => ['posts', false],
             Contact::class => ['posts', true],
         ];

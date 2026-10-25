@@ -32,6 +32,7 @@ class QuizAttempt extends Model
         'expires_at',
         'submitted_at',
         'status',
+        'finalized_reason',
         'score',
         'max_score',
         'ip_address',
@@ -74,7 +75,7 @@ class QuizAttempt extends Model
 
     public function user(): BelongsTo
     {
-        return $this->belongsTo(User::class);
+        return $this->belongsTo(User::class)->withTrashed();
     }
 
     public function answers(): HasMany

@@ -22,6 +22,10 @@ class EvaluationResultsRelease
     {
         $offering->loadMissing(['evaluationForm', 'semester']);
         $form = $offering->evaluationForm;
+        $offering->loadMissing('evaluationCycle');
+        if ($offering->evaluationCycle && (in_array($offering->evaluationCycle->status, ['closed', 'archived'], true) || $offering->evaluationCycle->ends_at?->isPast())) {
+            return true;
+        }
 
         return ! $offering->is_active
             || ! $form
@@ -30,33 +34,52 @@ class EvaluationResultsRelease
             || ($offering->semester?->end_date && $offering->semester->end_date->endOfDay()->isPast());
     }
 
+    public static function completeResponses(CourseOffering $offering): int
+    {
+        $offering->loadMissing('evaluationForm.fields');
+        $submissions = $offering->relationLoaded('formSubmissions') ? $offering->formSubmissions : $offering->formSubmissions()->where('form_id', $offering->form_id)->get();
+
+        return app(EvaluationScoring::class)->assignment($offering, $submissions)['count'];
+    }
+
+    public static function minimumFor(CourseOffering $offering): int
+    {
+        $offering->loadMissing('evaluationForm');
+
+        return $offering->evaluationForm?->isSupervisorInstrument() ? 1 : self::minimumResponses();
+    }
+
     public static function isReleased(CourseOffering $offering, ?int $responses = null): bool
     {
-        $responses ??= $offering->form_submissions_count ?? $offering->formSubmissions()->count();
-
-        return self::isClosed($offering) && $responses >= self::minimumResponses();
+        // Callers' historical SQL counts may include old instruments or incomplete answers.
+        return self::isClosed($offering) && self::completeResponses($offering) >= self::minimumFor($offering);
     }
 
-    /**
-     * Only the person being evaluated waits for the release.
-     */
     public static function canSeeScores(?User $viewer, CourseOffering $offering): bool
     {
-        return $viewer && ($viewer->id !== $offering->user_id || self::isReleased($offering));
+        if (! $viewer || $viewer->isStudent()) {
+            return false;
+        }
+        $offering->loadMissing('semester.schoolYear.campus');
+        $campus = $offering->campus;
+        if (! $campus || ! $viewer->canAccessTenant($campus)) {
+            return false;
+        }
+        if ($viewer->id === $offering->user_id) {
+            return self::isReleased($offering);
+        }
+
+        return $viewer->can('page_EvaluationResults')
+            && app(AssignedDataAccess::class)->managesOffering($viewer, $offering);
     }
 
-    /**
-     * @return Collection<int, CourseOffering> the viewer's own course offerings that have responses, with
-     *                                         form_submissions_count loaded
-     */
     public static function ownOfferings(User $user): Collection
     {
-        return CourseOffering::query()
-            ->where('user_id', $user->id)
-            ->whereHas('formSubmissions')
-            ->with(['course', 'evaluationForm', 'semester'])
-            ->withCount('formSubmissions')
-            ->get();
+        return CourseOffering::where('user_id', $user->id)
+            ->when(filament()->getTenant(), fn ($q, $campus) => $q->whereHas('semester.schoolYear', fn ($q) => $q->where('campus_id', $campus->id)))
+            ->whereHas('formSubmissions', fn ($q) => $q->whereColumn('form_submissions.form_id', 'course_offerings.form_id'))
+            ->with(['course', 'evaluationForm.fields', 'semester', 'formSubmissions' => fn ($q) => $q->whereHas('courseOffering', fn ($q) => $q->whereColumn('course_offerings.form_id', 'form_submissions.form_id'))])
+            ->get()->each(fn ($offering) => $offering->setAttribute('form_submissions_count', self::completeResponses($offering)));
     }
 
     /**
@@ -64,8 +87,8 @@ class EvaluationResultsRelease
      */
     public static function pendingReason(CourseOffering $offering): ?string
     {
-        $responses = $offering->form_submissions_count ?? $offering->formSubmissions()->count();
-        $minimum = self::minimumResponses();
+        $responses = self::completeResponses($offering);
+        $minimum = self::minimumFor($offering);
 
         if (! self::isClosed($offering)) {
             return "{$responses} ".str('response')->plural($responses).' so far. Results open after the evaluation closes'

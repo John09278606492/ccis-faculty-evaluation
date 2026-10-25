@@ -6,6 +6,7 @@ use App\Filament\Concerns\ReceivesClassroomUpdates;
 use App\Models\QuizAnswer;
 use App\Models\QuizAttempt;
 use App\Models\QuizQuestion;
+use App\Services\BackgroundTasks;
 use Carbon\CarbonInterval;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -19,9 +20,8 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\HtmlString;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Renderless;
-use pxlrbt\FilamentExcel\Actions\Tables\ExportAction;
-use pxlrbt\FilamentExcel\Exports\ExcelExport;
 
 class AttemptsRelationManager extends RelationManager
 {
@@ -199,11 +199,9 @@ class AttemptsRelationManager extends RelationManager
                     ->modalCancelActionLabel('Close')
                     ->modalWidth('3xl'),
 
-                ExportAction::make('exportResults')
-                    ->label('Export results')->exports([
-                        ExcelExport::make()
-                            ->fromTable()->withFilename('quiz-'.$this->getOwnerRecord()->id.'-results-'.now()->format('Y-m-d')),
-                    ]),
+                Tables\Actions\Action::make('exportResults')->label('Export results CSV')->icon('heroicon-o-arrow-down-tray')
+                    ->action(fn () => app(BackgroundTasks::class)->enqueue(auth()->user(), filament()->getTenant(), 'assessment-export', 'Export assessment results',
+                        ['quiz_id' => $this->getOwnerRecord()->id, 'ids' => $this->getFilteredTableQuery()->pluck('quiz_attempts.id')->all()])),
             ])
             ->bulkActions([])
             ->defaultSort('started_at', 'desc');
@@ -281,8 +279,8 @@ class AttemptsRelationManager extends RelationManager
                     Forms\Components\Placeholder::make("database_{$answer->id}")
                         ->label('Student database (exported when submitted)')
                         ->content(fn () => match (true) {
-                            filled($answer->database_export) => $this->codeBlock([['name' => "{$answer->database_name}.sql", 'content' => $answer->database_export]], canRun: false),
-                            filled($answer->database_name) => 'Not exported: the student database server was not running at submission. Open the live database below.',
+                            $answer->hasVerifiedDatabaseSnapshot() => $this->codeBlock([['name' => "{$answer->database_name}.sql", 'content' => $answer->database_export]], canRun: false),
+                            filled($answer->database_name) => 'Snapshot '.($answer->database_snapshot_status ?? 'pending').': the workspace is retained and writes are closed. Retry the snapshot before final grading or cleanup. A live read-only view is not the submitted evidence.',
                             default => 'The student never opened their database.',
                         })
                         ->hintAction(
@@ -442,6 +440,9 @@ class AttemptsRelationManager extends RelationManager
         DB::transaction(function () use ($record, $data): void {
             foreach ($data['awards'] ?? [] as $answerId => $award) {
                 $answer = $record->answers()->whereKey($answerId)->whereHas('question', fn ($q) => $q->whereIn('type', QuizQuestion::MANUALLY_GRADED_TYPES))->firstOrFail();
+                if ($answer->database_name && ! $answer->hasVerifiedDatabaseSnapshot()) {
+                    throw ValidationException::withMessages(['awards' => 'Recover and verify the student database snapshot before assigning a final grade. The live workspace is retained.']);
+                }
                 validator($award, ['points' => ['required', 'numeric', 'min:0', 'max:'.$answer->question->points]])->validate();
                 $answer->update([
                     'points_awarded' => $award['points'],

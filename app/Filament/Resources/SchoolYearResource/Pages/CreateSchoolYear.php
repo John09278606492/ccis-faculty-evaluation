@@ -3,7 +3,7 @@
 namespace App\Filament\Resources\SchoolYearResource\Pages;
 
 use App\Filament\Resources\SchoolYearResource;
-use Filament\Resources\Pages\CreateRecord;
+use App\Filament\Pages\DraftCreateRecord as CreateRecord;
 
 class CreateSchoolYear extends CreateRecord
 {

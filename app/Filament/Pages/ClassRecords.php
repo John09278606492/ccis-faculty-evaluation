@@ -6,6 +6,7 @@ use App\Filament\Concerns\ReceivesClassroomUpdates;
 use App\Models\ClassRecordSheet;
 use App\Models\ClassRecordUpload;
 use App\Models\CourseOffering;
+use App\Services\BackgroundTasks;
 use App\Services\ClassRecordSyncService;
 use App\Services\WorkbookPreviewService;
 use BezhanSalleh\FilamentShield\Traits\HasPageShield;
@@ -18,10 +19,8 @@ use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\QueryException;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
-use PhpOffice\PhpSpreadsheet\IOFactory;
 
 class ClassRecords extends Page implements HasTable
 {
@@ -74,7 +73,7 @@ class ClassRecords extends Page implements HasTable
                     ->form([
                         Forms\Components\Select::make('period')->label('Grading period')->options(ClassRecordUpload::PERIODS)->required(),
                         Forms\Components\FileUpload::make('file')->label('Excel workbook')->required()->disk('local')
-                            ->directory('class-records')->storeFileNamesIn('original_filename')->maxSize(20480)
+                            ->storeFiles(false)->storeFileNamesIn('original_filename')->maxSize(20480)
                             ->helperText('XLSX or XLS, up to 20 MB. A separate copy is kept for every upload.')
                             ->acceptedFileTypes(['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel']),
                     ])->action(fn (array $data) => $this->handleUpload($data)),
@@ -199,30 +198,8 @@ class ClassRecords extends Page implements HasTable
 
     protected function handleUpload(array $data): void
     {
-        try {
-            $spreadsheet = IOFactory::load(Storage::disk('local')->path($data['file']));
-            try {
-                $names = array_values(array_filter($spreadsheet->getSheetNames(), fn ($name) => stripos($name, 'transmutation') === false));
-            } finally {
-                $spreadsheet->disconnectWorksheets();
-            }
-            if ($names === []) {
-                throw new \RuntimeException('No class worksheets were found in this workbook.');
-            }
-            DB::transaction(function () use ($data, $names) {
-                $upload = ClassRecordUpload::create([
-                    'period' => $data['period'], 'original_filename' => basename($data['original_filename'] ?? $data['file']),
-                    'file_path' => $data['file'], 'uploaded_by' => auth()->id(),
-                ]);
-                foreach ($names as $name) {
-                    $upload->sheets()->create(['sheet_name' => $name, 'period' => $data['period'], 'student_id_header' => '']);
-                }
-            });
-            Notification::make()->title(count($names).' worksheet(s) uploaded')->body('Choose Map sheet to connect each worksheet to its class.')->success()->send();
-        } catch (\Throwable $e) {
-            report($e);
-            Storage::disk('local')->delete($data['file']);
-            Notification::make()->title('Could not read that workbook')->body('Check that it is a valid, unencrypted XLSX or XLS workbook, then try again.')->danger()->send();
-        }
+        $file = is_array($data['file']) ? reset($data['file']) : $data['file'];
+        app(BackgroundTasks::class)->upload(auth()->user(), filament()->getTenant(), $file, 'workbook-upload', 'Process class record workbook',
+            ['period' => $data['period'], 'original_filename' => $file->getClientOriginalName()]);
     }
 }

@@ -10,6 +10,9 @@ return [
     */
     'path' => env('BACKUP_PATH') ?: storage_path('app/backups'),
 
+    // Keep this passphrase offline; it protects the original APP_KEY in recovery bundles.
+    'recovery_passphrase' => env('BACKUP_RECOVERY_PASSPHRASE'),
+
     'keep_days' => (int) env('BACKUP_KEEP_DAYS', 14),
 
     // mysqldump to use. Empty means: Laragon's newest MySQL, else mysqldump on PATH.

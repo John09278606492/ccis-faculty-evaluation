@@ -9,7 +9,7 @@ use App\Models\QuizAttempt;
 use App\Models\QuizQuestion;
 use App\Notifications\BellNotification;
 use App\Services\ClassroomUpdates;
-use App\Services\StudentDatabase\StudentDatabases;
+use App\Services\FinalizeAssessmentAttempt;
 use Filament\Notifications\Actions\Action as NotificationAction;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
@@ -313,6 +313,7 @@ class TakeQuiz extends Page
         $this->reviewMode = false;
         $this->answers = [];
         $this->loadAnswersIntoState();
+        $this->dispatch('close-modal', id: 'confirm-assessment-restart');
     }
 
     public function getTitle(): string
@@ -345,6 +346,7 @@ class TakeQuiz extends Page
     protected function mountPreview(Quiz $quiz): void
     {
         $this->previewMode = true;
+        $this->answers = $quiz->questions->mapWithKeys(fn ($question) => [$question->id => null])->all();
         $this->previewStartedAt = now()->toISOString();
         $this->previewExpiresAt = optional($this->computeExpiresAt($quiz, now()))->toISOString();
         $this->previewMaxScore = $quiz->questions()->sum('points');
@@ -496,7 +498,11 @@ class TakeQuiz extends Page
             $answer = QuizAnswer::where('quiz_attempt_id', $this->attempt->id)
                 ->where('quiz_question_id', $questionId);
             $wasAnswered = filled($answer->clone()->value('answer_text'));
-            $answer->update(['answer_text' => $answerValue]);
+            if (! $this->persistAnswer($question, ['answer_text' => $answerValue])) {
+                $this->dispatch('code-save-rejected', path: $name);
+
+                return;
+            }
             // Autosaves while typing need no new page: re-render only when the
             // answered count changes, so a full classroom typing stays fast.
             if ($wasAnswered === filled($answerValue)) {
@@ -528,14 +534,45 @@ class TakeQuiz extends Page
             if (! $answer) {
                 return;
             }
-            if ($answer->answer_text
-                && str_starts_with($answer->answer_text, "quiz-submissions/{$this->quiz->id}/")) {
+            $path = $value->store("quiz-submissions/{$this->quiz->id}", 'local');
+            if (! $this->persistAnswer($question, ['answer_text' => $path])) {
+                Storage::disk('local')->delete($path);
+
+                return;
+            }
+            if ($answer->answer_text && str_starts_with($answer->answer_text, "quiz-submissions/{$this->quiz->id}/")) {
                 Storage::disk('local')->delete($answer->answer_text);
             }
-            $path = $value->store("quiz-submissions/{$this->quiz->id}", 'local');
-            $answer->update(['answer_text' => $path]);
             $this->answers[$questionId] = $path;
             unset($this->files[$questionId]);
+        }
+    }
+
+    /** The same row lock as finalization prevents a stale autosave writing after closure. */
+    protected function persistAnswer(QuizQuestion $question, array $attributes): bool
+    {
+        return DB::transaction(function () use ($question, $attributes) {
+            $attempt = QuizAttempt::query()->lockForUpdate()->findOrFail($this->attempt->id);
+            abort_unless($attempt->user_id === auth()->id() && $attempt->quiz_id === $this->quiz->id, 403);
+            if ($attempt->status !== 'in_progress' || $attempt->isExpired()) {
+                return false;
+            }
+
+            return (bool) $attempt->answers()->where('quiz_question_id', $question->id)->update($attributes);
+        });
+    }
+
+    public bool $confirmingSubmission = false;
+
+    public function confirmSubmission(): void
+    {
+        if ($this->previewMode || $this->reviewMode || ! $this->attempt) {
+            return;
+        }
+        $this->checkExpiry();
+        $this->confirmingSubmission = $this->attempt->status === 'in_progress' && ! $this->getErrorBag()->isNotEmpty();
+        if ($this->confirmingSubmission) {
+            $this->dispatch('open-modal', id: 'confirm-assessment-submission');
         }
     }
 
@@ -551,27 +588,7 @@ class TakeQuiz extends Page
             return;
         }
         $this->finalizeAttempt();
-    }
-
-    /**
-     * Save a SQL export of each student database with its answer, so grading
-     * sees the database as it was at submission. A stopped student database
-     * server never blocks submitting; the instructor can still open it later.
-     */
-    protected function exportStudentDatabases(): void
-    {
-        $answers = $this->attempt->answers()->whereNotNull('database_name')->get();
-        if ($answers->isEmpty()) {
-            return;
-        }
-        $databases = app(StudentDatabases::class);
-        foreach ($answers as $answer) {
-            try {
-                $answer->update(['database_export' => $databases->export($answer)]);
-            } catch (\Throwable $error) {
-                report($error);
-            }
-        }
+        $this->confirmingSubmission = false;
     }
 
     /**
@@ -655,36 +672,10 @@ class TakeQuiz extends Page
         if ($this->previewMode || ! $this->attempt || $this->attempt->status !== 'in_progress') {
             return;
         }
-        $this->exportStudentDatabases();
-        if ($this->quiz->type === 'exam') {
-            $this->attempt->recordFocusReturned();
-        }
-        DB::transaction(function (): void {
-            $attempt = QuizAttempt::query()->lockForUpdate()->findOrFail($this->attempt->id);
-            if ($attempt->status !== 'in_progress') {
-                return;
-            }
-            $autoScore = 0;
-            foreach ($attempt->answers()->with('question')->get() as $answer) {
-                $question = $answer->question;
-                if (! $question->isAutoGraded()) {
-                    continue;
-                }
-                $isCorrect = $question->grade($answer->answer_text) ?? false;
-                $points = $isCorrect ? $question->points : 0;
-                $answer->update(['is_correct' => $isCorrect, 'points_awarded' => $points]);
-                $autoScore += $points;
-            }
-            $needsManualGrading = $attempt->answers()
-                ->whereHas('question', fn ($query) => $query->whereIn('type', QuizQuestion::MANUALLY_GRADED_TYPES))
-                ->exists();
-            $attempt->update([
-                'submitted_at' => now(),
-                'status' => $needsManualGrading ? 'submitted' : 'graded',
-                'score' => $autoScore,
-            ]);
-        });
+        app(FinalizeAssessmentAttempt::class)->handle($this->attempt);
         $this->reviewMode = true;
         $this->attempt->refresh();
+        $this->confirmingSubmission = false;
+        $this->dispatch('close-modal', id: 'confirm-assessment-submission');
     }
 }

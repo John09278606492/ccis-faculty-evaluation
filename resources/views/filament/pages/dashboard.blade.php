@@ -1,4 +1,14 @@
-<x-filament-panels::page class="fi-dashboard-page">
+<x-filament-panels::page data-live-panel class="fi-dashboard-page">
+    @php
+        $workspace = $this->getWorkspaceData();
+    @endphp
+    @include('filament.partials.workspace-guide')
+    <div class="grid gap-4 md:grid-cols-3">
+        @foreach($workspace['cards'] as $card)
+            <x-filament::section><div class="text-sm text-gray-500">{{ $card['label'] }}</div><div class="my-2 text-3xl font-semibold">{{ $card['value'] }}</div><div class="text-sm text-gray-500">{{ $card['hint'] }}</div></x-filament::section>
+        @endforeach
+    </div>
+    @foreach($workspace['warnings'] as $warning)<x-filament::section><p class="text-warning-700">{{ $warning }}</p></x-filament::section>@endforeach
     @if (method_exists($this, 'filtersForm'))
         {{ $this->filtersForm }}
     @endif
@@ -81,6 +91,7 @@
                 }, { offset: Number.NEGATIVE_INFINITY }).element;
             }
         }">
+        @if(count($this->getVisibleWidgets()) > 1)
         {{-- Reset Order Button --}}
         <div class="flex items-center justify-end gap-2 mb-3">
             <button type="button"
@@ -91,6 +102,7 @@
             </button>
         </div>
 
+        @endif
         {{-- Widget Grid --}}
         <div x-ref="widgetGrid" x-on:dragstart="startDrag($event)" x-on:dragend="endDrag()"
             x-on:dragover.prevent="overDrag($event)" x-on:drop.prevent="dropDrag($event)"

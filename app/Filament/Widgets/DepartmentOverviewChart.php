@@ -3,6 +3,9 @@
 namespace App\Filament\Widgets;
 
 use App\Models\Department;
+use App\Services\AcademicPeriod;
+use App\Services\AssignedDataAccess;
+use App\Services\ReportService;
 use BezhanSalleh\FilamentShield\Traits\HasWidgetShield;
 use Filament\Facades\Filament;
 use Filament\Widgets\ChartWidget;
@@ -13,7 +16,7 @@ class DepartmentOverviewChart extends ChartWidget
 
     protected static ?string $heading = 'Department Overview';
 
-    protected static ?string $description = 'Courses & evaluatees per department';
+    protected static ?string $description = 'Assigned courses and faculty in the selected semester';
 
     protected static ?int $sort = 6;
 
@@ -38,15 +41,22 @@ class DepartmentOverviewChart extends ChartWidget
     {
         $tenant = Filament::getTenant();
 
-        $query = $tenant
-            ? $tenant->departments()->where('is_active', true)
-            : Department::where('is_active', true);
+        $query = Department::where('is_active', true)->when($tenant, fn ($q) => $q->where('campus_id', $tenant->id));
 
+        if ($tenant) {
+            app(AssignedDataAccess::class)->apply($query, auth()->user(), $tenant);
+        }
         $departments = $query
-            ->withCount(['courses', 'instructors'])
             ->orderBy('name')
             ->limit(10)
             ->get();
+
+        foreach ($departments as $department) {
+            $context = ['campus_id' => $tenant?->id, 'department_id' => $department->id, 'semester_id' => $tenant ? AcademicPeriod::current($tenant) : null];
+            $offerings = app(ReportService::class)->offerings($context)->get(['user_id', 'course_id']);
+            $department->setAttribute('courses_count', $offerings->pluck('course_id')->filter()->unique()->count());
+            $department->setAttribute('instructors_count', $offerings->pluck('user_id')->unique()->count());
+        }
 
         return [
             'datasets' => [

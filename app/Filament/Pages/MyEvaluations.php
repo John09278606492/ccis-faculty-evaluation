@@ -32,7 +32,17 @@ class MyEvaluations extends Page implements HasTable
 
     protected static ?int $navigationSort = 1;
 
-    protected static ?string $navigationGroup = 'Student';
+    protected static ?string $navigationGroup = 'My Learning';
+
+    public static function shouldRegisterNavigation(): bool
+    {
+        return auth()->user()?->is_student && static::canAccess();
+    }
+
+    public function getSubheading(): ?string
+    {
+        return 'Complete the faculty evaluations assigned to you. Completed evaluations remain listed with their submission status.';
+    }
 
     protected function getHeaderWidgets(): array
     {

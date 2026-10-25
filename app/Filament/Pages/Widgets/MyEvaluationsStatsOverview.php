@@ -2,7 +2,8 @@
 
 namespace App\Filament\Pages\Widgets;
 
-use App\Models\FormSubmission;
+use App\Services\AcademicPeriod;
+use App\Services\StudentEvaluationProgress;
 use Filament\Widgets\StatsOverviewWidget as BaseWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
 use Illuminate\Support\Facades\Auth;
@@ -13,12 +14,10 @@ class MyEvaluationsStatsOverview extends BaseWidget
     {
         $user = Auth::user();
         $enrolledCount = $user->courseOfferings()->count();
-        $withFormCount = $user->courseOfferings()->whereNotNull('form_id')->count();
-        $completedCount = FormSubmission::where('user_id', $user->id)
-            ->whereIn('course_offering_id', $user->courseOfferings()->pluck('course_offerings.id'))
-            ->distinct('course_offering_id')
-            ->count('course_offering_id');
-        $pendingCount = max(0, $withFormCount - $completedCount);
+        $campus = filament()->getTenant();
+        $progress = $campus ? app(StudentEvaluationProgress::class)->summary($user, $campus, AcademicPeriod::current($campus)) : ['completed' => 0, 'open_pending' => 0];
+        $completedCount = $progress['completed'];
+        $pendingCount = $progress['open_pending'];
 
         return [
             Stat::make('Enrolled Courses', number_format($enrolledCount))

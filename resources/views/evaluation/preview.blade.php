@@ -27,7 +27,9 @@
         .eval-table { border-collapse: collapse; }
         .eval-table th, .eval-table td { border: 1px solid #e5e7eb; }
         .eval-col-uniform { width: var(--col-width); min-width: 120px; }
+        @media print { body{background:white!important;padding:0!important} .preview-toolbar{display:none!important} .shadow-md{box-shadow:none!important} table{font-size:10px} tr{break-inside:avoid} }
     </style>
+    @include('reports.print-page-margins')
 </head>
 
 <body class="bg-gray-100 min-h-screen py-8">
@@ -50,7 +52,7 @@
 
     <div class="max-w-5xl mx-auto px-4">
         <!-- Preview Banner -->
-        <div class="bg-amber-500 text-white rounded-lg shadow-md p-4 mb-6 flex items-center justify-between">
+        <div class="preview-toolbar bg-amber-500 text-white rounded-lg shadow-md p-4 mb-6 flex items-center justify-between">
             <div class="flex items-center gap-3">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -65,9 +67,7 @@
                         disabled.</p>
                 </div>
             </div>
-            <a href="javascript:void(0)" onclick="window.close(); return false;"
-                class="bg-white text-amber-600 font-semibold px-4 py-2 rounded-lg hover:bg-amber-50 transition text-sm">←
-                Close Preview</a>
+            <button type="button" onclick="window.print()" class="bg-white text-amber-600 font-semibold px-4 py-2 rounded-lg">Print / Save PDF</button>
         </div>
 
         <!-- Header -->
@@ -142,15 +142,15 @@
                 $likertCount = $sectionFields->whereIn('type', ['likert_scale', 'rating'])->count();
             @endphp
 
-            <div class="bg-white rounded-lg shadow-md mb-6 overflow-hidden">
+            <div class="bg-white rounded-lg shadow-md mb-6 overflow-hidden" data-rating-section>
                 <div class="bg-[#340167] text-white px-4 py-3">
-                    <h3 class="font-semibold">{{ $section ?: 'General Questions' }}</h3>
+                    <h3 data-rating-section-title class="font-semibold">{{ $section ?: 'General Questions' }}</h3>
                 </div>
 
                 @if($sectionHasLikert)
-                    <div class="overflow-x-auto">
+                    <div class="overflow-x-auto" data-rating-scroll tabindex="0" role="region" aria-label="Rating criteria table">
                         @php $colCount = count($form->field_columns ?? []); @endphp
-                        <table class="w-full eval-table" @if($colCount) style="--col-width: {{ floor(40 / $colCount) }}%" @endif>
+                        <table data-rating-guide class="w-full eval-table" @if($colCount) style="--col-width: {{ floor(40 / $colCount) }}%" @endif>
                             <thead>
                                 <tr class="bg-gray-50 border-b-2 border-gray-200">
                                     <th class="text-left py-3 px-4 font-semibold text-gray-700" @if(!$colCount) style="width:50%" @endif>Criteria</th>
@@ -175,7 +175,7 @@
                                     <tr class="border-b hover:bg-gray-50 {{ $loop->even ? 'bg-gray-50/50' : '' }}">
                                         <td class="py-3 px-4 text-gray-800">
                                             <span class="font-medium">{{ $globalFieldNumber }}.</span>
-                                            {{ $field->label }}
+                                            {{ $field->question_text }}
                                             @if($field->is_required)<span class="text-red-500">*</span>@endif
                                         </td>
                                         @foreach($form->field_columns ?? [] as $col)
@@ -265,9 +265,9 @@
             </button>
         </div>
 
-        <p class="text-center text-gray-400 text-sm mt-6">Your responses are anonymous and will be used to improve
-            teaching quality.</p>
+        <p class="text-center text-gray-400 text-sm mt-6">Your identity is hidden in reports by default. Authorized staff may retrieve an identified copy for institutional verification. Responses are used to improve teaching quality.</p>
     </div>
+    @include('evaluation.partials.sticky-rating-guide')
 </body>
 
 </html>

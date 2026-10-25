@@ -3,8 +3,10 @@
 namespace App\Filament\Resources\FormResource\Pages;
 
 use App\Filament\Resources\FormResource;
+use App\Models\Form;
+use App\Services\EvaluationTemplates;
 use Filament\Actions;
-use Filament\Resources\Pages\EditRecord;
+use App\Filament\Pages\DraftEditRecord as EditRecord;
 
 class EditForm extends EditRecord
 {
@@ -17,6 +19,8 @@ class EditForm extends EditRecord
      */
     protected function mutateFormDataBeforeSave(array $data): array
     {
+        $this->record->assertEditable();
+
         if (! array_key_exists('rating_scale', $data)) {
             $data['rating_scale'] = null;
         }
@@ -29,11 +33,31 @@ class EditForm extends EditRecord
         return $data;
     }
 
+    public function getSubheading(): ?string
+    {
+        return $this->record->isLocked() ? 'Published form — criteria and scoring are protected. Duplicate as a new version to make changes.' : 'Prepare the criteria groups and preview this form. Then select it in Evaluation Setup.';
+    }
+
+    protected function getFormActions(): array
+    {
+        return $this->record->isLocked() ? [] : parent::getFormActions();
+    }
+
     protected function getHeaderActions(): array
     {
         return [
+            Actions\Action::make('printInstrument')->label('Print Instrument')->icon('heroicon-o-printer')
+                ->modalHeading('Print Instrument')->modalWidth('7xl')->modalSubmitAction(false)->modalCancelActionLabel('Close')
+                ->modalContent(fn () => view('reports.preview-frame', ['url' => route('form.preview', ['form' => $this->record, 'print' => 1]), 'title' => 'Instrument print preview', 'hint' => 'Review the instrument and use Print / Save PDF inside the preview.'])),
+            Actions\Action::make('newVersion')->label('Duplicate as New Version')->icon('heroicon-o-document-duplicate')
+                ->visible(fn () => auth()->user()->can('create', Form::class))
+                ->action(function () {
+                    $copy = app(EvaluationTemplates::class)->duplicate($this->record, filament()->getTenant(), $this->record->name.' — Version '.(($this->record->version ?? 1) + 1));
+                    $this->redirect(FormResource::getUrl('edit', ['record' => $copy]));
+                }),
             Actions\Action::make('builder')
-                ->label('Build Form')
+                ->label('Edit Criteria Groups')
+                ->visible(fn () => ! $this->record->isLocked())
                 ->icon('heroicon-o-squares-plus')
                 ->color('primary')
                 ->url(fn () => route('filament.admin.pages.forms.{record}.builder', [
@@ -44,8 +68,8 @@ class EditForm extends EditRecord
                 ->label('Preview Form')
                 ->icon('heroicon-o-eye')
                 ->color('warning')
-                ->url(fn () => route('form.preview', $this->record))
-                ->openUrlInNewTab(),
+                ->modalHeading('Form Preview')->modalWidth('7xl')->modalSubmitAction(false)->modalCancelActionLabel('Close')
+                ->modalContent(fn () => view('reports.preview-frame', ['url' => route('form.preview', $this->record), 'title' => 'Evaluation form preview', 'hint' => 'Preview the evaluator form. Submissions are disabled.'])),
             Actions\DeleteAction::make(),
         ];
     }

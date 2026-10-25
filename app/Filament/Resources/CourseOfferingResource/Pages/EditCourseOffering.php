@@ -5,11 +5,26 @@ namespace App\Filament\Resources\CourseOfferingResource\Pages;
 use App\Filament\Resources\CourseOfferingResource;
 use App\Models\Course;
 use Filament\Actions;
-use Filament\Resources\Pages\EditRecord;
+use App\Filament\Pages\DraftEditRecord as EditRecord;
 
 class EditCourseOffering extends EditRecord
 {
     protected static string $resource = CourseOfferingResource::class;
+
+    public function hasCombinedRelationManagerTabsWithContent(): bool
+    {
+        return true;
+    }
+
+    public function getContentTabLabel(): ?string
+    {
+        return 'Assignment details';
+    }
+
+    public function getSubheading(): ?string
+    {
+        return 'Choose a form → confirm evaluation type → assign evaluators → review results. Student evaluations use ID entry; supervisors use their staff login.';
+    }
 
     /**
      * Populate the department_id helper field from the course relationship.
@@ -30,6 +45,9 @@ class EditCourseOffering extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
+            Actions\Action::make('studentAccess')->label('Evaluators')->icon('heroicon-o-user-group')
+                ->visible(fn () => auth()->user()->can('manageEvaluators', $this->getRecord()))
+                ->action(fn () => $this->activeRelationManager = '0'),
             Actions\DeleteAction::make(),
         ];
     }

@@ -15,10 +15,12 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 use Jeffgreco13\FilamentBreezy\Traits\TwoFactorAuthenticatable;
 use Laravel\Sanctum\HasApiTokens;
 use Spatie\Permission\Traits\HasRoles;
@@ -26,7 +28,7 @@ use Spatie\Permission\Traits\HasRoles;
 class User extends Authenticatable implements FilamentUser, HasAvatar, HasTenants
 {
     /** @use HasFactory<UserFactory> */
-    use HasApiTokens, HasFactory, HasRoles, NormalizesTextFields, Notifiable, TwoFactorAuthenticatable;
+    use HasApiTokens, HasFactory, HasRoles, NormalizesTextFields, Notifiable, SoftDeletes, TwoFactorAuthenticatable;
 
     /**
      * Boot the model.
@@ -35,6 +37,12 @@ class User extends Authenticatable implements FilamentUser, HasAvatar, HasTenant
     protected static function boot(): void
     {
         parent::boot();
+
+        static::forceDeleting(function (User $user) {
+            if ($user->isStudent()) {
+                throw ValidationException::withMessages(['student' => 'Student records must be retained to preserve evaluation history. Use Delete instead of permanent deletion.']);
+            }
+        });
 
         static::saving(function (User $user) {
             // Normalize text fields first
@@ -65,6 +73,9 @@ class User extends Authenticatable implements FilamentUser, HasAvatar, HasTenant
         // Student profile fields
         'student_id',
         'year_level',
+        'student_department_id',
+        'section',
+        'sections',
         'is_student',
         // Instructor profile fields
         'is_instructor',
@@ -98,6 +109,7 @@ class User extends Authenticatable implements FilamentUser, HasAvatar, HasTenant
             'must_change_password' => 'boolean',
             'password' => 'hashed',
             'is_student' => 'boolean',
+            'sections' => 'array',
             'is_instructor' => 'boolean',
             'widget_order' => 'array',
         ];
@@ -108,11 +120,21 @@ class User extends Authenticatable implements FilamentUser, HasAvatar, HasTenant
         return $this->avatar_url ? Storage::url($this->avatar_url) : null;
     }
 
+    public function academicRecords(): HasMany
+    {
+        return $this->hasMany(StudentAcademicRecord::class);
+    }
+
+    public function subjectEnrolments(): HasMany
+    {
+        return $this->hasMany(StudentSubjectEnrolment::class);
+    }
+
     public function canAccessPanel(Panel $panel): bool
     {
         // Only allow users with at least one assigned role to access the admin panel.
         // This prevents SSO-created users (who have no role) from accessing admin features.
-        return $this->roles()->exists();
+        return ! $this->trashed() && $this->roles()->exists();
     }
 
     /**
@@ -183,6 +205,16 @@ class User extends Authenticatable implements FilamentUser, HasAvatar, HasTenant
     /**
      * Get the course offerings this student is enrolled in.
      */
+    public function studentSectionMemberships(): HasMany
+    {
+        return $this->hasMany(StudentSectionMembership::class);
+    }
+
+    public function studentDepartment(): BelongsTo
+    {
+        return $this->belongsTo(Department::class, 'student_department_id');
+    }
+
     public function courseOfferings(): BelongsToMany
     {
         return $this->belongsToMany(CourseOffering::class, 'course_offering_student', 'user_id', 'course_offering_id')

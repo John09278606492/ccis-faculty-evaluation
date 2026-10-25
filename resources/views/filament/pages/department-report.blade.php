@@ -16,15 +16,16 @@
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
         {{-- Score Distribution --}}
         <x-filament::section>
-            <x-slot name="heading">Score Distribution</x-slot>
+            <x-slot name="heading">SET Score Distribution</x-slot>
             <x-slot name="description">Breakdown by rating category</x-slot>
 
             @if(array_sum($distributionChart['data']) === 0)
                 <x-filament-tables::empty-state icon="heroicon-o-chart-pie" heading="No data"
                     description="No evaluation data available." />
             @else
-                <div x-load-js="[@js(\Filament\Support\Facades\FilamentAsset::getScriptSrc('chart-js'))]" x-data="{
+                <div wire:key="distribution-{{ md5(json_encode($distributionChart)) }}" x-load-js="[@js(\Filament\Support\Facades\FilamentAsset::getScriptSrc('chart-js'))]" x-data="{
                                 chart: null,
+                                destroy() { this.chart?.destroy(); },
                                 async init() {
                                     while (! window.Chart) await new Promise((resolve) => setTimeout(resolve, 50));
                                     const ctx = this.$refs.distChart.getContext('2d');
@@ -65,15 +66,16 @@
 
         {{-- Semester Trend --}}
         <x-filament::section>
-            <x-slot name="heading">Semester Trend</x-slot>
-            <x-slot name="description">Average score across semesters</x-slot>
+            <x-slot name="heading">SET Semester Trend</x-slot>
+            <x-slot name="description">Student evaluation mean / 5 across semesters</x-slot>
 
             @if(empty($trendData['labels']))
                 <x-filament-tables::empty-state icon="heroicon-o-arrow-trending-up" heading="No trend data"
                     description="Not enough semester data to show trends." />
             @else
-                <div x-load-js="[@js(\Filament\Support\Facades\FilamentAsset::getScriptSrc('chart-js'))]" x-data="{
+                <div wire:key="trend-{{ md5(json_encode($trendData)) }}" x-load-js="[@js(\Filament\Support\Facades\FilamentAsset::getScriptSrc('chart-js'))]" x-data="{
                                 chart: null,
+                                destroy() { this.chart?.destroy(); },
                                 async init() {
                                     while (! window.Chart) await new Promise((resolve) => setTimeout(resolve, 50));
                                     const ctx = this.$refs.trendChart.getContext('2d');

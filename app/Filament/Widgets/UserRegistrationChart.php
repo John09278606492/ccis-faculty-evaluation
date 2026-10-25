@@ -52,7 +52,7 @@ class UserRegistrationChart extends ChartWidget
         };
 
         if ($tenant) {
-            $rows = DB::table('campus_user')
+            $rows = DB::table('campus_user')->whereIn('user_id', User::query()->select('users.id')->toBase())
                 ->join('users', 'users.id', '=', 'campus_user.user_id')
                 ->where('campus_user.campus_id', $tenant->id)
                 ->where('campus_user.created_at', '>=', $rangeStart)

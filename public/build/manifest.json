@@ -4,7 +4,7 @@
     "name": "vendor"
   },
   "resources/css/app.css": {
-    "file": "assets/css/app-BBhDRey6.css",
+    "file": "assets/css/app-CcJlwG3i.css",
     "src": "resources/css/app.css",
     "isEntry": true,
     "name": "app",
@@ -13,7 +13,7 @@
     ]
   },
   "resources/css/filament/admin/theme.css": {
-    "file": "assets/css/theme-D60ipuQN.css",
+    "file": "assets/css/theme-MOgJ_Pvj.css",
     "src": "resources/css/filament/admin/theme.css",
     "isEntry": true,
     "name": "theme",
@@ -21,13 +21,25 @@
       "theme.css"
     ]
   },
+  "resources/js/evaluation-entry-live.js": {
+    "file": "assets/js/evaluation-entry-live-D8nZSnHs.js",
+    "name": "evaluation-entry-live",
+    "src": "resources/js/evaluation-entry-live.js",
+    "isEntry": true
+  },
   "resources/js/live-updates.js": {
-    "file": "assets/js/live-updates-BkzjvRJx.js",
+    "file": "assets/js/live-updates-Bw_nPFb3.js",
     "name": "live-updates",
     "src": "resources/js/live-updates.js",
     "isEntry": true,
     "imports": [
       "_vendor-DDVNtie3.js"
     ]
+  },
+  "resources/js/workspace-drafts.js": {
+    "file": "assets/js/workspace-drafts-a0QE_9hZ.js",
+    "name": "workspace-drafts",
+    "src": "resources/js/workspace-drafts.js",
+    "isEntry": true
   }
 }

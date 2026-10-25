@@ -2,8 +2,11 @@
 
 namespace App\Console\Commands;
 
+use App\Models\QuizAnswer;
 use App\Models\User;
 use App\Notifications\BellNotification;
+use App\Services\BackupRecovery;
+use App\Services\StudentDatabase\StudentDatabases;
 use App\Services\StudentDatabase\StudentDbServer;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -20,6 +23,8 @@ class BackupCommand extends Command
 {
     protected $signature = 'classroom:backup
         {--if-due : Skip when today\'s backup already exists}';
+
+    private array $entries = [];
 
     protected $description = 'Back up the database and uploaded files to BACKUP_PATH and delete backups older than BACKUP_KEEP_DAYS';
 
@@ -43,14 +48,34 @@ class BackupCommand extends Command
             if ($zip->open($target.'.part', ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
                 throw new RuntimeException("Cannot write to {$folder}.");
             }
-            $zip->addFile($database, basename($database));
+            $this->entries = [];
+            $this->archiveFile($zip, $database, basename($database));
             foreach (['private', 'public'] as $disk) {
                 $this->addFolder($zip, storage_path("app/{$disk}"), "files/{$disk}", $folder);
             }
+            $workspaces = $this->addWorkspaces($zip, $work);
+            $key = (string) config('app.key');
+            $passphrase = config('backup.recovery_passphrase');
+            if (is_string($passphrase) && $passphrase !== '') {
+                $envelope = app(BackupRecovery::class)->protectKey($key, $passphrase);
+                $name = 'recovery/application-key.enc.json';
+                $zip->addFromString($name, $envelope);
+                $this->entries[$name] = ['sha256' => hash('sha256', $envelope), 'bytes' => strlen($envelope)];
+            } else {
+                $this->warn('Recovery passphrase not configured: this data backup requires the original APP_KEY kept separately. Configure BACKUP_RECOVERY_PASSPHRASE for a protected portable key envelope.');
+            }
+            $manifest = ['version' => 2, 'created_at' => now()->toIso8601String(), 'main_database' => basename($database),
+                'database_driver' => config('database.connections.'.config('database.default').'.driver'),
+                'application_cipher' => config('app.cipher'), 'application_key_fingerprint' => hash('sha256', $key), 'protected_key_included' => isset($envelope),
+                'workspaces' => $workspaces, 'entries' => $this->entries];
+            $zip->addFromString('manifest.json', json_encode($manifest, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
             if (! $zip->close()) {
                 throw new RuntimeException("Cannot finish the backup in {$folder}.");
             }
-            rename($target.'.part', $target);
+            app(BackupRecovery::class)->inspect($target.'.part');
+            if (! rename($target.'.part', $target)) {
+                throw new RuntimeException('The verified backup could not be finalized.');
+            }
         } catch (Throwable $e) {
             @unlink($target.'.part');
             $this->reportFailure($e->getMessage());
@@ -129,8 +154,49 @@ class BackupCommand extends Command
                 continue;
             }
             $relative = str_replace('\\', '/', substr($file->getPathname(), strlen($source) + 1));
-            $zip->addFile($path, $prefix.'/'.$relative);
+            $this->archiveFile($zip, $path, $prefix.'/'.$relative);
         }
+    }
+
+    private function archiveFile(ZipArchive $zip, string $path, string $name): void
+    {
+        $zip->addFile($path, $name);
+        $this->entries[$name] = ['sha256' => hash_file('sha256', $path), 'bytes' => filesize($path)];
+    }
+
+    private function addWorkspaces(ZipArchive $zip, string $work): array
+    {
+        $answers = QuizAnswer::whereNotNull('database_name')->with('attempt')->get();
+        $workspaces = [];
+        $databases = app(StudentDatabases::class);
+        foreach ($answers as $answer) {
+            $name = $answer->database_name;
+            if (! preg_match('/^stu\d+_[A-Za-z0-9_]+$/', $name)) {
+                throw new RuntimeException('Unexpected workspace name; backup was not completed.');
+            }
+            $captured = now()->toIso8601String();
+            if ($answer->attempt->status !== 'in_progress' && $answer->hasVerifiedDatabaseSnapshot()) {
+                $sql = $answer->database_export;
+                $source = 'verified_submission';
+            } else {
+                if (! $databases->available()) {
+                    throw new RuntimeException('A live SQL workspace has no recoverable snapshot. Start the student database service and retry the backup.');
+                }
+                $sql = $databases->export($answer);
+                $source = 'live_workspace';
+            }
+            if (! is_string($sql) || trim($sql) === '') {
+                throw new RuntimeException('An SQL workspace export was empty; the backup was not completed.');
+            }
+            $file = $work.'/'.$name.'.sql';
+            file_put_contents($file, $sql);
+            $entry = 'workspaces/'.$name.'.sql';
+            $this->archiveFile($zip, $file, $entry);
+            $workspaces[] = ['database' => $name, 'answer_id' => $answer->id, 'attempt_status' => $answer->attempt->status,
+                'entry' => $entry, 'source' => $source, 'captured_at' => $captured];
+        }
+
+        return $workspaces;
     }
 
     /**

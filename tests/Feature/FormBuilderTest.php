@@ -5,6 +5,7 @@ use App\Models\Campus;
 use App\Models\Form;
 use App\Models\FormField;
 use App\Models\User;
+use App\Services\EvaluationTemplates;
 use Filament\Facades\Filament;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Permission;
@@ -34,6 +35,54 @@ function formWithoutCustomScale($form): void
 {
     $form->update(['rating_scale' => null]);
 }
+
+it('preserves imported section groups when a question is edited and opens them as visible sections', function () {
+    ['offering' => $offering] = evaluationFixture();
+    $form = app(EvaluationTemplates::class)->create('A', $offering->campus);
+    Filament::setTenant($offering->campus, isQuiet: true);
+    $this->actingAs(formBuilderAdmin());
+    $first = $form->fields()->first();
+    $builder = Livewire::test(FormBuilder::class, ['record' => $form->id]);
+    expect($form->fields()->where('type', 'section_header')->count())->toBe(3);
+    $builder->call('selectField', $first->id)->set('selectedFieldData.label', 'Updated wording')->call('saveFieldProperties')->assertHasNoErrors();
+    expect($first->fresh()->name)->toBe('criterion_1')->and($first->fresh()->section)->toBe('A. Management of Teaching and Learning');
+    expect($form->fields()->where('type', 'likert_scale')->get()->groupBy('section')->map->count()->values()->all())->toBe([6, 5, 4]);
+    Livewire::test(FormBuilder::class, ['record' => $form->id]);
+    expect($form->fields()->where('type', 'section_header')->count())->toBe(3);
+});
+
+it('adds questions to the chosen section and moves complete sections together', function () {
+    ['offering' => $offering] = evaluationFixture();
+    $form = app(EvaluationTemplates::class)->create('A', $offering->campus);
+    Filament::setTenant($offering->campus, isQuiet: true);
+    $this->actingAs(formBuilderAdmin());
+    $builder = Livewire::test(FormBuilder::class, ['record' => $form->id]);
+    $headers = $form->fields()->where('type', 'section_header')->get();
+    $builder->call('addQuestionToSection', $headers[0]->id);
+    $new = $form->fields()->where('type', 'likert_scale')->orderByDesc('id')->first();
+    expect($new->section)->toBe($headers[0]->label);
+    $builder->set('selectedSectionId', $headers[2]->id)->call('saveFieldProperties')->assertHasNoErrors();
+    expect($new->fresh()->section)->toBe($headers[2]->label);
+    $builder->call('moveSection', $headers[2]->id, -1);
+    expect($form->fields()->where('type', 'section_header')->pluck('id')->all())->toBe([$headers[0]->id, $headers[2]->id, $headers[1]->id]);
+    expect($form->fields()->where('type', 'likert_scale')->where('section', $headers[2]->label)->count())->toBe(5);
+    $builder->call('deleteField', $headers[2]->id)->assertDispatched('notify');
+    expect($headers[2]->fresh())->not->toBeNull();
+});
+
+it('keeps scoring weights and section descriptions when renaming a section', function () {
+    ['offering' => $offering] = evaluationFixture();
+    $form = app(EvaluationTemplates::class)->create('A', $offering->campus);
+    Filament::setTenant($offering->campus, isQuiet: true);
+    $this->actingAs(formBuilderAdmin());
+    $builder = Livewire::test(FormBuilder::class, ['record' => $form->id]);
+    $header = $form->fields()->where('type', 'section_header')->first();
+    $form->update(['scoring_config' => ['section_weights' => [['section_name' => $header->label, 'weight' => 40]]]]);
+    $builder->call('selectField', $header->id)->set('selectedFieldData.label', 'Teaching and Learning')->call('saveFieldProperties')->assertHasNoErrors();
+    expect($form->fresh()->settings['section_descriptions']['Teaching and Learning'])->not->toBeEmpty()
+        ->and($form->fresh()->scoring_config['section_weights'][0]['section_name'])->toBe('Teaching and Learning');
+    expect($form->fields()->where('type', 'likert_scale')->where('section', 'Teaching and Learning')->count())->toBe(6);
+});
 
 it('refuses the form builder to a user without the permission', function () {
     ['offering' => $offering, 'form' => $form] = evaluationFixture();

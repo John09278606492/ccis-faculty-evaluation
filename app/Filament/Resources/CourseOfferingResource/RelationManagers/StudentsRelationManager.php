@@ -2,379 +2,319 @@
 
 namespace App\Filament\Resources\CourseOfferingResource\RelationManagers;
 
+use App\Filament\Resources\SectionResource;
+use App\Filament\Resources\TeachingClassResource\Pages\EditTeachingClass;
 use App\Models\User;
-use App\Services\StudentPins;
+use App\Services\AcademicStudents;
+use App\Services\FacultySupervisorEvaluators;
+use App\Services\StudentAcademicRecords;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
-use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
-use PhpOffice\PhpSpreadsheet\IOFactory;
+use Illuminate\Validation\ValidationException;
 
 class StudentsRelationManager extends RelationManager
 {
+    use \App\Filament\Concerns\HasEvaluatorSelectionDraft;
+
+    protected static string $view = 'filament.resources.evaluator-list';
     protected static string $relationship = 'students';
 
     protected static ?string $title = 'Evaluators';
 
-    // Use actual database column for record title
     protected static ?string $recordTitleAttribute = 'name';
 
-    /**
-     * Accepted header names for the ID-number column, same convention as
-     * StudentImporter so instructors can reuse the same class-list file here.
-     */
-    protected static array $validStudentIdColumns = [
-        'student_id',
-        'studentid',
-        'student id',
-        'stud_id',
-        'studid',
-        'id_number',
-        'idnumber',
-    ];
-
-    /**
-     * Instructors manage their own class list and its sign-in PINs here without
-     * needing access to every user account.
-     */
     public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
     {
-        return static::managesClassList($ownerRecord) || parent::canViewForRecord($ownerRecord, $pageClass);
+        $user = auth()->user();
+        $ownerRecord->loadMissing('semester.schoolYear.campus');
+        $campus = $ownerRecord->campus;
+
+        return $user && ! $user->is_student && $campus && $user->canAccessTenant($campus)
+            && (! filament()->getTenant() || filament()->getTenant()->getKey() === $campus->getKey())
+            && ($user->can('view', $ownerRecord) || static::managesClassList($ownerRecord));
     }
 
-    /**
-     * Issuing PINs replaces students' sign-in, so only the class's own instructor
-     * or someone who manages user accounts may do it.
-     */
     protected static function managesClassList(Model $offering): bool
     {
-        $user = auth()->user();
+        return auth()->user()?->can('manageEvaluators', $offering) ?? false;
+    }
 
-        return $user !== null
-            && $user->can('update', $offering)
-            && ($offering->user_id === $user->id || $user->can('viewAny', User::class));
+    protected function canAttach(): bool
+    {
+        return static::managesClassList($this->getOwnerRecord());
+    }
+
+    protected function canDetach(Model $record): bool
+    {
+        return $this->canAttach() && $this->getOwnerRecord()->students()->whereKey($record->getKey())->exists();
+    }
+
+    protected function canDetachAny(): bool
+    {
+        return $this->canAttach();
+    }
+
+    protected function authorizeRosterChange(array $ids = [], bool $detach = false): void
+    {
+        $offering = $this->getOwnerRecord()->fresh();
+        $this->authorize('manageEvaluators', $offering);
+        if ($ids === []) {
+            return;
+        }
+        $ids = array_values(array_unique($ids));
+        $eligible = $detach ? $offering->students() : User::where('is_student', true)
+            ->whereHas('campuses', fn ($query) => $query->where('campuses.id', $offering->campus->id));
+        abort_unless($eligible->whereIn('users.id', $ids)->count() === count($ids), 403, 'Only eligible evaluators in this campus may be assigned.');
     }
 
     public function form(Form $form): Form
     {
-        return $form
-            ->schema([
-                Forms\Components\Select::make('user_id')
-                    ->label('Evaluator')
-                    ->options(function () {
-                        $campusId = filament()->getTenant()?->id;
+        return $form->schema([
+            Forms\Components\Select::make('user_id')->label('Evaluator')
+                ->options(function () {
+                    $campusId = filament()->getTenant()?->id;
 
-                        return User::whereHas('campuses', fn ($q) => $q->where('campus_id', $campusId))
-                            ->where('is_student', true)
-                            ->get()
-                            ->mapWithKeys(fn ($u) => [$u->id => "{$u->student_id} - {$u->full_name}"]);
-                    })
-                    ->required()
-                    ->searchable(),
-            ]);
+                    return User::whereHas('campuses', fn ($q) => $q->where('campus_id', $campusId))
+                        ->where('is_student', true)->get()->mapWithKeys(fn ($u) => [$u->id => "{$u->student_id} - {$u->full_name}"]);
+                })->required()->searchable(),
+        ]);
     }
 
     public function table(Table $table): Table
     {
         return $table
+            ->description('Assign the sections taught by this faculty member for this subject and academic period. Upload student lists in Academic Management → Sections; use individual exceptions for irregular students.')
+            ->emptyStateHeading('No evaluators assigned yet')
+            ->emptyStateDescription(fn () => $this->getOwnerRecord()->evaluationForm?->isSupervisorInstrument()
+                ? 'Supervisor evaluators are explicitly selected on the faculty teaching class.'
+                : 'Upload students to a section, then use Assign Evaluators by Section.')
+            ->modifyQueryUsing(fn ($query) => $query->with(['studentDepartment', 'studentSectionMemberships' => fn ($q) => $q->where('semester_id', $this->getOwnerRecord()->semester_id)]))
             ->columns([
-                Tables\Columns\TextColumn::make('student_id')
-                    ->label('ID')
-                    ->sortable()
-                    ->searchable(),
+                Tables\Columns\TextColumn::make('student_id')->label('ID')->sortable()->searchable(),
+                Tables\Columns\TextColumn::make('name')->label('Name')->sortable()->searchable(),
+                Tables\Columns\TextColumn::make('email')->label('Email')->sortable()->searchable()->toggleable(),
+                Tables\Columns\TextColumn::make('studentDepartment.code')->label('Department')->badge(),
+                Tables\Columns\TextColumn::make('period_sections')->label('Sections (this period)')->state(fn (User $record) => $record->studentSectionMemberships->pluck('section')->all())->badge(),
+                Tables\Columns\TextColumn::make('pivot.enrolled_at')->label('Enrolled At')->dateTime()->sortable(),
+            ])->filters([])->headerActions([
+                $this->sectionAction(),
+                ...(is_a($this->getPageClass(), EditTeachingClass::class, true) ? [] : [Tables\Actions\ActionGroup::make([
+                    $this->masterListAction(),
+                    Tables\Actions\AttachAction::make()
+                        ->before(fn (array $data) => $this->authorizeRosterChange((array) ($data['recordId'] ?? [])))
+                        ->preloadRecordSelect()->recordSelectOptionsQuery(function () {
+                            $campusId = filament()->getTenant()?->id;
 
-                Tables\Columns\TextColumn::make('name')
-                    ->label('Name')
-                    ->sortable()
-                    ->searchable(),
+                            return User::whereHas('campuses', fn ($q) => $q->where('campus_id', $campusId))->where('is_student', true);
+                        })->recordTitle(fn (User $record) => "{$record->student_id} - {$record->full_name}")
+                        ->recordSelectSearchColumns(['student_id', 'name', 'email', 'first_name', 'last_name']),
+                    Tables\Actions\Action::make('bulkAttach')->authorize(fn () => $this->canAttach())
+                        ->label('Bulk Add Evaluators')->icon('heroicon-o-users')->color('success')->form([
+                            Forms\Components\Select::make('student_ids')->label('Select Evaluators')->multiple()->searchable()->preload()
+                                ->options(function () {
+                                    $campusId = filament()->getTenant()?->id;
+                                    $courseOfferingId = $this->ownerRecord->id;
 
-                Tables\Columns\TextColumn::make('email')
-                    ->label('Email')
-                    ->sortable()
-                    ->searchable()
-                    ->toggleable(),
-
-                Tables\Columns\TextColumn::make('year_level')
-                    ->badge(),
-
-                Tables\Columns\IconColumn::make('pin_issued_at')
-                    ->label('PIN')
-                    ->boolean()
-                    ->getStateUsing(fn (User $record) => filled($record->pin_issued_at))
-                    ->tooltip(fn (User $record) => $record->pin_issued_at ? 'PIN issued '.$record->pin_issued_at->diffForHumans() : 'No PIN yet: this student cannot sign in'),
-
-                Tables\Columns\TextColumn::make('pivot.enrolled_at')
-                    ->label('Enrolled At')
-                    ->dateTime()
-                    ->sortable(),
-            ])
-            ->filters([
-                //
-            ], layout: FiltersLayout::AboveContent)
-            ->headerActions([
-                // Single student attach
-                Tables\Actions\AttachAction::make()
-                    ->preloadRecordSelect()
-                    ->recordSelectOptionsQuery(function () {
-                        $campusId = filament()->getTenant()?->id;
-
-                        return User::whereHas('campuses', fn ($q) => $q->where('campus_id', $campusId))
-                            ->where('is_student', true);
-                    })
-                    ->recordTitle(fn (User $record) => "{$record->student_id} - {$record->full_name}")
-                    ->recordSelectSearchColumns(['student_id', 'name', 'email', 'first_name', 'last_name']),
-
-                // Bulk attach students
-                Tables\Actions\Action::make('bulkAttach')
-                    ->label('Bulk Add Evaluators')
-                    ->icon('heroicon-o-users')
-                    ->color('success')
-                    ->form([
-                        Forms\Components\Select::make('student_ids')
-                            ->label('Select Evaluators')
-                            ->multiple()
-                            ->searchable()
-                            ->preload()
-                            ->options(function () {
-                                $campusId = filament()->getTenant()?->id;
-                                $courseOfferingId = $this->ownerRecord->id;
-
-                                // Get students in campus that are NOT already enrolled in this course offering
-                                return User::whereHas('campuses', fn ($q) => $q->where('campus_id', $campusId))
-                                    ->where('is_student', true)
-                                    ->whereDoesntHave('enrolledCourseOfferings', fn ($q) => $q->where('course_offering_id', $courseOfferingId))
-                                    ->get()
-                                    ->mapWithKeys(fn ($u) => [$u->id => "{$u->student_id} - {$u->name}"]);
-                            })
-                            ->required()
-                            ->helperText('Select people to assign as evaluators'),
-                    ])
-                    ->action(function (array $data) {
-                        $studentIds = $data['student_ids'];
-                        $courseOffering = $this->ownerRecord;
-
-                        DB::transaction(function () use ($studentIds, $courseOffering) {
-                            // Prepare data with enrolled_at timestamp
-                            $attachData = [];
-                            foreach ($studentIds as $studentId) {
-                                $attachData[$studentId] = ['enrolled_at' => Carbon::now()];
-                            }
-
-                            // Attach without detaching existing students
-                            $courseOffering->students()->syncWithoutDetaching($attachData);
-                        });
-
-                        $count = count($studentIds);
-                        Notification::make()
-                            ->title("Successfully added {$count} ".($count === 1 ? 'evaluator' : 'evaluators'))
-                            ->success()
-                            ->send();
-                    }),
-
-                // Bulk attach by uploading a CSV/Excel of ID numbers — any ID that
-                // doesn't match an existing student is skipped, not an error.
-                Tables\Actions\Action::make('bulkAttachCsv')
-                    ->label('Bulk Add via ID List')
-                    ->icon('heroicon-o-document-arrow-up')
-                    ->color('gray')
-                    ->form([
-                        Forms\Components\FileUpload::make('file')
-                            ->label('ID Number File (CSV or Excel)')
-                            ->required()
-                            ->disk('local')
-                            ->directory('temp-imports')
-                            ->acceptedFileTypes([
-                                'text/csv',
-                                'text/plain',
-                                'application/vnd.ms-excel',
-                                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                            ])
-                            ->helperText('Needs a column named "student_id" (or "id_number"). Any ID that doesn\'t match an existing student is skipped — the rest are still attached.'),
-                    ])
-                    ->action(fn (array $data) => $this->attachFromIdFile($data['file'])),
-
-                // Students sign in with ID number + PIN. PINs are hashed, so the class list
-                // with PINs can only be downloaded at the moment they are issued.
-                Tables\Actions\Action::make('signInPins')
-                    ->label('Sign-in PINs')
-                    ->icon('heroicon-o-key')
-                    ->color('gray')
-                    ->visible(fn () => static::managesClassList($this->ownerRecord))
-                    ->modalHeading('Issue sign-in PINs')
-                    ->modalDescription('Students sign in with their ID number and this PIN. You get a CSV of the new PINs to print or share; PINs cannot be shown again later.')
-                    ->modalSubmitActionLabel('Issue and download')
-                    ->form([
-                        Forms\Components\Radio::make('scope')
-                            ->label('Issue PINs for')
-                            ->options([
-                                'missing' => 'Students who have not been given a PIN yet',
-                                'all' => 'Every student in this class (replaces existing PINs)',
-                            ])
-                            ->default('missing')
-                            ->required(),
-                    ])
-                    ->action(function (array $data) {
-                        $students = $this->ownerRecord->students()
-                            ->where('is_student', true)
-                            ->when($data['scope'] === 'missing', fn ($q) => $q->whereNull('pin_issued_at'))
-                            ->get();
-
-                        if ($students->isEmpty()) {
-                            Notification::make()->title('Every student in this class already has a PIN')->info()->send();
-
-                            return null;
-                        }
-
-                        $issued = StudentPins::issue($students);
-                        $offering = $this->ownerRecord->loadMissing('course');
-
-                        return StudentPins::download($issued, str('pins-'.($offering->course?->code ?? 'class').'-'.$offering->section)->slug().'.csv');
-                    }),
-            ])
-            ->actions([
-                Tables\Actions\Action::make('resetPin')
-                    ->label('New PIN')
-                    ->icon('heroicon-o-key')
-                    ->color('gray')
-                    ->visible(fn (User $record) => $record->is_student && static::managesClassList($this->ownerRecord))
-                    ->requiresConfirmation()
-                    ->modalDescription(fn (User $record) => "Give {$record->full_name} a new PIN? Their old PIN stops working.")
-                    ->action(function (User $record) {
-                        $pin = StudentPins::issue(collect([$record]))->first()['pin'];
-
-                        Notification::make()
-                            ->title("New PIN for {$record->full_name}: {$pin}")
-                            ->body('Write it down now. It will not be shown again.')
-                            ->success()
-                            ->persistent()
-                            ->send();
-                    }),
-                Tables\Actions\DetachAction::make(),
-            ])
-            ->bulkActions([
+                                    return User::whereHas('campuses', fn ($q) => $q->where('campus_id', $campusId))->where('is_student', true)
+                                        ->whereDoesntHave('enrolledCourseOfferings', fn ($q) => $q->where('course_offering_id', $courseOfferingId))
+                                        ->get()->mapWithKeys(fn ($u) => [$u->id => "{$u->student_id} - {$u->name}"]);
+                                })->required()->helperText('Select people to assign as evaluators'),
+                        ])->action(function (array $data) {
+                            $this->authorizeRosterChange($data['student_ids']);
+                            $studentIds = $data['student_ids'];
+                            $courseOffering = $this->ownerRecord;
+                            DB::transaction(function () use ($studentIds, $courseOffering) {
+                                $attachData = [];
+                                foreach ($studentIds as $studentId) {
+                                    $attachData[$studentId] = ['enrolled_at' => Carbon::now()];
+                                }
+                                $courseOffering->students()->syncWithoutDetaching($attachData);
+                            });
+                            $count = count($studentIds);
+                            Notification::make()->title("Successfully added {$count} ".($count === 1 ? 'evaluator' : 'evaluators'))->success()->send();
+                        }),
+                ])->label('Other assignment options')->icon('heroicon-o-ellipsis-horizontal')->button()->color('gray')]),
+            ])->actions([
+                Tables\Actions\DetachAction::make()->before(fn (User $record) => $this->authorizeRosterChange([$record->id], true)),
+            ])->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DetachBulkAction::make(),
+                    Tables\Actions\DetachBulkAction::make()->before(fn ($records) => $this->authorizeRosterChange($records->modelKeys(), true)),
                 ]),
             ]);
     }
 
-    /**
-     * Reads the uploaded file, matches each ID number against an existing
-     * student (by student_id) in the current campus, attaches the matches to
-     * this course offering, and silently skips any ID that doesn't match —
-     * processed synchronously (no queue worker) so it works the same whether
-     * a queue is running or not.
-     */
-    protected function attachFromIdFile(string $storedPath): void
+    private function sectionAction(): Tables\Actions\Action
     {
-        $fullPath = Storage::disk('local')->path($storedPath);
+        return Tables\Actions\Action::make('assignSections')->label('Assign Evaluators by Section')->icon('heroicon-o-rectangle-stack')
+            ->visible(fn () => $this->canAttach() && ! $this->getOwnerRecord()->evaluationForm?->isSupervisorInstrument())
+            ->modalHeading('Assign Evaluators by Section')->modalSubmitActionLabel('Save Evaluators')
+            ->fillForm(function () {
+                $saved = $this->getOwnerRecord()->evaluator_selection ?? [];
+                $trusted = ($saved['source'] ?? null) === 'sections_v1';
+                $include = $trusted ? ($saved['include'] ?? []) : [];
+                $exclude = $trusted ? ($saved['exclude'] ?? []) : [];
 
-        try {
-            $rows = IOFactory::load($fullPath)->getActiveSheet()->toArray(null, true, true, false);
-        } catch (\Throwable $e) {
-            Storage::disk('local')->delete($storedPath);
+                return ['sections' => $saved['sections'] ?? [], 'include' => $include, 'exclude' => $exclude,
+                    'use_exceptions' => filled($include) || filled($exclude),
+                    'supervisor_ids' => $this->getOwnerRecord()->supervisorEvaluators()->pluck('users.id')->all()];
+            })
+            ->steps([
+                Forms\Components\Wizard\Step::make('Select sections')->schema([
+                    Forms\Components\Placeholder::make('classContext')->label('Teaching class')->content(function () {
+                        $class = $this->getOwnerRecord();
+                        $class->loadMissing('course', 'instructor', 'semester.schoolYear');
 
-            Notification::make()
-                ->title('Could not read the file')
-                ->body('Make sure it\'s a valid CSV or Excel file.')
-                ->danger()
-                ->send();
+                        return $class->course?->code.' — '.$class->course?->name.' · '.$class->instructor?->name.' · '.$class->semester?->name.' / '.$class->semester?->schoolYear?->name;
+                    }),
+                    Forms\Components\Select::make('sections')->label('Sections taught by this faculty member')->multiple()->searchable()->required()->live()
+                        ->options(fn () => app(AcademicStudents::class)->sectionOptions(auth()->user(), $this->getOwnerRecord()->campus, $this->getOwnerRecord()->semester_id, true))
+                        ->afterStateUpdated(function (Forms\Set $set) {
+                            $set('use_exceptions', false);
+                            $set('include', []);
+                            $set('exclude', []);
+                        })
+                        ->rules([fn () => function (string $attribute, $value, \Closure $fail) {
+                            try {
+                                app(AcademicStudents::class)->sectionAssignmentPreview(auth()->user(), $this->getOwnerRecord(), (array) $value);
+                            } catch (ValidationException $e) {
+                                $fail($e->validator->errors()->first());
+                            }
+                        }])
+                        ->helperText('Only the listed students in these sections will be assigned. Upload and confirm a section’s student list first.'),
+                    Forms\Components\Placeholder::make('sectionStudents')->label('Section student lists')->content(function (Forms\Get $get) {
+                        $stats = app(AcademicStudents::class)->sectionStats(auth()->user(), $this->getOwnerRecord()->campus, $this->getOwnerRecord()->semester_id);
+                        $chosen = collect($get('sections') ?? [])->map(fn ($key) => $stats[$key] ?? null)->filter();
 
-            return;
-        }
+                        return $chosen->isEmpty() ? 'Choose sections above. Empty sections must have their student lists uploaded and confirmed before they can be assigned.'
+                            : $chosen->map(fn ($s) => $s['name'].': '.$s['students'].' students'.($s['students'] === 0 ? ' — upload and confirm its list first' : ''))->join(' · ');
+                    }),
+                    Forms\Components\Actions::make([
+                        Forms\Components\Actions\Action::make('manageSectionStudents')->label('Upload / Manage Section Students')->icon('heroicon-o-arrow-up-tray')
+                            ->visible(fn () => SectionResource::canViewAny())
+                            ->url(function (Forms\Get $get) {
+                                $stats = app(AcademicStudents::class)->sectionStats(auth()->user(), $this->getOwnerRecord()->campus, $this->getOwnerRecord()->semester_id);
+                                $key = ($get('sections') ?? [])[0] ?? null;
 
-        Storage::disk('local')->delete($storedPath);
+                                return isset($stats[$key]) ? SectionResource::getUrl('view', ['record' => $stats[$key]['id'], 'activeRelationManager' => '0']) : SectionResource::getUrl();
+                            }),
+                    ]),
+                    Forms\Components\Toggle::make('use_exceptions')->label('Add or exclude individual students (optional)')->live()->default(false)
+                        ->afterStateUpdated(function (Forms\Set $set) {
+                            $set('include', []);
+                            $set('exclude', []);
+                        }),
+                    Forms\Components\Section::make('Individual exceptions')->description('Search for a specific student by ID or name. No students are selected automatically.')->visible(fn (Forms\Get $get) => (bool) $get('use_exceptions'))->schema([
+                        Forms\Components\Select::make('include')->label('Additional students outside the selected sections')->multiple()->searchable()
+                            ->getSearchResultsUsing(fn (string $search) => $this->exceptionOptions($search))
+                            ->getOptionLabelsUsing(fn (array $values) => $this->exceptionLabels($values)),
+                        Forms\Components\Select::make('exclude')->label('Exclude these students')->multiple()->searchable()
+                            ->getSearchResultsUsing(fn (string $search) => $this->exceptionOptions($search))
+                            ->getOptionLabelsUsing(fn (array $values) => $this->exceptionLabels($values))
+                            ->helperText('Exclusions win over sections and additional students. The next step shows additions and removals. Submitted evaluations are preserved.'),
+                    ]),
+                    Forms\Components\Section::make('Supervisor evaluators')->description('Choose who will complete Annex B for this faculty. Deans and chairpersons must also be selected explicitly.')->schema([
+                        Forms\Components\Select::make('supervisor_ids')->label('Supervisor evaluators')->multiple()->searchable()->preload()
+                            ->options(fn () => app(FacultySupervisorEvaluators::class)->candidates($this->getOwnerRecord())->pluck('name', 'id'))
+                            ->nestedRecursiveRules([fn () => \Illuminate\Validation\Rule::in(app(FacultySupervisorEvaluators::class)->candidates($this->getOwnerRecord())->pluck('id')->all())])
+                            ->helperText('Select same-campus staff for this faculty and evaluation setup. At least one supervisor is required before opening the evaluation. You can save an unfinished selection as a draft.'),
+                    ]),
+                ]),
+                Forms\Components\Wizard\Step::make('Review changes')->schema([
+                    Forms\Components\Placeholder::make('preview')->label('Unique evaluators')->content(function (Forms\Get $get) {
+                        try {
+                            $p = app(AcademicStudents::class)->sectionAssignmentPreview(auth()->user(), $this->getOwnerRecord(), $get('sections') ?? [], $get('use_exceptions') ? ($get('include') ?? []) : [], $get('use_exceptions') ? ($get('exclude') ?? []) : []);
+                        } catch (ValidationException $e) {
+                            return $e->validator->errors()->first();
+                        }
 
-        if (empty($rows)) {
-            Notification::make()->title('The file is empty')->warning()->send();
+                        return 'Final roster: '.$p['total'].' students. '.$p['added'].' added, '.$p['removed'].' removed, '.$p['excluded'].' excluded. Overlapping sections count each student once. Existing submitted responses remain preserved.';
+                    }),
+                    Forms\Components\Placeholder::make('supervisorPreview')->label('Annex B evaluators')->content(fn (Forms\Get $get) => app(FacultySupervisorEvaluators::class)->candidates($this->getOwnerRecord())->whereKey($get('supervisor_ids') ?? [])->pluck('name')->join(', ') ?: 'No supervisor evaluators selected.'),
+                ]),
+            ])->action(function (array $data) {
+                try {
+                    $count = DB::transaction(function () use ($data) {
+                        $count = app(AcademicStudents::class)->assignSections(auth()->user(), $this->getOwnerRecord()->fresh(), $data['sections'] ?? [], ! empty($data['use_exceptions']) ? ($data['include'] ?? []) : [], ! empty($data['use_exceptions']) ? ($data['exclude'] ?? []) : []);
+                        app(FacultySupervisorEvaluators::class)->save(auth()->user(), $this->getOwnerRecord(), $data['supervisor_ids'] ?? []);
+                        return $count;
+                    });
+                } catch (ValidationException $e) {
+                    $prefix = 'mountedTableActionsData.'.array_key_last($this->mountedTableActionsData).'.';
+                    throw ValidationException::withMessages(collect($e->errors())->mapWithKeys(fn ($messages, $key) => [$prefix.$key => $messages])->all());
+                }
+                $this->completeWorkspaceDraft();
+                Notification::make()->success()->title("{$count} evaluators added or retained")->send();
+            });
+    }
 
-            return;
-        }
+    private function exceptionOptions(string $search): array
+    {
+        return app(AcademicStudents::class)->students(auth()->user(), $this->getOwnerRecord()->campus)
+            ->where(fn ($q) => $q->where('student_id', 'like', '%'.$search.'%')->orWhere('name', 'like', '%'.$search.'%'))
+            ->limit(25)->get()->mapWithKeys(fn ($s) => [$s->id => $s->student_id.' - '.$s->name])->all();
+    }
 
-        $header = array_map(fn ($cell) => strtolower(trim((string) $cell)), array_shift($rows));
-        $columnIndex = null;
+    private function exceptionLabels(array $ids): array
+    {
+        return app(AcademicStudents::class)->students(auth()->user(), $this->getOwnerRecord()->campus)->whereKey($ids)
+            ->get()->mapWithKeys(fn ($s) => [$s->id => $s->student_id.' - '.$s->name])->all();
+    }
 
-        foreach ($header as $index => $name) {
-            if (in_array($name, static::$validStudentIdColumns, true)) {
-                $columnIndex = $index;
-                break;
-            }
-        }
+    private function masterListAction(): Tables\Actions\Action
+    {
+        return Tables\Actions\Action::make('masterListSubjects')->label('Add from Master List Subjects')->icon('heroicon-o-academic-cap')
+            ->visible(fn () => $this->canAttach() && ! $this->getOwnerRecord()->evaluationForm?->isSupervisorInstrument())
+            ->modalWidth('4xl')->modalSubmitActionLabel('Add Reviewed Evaluators')->fillForm(function () {
+                $offering = $this->getOwnerRecord();
+                $offering->loadMissing('course');
 
-        if ($columnIndex === null) {
-            Notification::make()
-                ->title('No ID number column found')
-                ->body('The file must have a column named "student_id" or "id_number".')
-                ->danger()
-                ->send();
+                return ['subject_key' => app(StudentAcademicRecords::class)->preferredSubject(auth()->user(), $offering), 'programs' => [], 'years' => [], 'exclude' => []];
+            })->steps([
+                Forms\Components\Wizard\Step::make('Match subject and students')->schema([
+                    Forms\Components\Placeholder::make('masterListInstructions')->content('Suggestions use actual subject enrolments in this class academic period and your authorized departments. The campus report does not identify sections or instructors: choose the correct subject description and program, then exclude students who do not attend this class. Existing evaluators will be kept.'),
+                    Forms\Components\Select::make('subject_key')->label('Master list subject')->required()->live()->searchable()
+                        ->options(fn () => app(StudentAcademicRecords::class)->subjectOptions(auth()->user(), $this->getOwnerRecord()))
+                        ->afterStateUpdated(function (Forms\Set $set) {
+                            $set('programs', []);
+                            $set('years', []);
+                            $set('exclude', []);
+                        })->helperText('Only subjects matching this class subject code are offered. Different descriptions remain separate; no catalogue is overwritten.'),
+                    Forms\Components\Select::make('programs')->label('Degree programs')->multiple()->live()
+                        ->options(fn (Forms\Get $get) => app(StudentAcademicRecords::class)->cohortOptions(auth()->user(), $this->getOwnerRecord(), 'program', $get('subject_key')))
+                        ->disabled(fn (Forms\Get $get) => ! $get('subject_key'))
+                        ->afterStateUpdated(function (Forms\Set $set) {
+                            $set('years', []);
+                            $set('exclude', []);
+                        })->helperText('Only programs with students enrolled in the selected subject this period appear. Leave empty to include all of these programs.'),
+                    Forms\Components\Select::make('years')->label('Reported year in this academic period')->multiple()->live()
+                        ->options(fn (Forms\Get $get) => app(StudentAcademicRecords::class)->cohortOptions(auth()->user(), $this->getOwnerRecord(), 'reported_year_level', $get('subject_key'), $get('programs') ?? []))
+                        ->disabled(fn (Forms\Get $get) => ! $get('subject_key'))->afterStateUpdated(fn (Forms\Set $set) => $set('exclude', []))
+                        ->helperText('Years are limited to students in the selected subject and programs.'),
+                    Forms\Components\Select::make('exclude')->label('Do not add these students')->multiple()->searchable()
+                        ->options(fn (Forms\Get $get) => $get('subject_key') ? app(StudentAcademicRecords::class)->candidates(auth()->user(), $this->getOwnerRecord(), $get('subject_key'), $get('programs') ?? [], $get('years') ?? [])->get()->mapWithKeys(fn ($s) => [$s->id => $s->student_id.' — '.$s->name]) : []),
+                ]),
+                Forms\Components\Wizard\Step::make('Review roster')->schema([
+                    Forms\Components\Placeholder::make('masterListPreview')->content(function (Forms\Get $get) {
+                        if (! $get('subject_key')) {
+                            return 'Choose the matching master list subject first.';
+                        }
+                        $ids = app(StudentAcademicRecords::class)->candidates(auth()->user(), $this->getOwnerRecord(), $get('subject_key'), $get('programs') ?? [], $get('years') ?? [])->pluck('users.id')->diff($get('exclude') ?? []);
+                        $current = $this->getOwnerRecord()->students()->pluck('users.id');
 
-            return;
-        }
-
-        $idValues = collect($rows)
-            ->map(fn ($row) => trim((string) ($row[$columnIndex] ?? '')))
-            ->filter()
-            ->unique()
-            ->values();
-
-        if ($idValues->isEmpty()) {
-            Notification::make()->title('No ID numbers found in the file')->warning()->send();
-
-            return;
-        }
-
-        $campusId = filament()->getTenant()?->id;
-
-        $matched = User::whereHas('campuses', fn ($q) => $q->where('campus_id', $campusId))
-            ->where('is_student', true)
-            ->whereIn('student_id', $idValues)
-            ->get();
-
-        $matchedIds = $matched->pluck('student_id')->map(fn ($v) => (string) $v)->all();
-        $notFound = $idValues->diff($matchedIds)->values();
-
-        if ($matched->isEmpty()) {
-            Notification::make()
-                ->title('No matching students found')
-                ->body("{$notFound->count()} ID(s) in the file did not match any student.")
-                ->warning()
-                ->send();
-
-            return;
-        }
-
-        $courseOffering = $this->ownerRecord;
-
-        DB::transaction(function () use ($matched, $courseOffering) {
-            $attachData = [];
-            foreach ($matched as $student) {
-                $attachData[$student->id] = ['enrolled_at' => Carbon::now()];
-            }
-
-            $courseOffering->students()->syncWithoutDetaching($attachData);
-        });
-
-        $attachedCount = $matched->count();
-        $notFoundCount = $notFound->count();
-
-        $body = null;
-        if ($notFoundCount > 0) {
-            $preview = $notFound->take(10)->implode(', ');
-            $body = "{$notFoundCount} ID(s) didn't match any student and were skipped: {$preview}"
-                .($notFoundCount > 10 ? ', …' : '');
-        }
-
-        Notification::make()
-            ->title("Added {$attachedCount} ".($attachedCount === 1 ? 'evaluator' : 'evaluators').' from the file')
-            ->body($body)
-            ->success()
-            ->send();
+                        return $ids->count().' matching students; '.$ids->diff($current)->count().' will be added. Final roster: '.$current->merge($ids)->unique()->count().'. Existing evaluator assignments and submitted responses are preserved.';
+                    }),
+                    Forms\Components\Checkbox::make('confirmed')->label('I checked that the selected students attend this instructor’s class / section.')->accepted(),
+                ]),
+            ])->action(function (array $data) {
+                $count = app(StudentAcademicRecords::class)->addEvaluators(auth()->user(), $this->getOwnerRecord()->fresh(), $data['subject_key'], $data['programs'] ?? [], $data['years'] ?? [], $data['exclude'] ?? []);
+                Notification::make()->success()->title("{$count} matching evaluators added or retained")->send();
+            });
     }
 }

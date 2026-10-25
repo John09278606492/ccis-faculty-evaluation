@@ -19,9 +19,13 @@ beforeEach(function () {
 it('does not let a student sign in with only their ID number', function () {
     ['student' => $student] = evaluationFixture();
     $student->update(['student_id' => '2026-0001']);
+    StudentPins::issue(collect([$student]));
 
     Livewire::test(Login::class)
         ->set('data.login', '2026-0001')
+        ->call('authenticate')
+        ->assertHasNoErrors()
+        ->assertSet('studentIdentifier', '2026-0001')
         ->call('authenticate')
         ->assertHasErrors('data.password');
 
@@ -38,12 +42,14 @@ it('signs a student in with their ID number and issued PIN', function () {
 
     Livewire::test(Login::class)
         ->set('data.login', '2026-0001')
+        ->call('authenticate')
         ->set('data.password', $pin === '000000' ? '111111' : '000000')
         ->call('authenticate')
         ->assertHasErrors('data.login');
 
     Livewire::test(Login::class)
         ->set('data.login', '2026-0001')
+        ->call('authenticate')
         ->set('data.password', $pin)
         ->call('authenticate')
         ->assertHasNoErrors();
@@ -51,7 +57,35 @@ it('signs a student in with their ID number and issued PIN', function () {
     expect(auth()->id())->toBe($student->id);
 });
 
-it('issues PINs for the class list and downloads them once', function () {
+it('redirects students without an assigned PIN to the waiting page without signing them in', function () {
+    ['student' => $student] = evaluationFixture();
+    $student->update(['student_id' => '2026-WAIT']);
+    Livewire::test(Login::class)->set('data.login', '2026-WAIT')
+        ->call('authenticate')->assertRedirect(route('student.pin-pending'));
+    expect(auth()->check())->toBeFalse();
+    $this->get(route('student.pin-pending'))->assertOk()->assertSee('instructor, admin or super-admin');
+});
+
+it('does not permit student accounts to bypass PIN assignment through staff login', function () {
+    ['student' => $student] = evaluationFixture();
+    $student->update(['password' => Hash::make('legacy-password')]);
+    Livewire::test(Login::class)->call('toggleStaffLogin')
+        ->set('data.login', $student->email)->set('data.password', 'legacy-password')
+        ->call('authenticate')->assertHasErrors('data.login');
+    expect(auth()->check())->toBeFalse();
+});
+
+it('allows a waiting student to continue after a PIN is issued and reset the selected ID', function () {
+    ['student' => $student] = evaluationFixture();
+    $student->update(['student_id' => '2026-READY']);
+    StudentPins::issue(collect([$student]));
+    Livewire::test(Login::class)->set('data.login', '2026-READY')->call('authenticate')
+        ->assertSet('studentIdentifier', '2026-READY')->assertHasNoErrors()
+        ->call('changeStudentId')->assertSet('studentIdentifier', null)->assertSet('data.password', '');
+    expect(auth()->check())->toBeFalse();
+});
+
+it('keeps PIN controls out of the evaluation class list', function () {
     ['student' => $student, 'offering' => $offering] = evaluationFixture();
     $student->update(['student_id' => '2026-0001']);
     $classmate = User::factory()->create(['is_student' => true, 'student_id' => '2026-0002']);
@@ -74,10 +108,10 @@ it('issues PINs for the class list and downloads them once', function () {
 
     $this->actingAs($instructor);
     Livewire::test(StudentsRelationManager::class, ['ownerRecord' => $offering, 'pageClass' => EditCourseOffering::class])
-        ->callTableAction('signInPins', data: ['scope' => 'missing'])
-        ->assertFileDownloaded();
+        ->assertTableActionDoesNotExist('signInPins')
+        ->assertTableActionDoesNotExist('approveSignIn');
 
-    expect($student->fresh()->pin_issued_at)->not->toBeNull()
+    expect($student->fresh()->pin_issued_at)->toBeNull()
         ->and($classmate->fresh()->password)->toBe($classmatePassword);
 });
 
@@ -98,6 +132,41 @@ it('makes staff on the shared starting password choose their own', function () {
 
     expect($admin->fresh()->must_change_password)->toBeFalse()
         ->and(Hash::check('a-new-secret', $admin->fresh()->password))->toBeTrue();
+});
+
+it('keeps evaluation PIN controls absent for administrative roles', function (string $roleName) {
+    ['student' => $student, 'offering' => $offering] = evaluationFixture();
+    $admin = User::factory()->create(['is_student' => false]);
+    $role = Role::findOrCreate($roleName, 'web');
+    foreach (['view_any_user', 'view_course::offering', 'update_course::offering'] as $permission) {
+        $role->givePermissionTo(Permission::findOrCreate($permission, 'web'));
+    }
+    $admin->assignRole($role);
+    Filament::setTenant($offering->semester->schoolYear->campus, isQuiet: true);
+    $this->actingAs($admin);
+    Livewire::test(StudentsRelationManager::class, ['ownerRecord' => $offering, 'pageClass' => EditCourseOffering::class])
+        ->assertTableActionDoesNotExist('signInPins')->assertTableActionDoesNotExist('approveSignIn');
+    expect($student->fresh()->pin_issued_at)->toBeNull();
+})->with(['admin', 'super_admin']);
+
+it('keeps staff password authentication available', function () {
+    evaluationFixture();
+    $admin = User::factory()->create(['is_student' => false, 'password' => Hash::make('Staff-Secret!2026')]);
+    $admin->assignRole('super_admin');
+    Livewire::test(Login::class)->call('toggleStaffLogin')
+        ->set('data.login', $admin->email)->set('data.password', 'Staff-Secret!2026')
+        ->call('authenticate')->assertHasNoErrors();
+    expect(auth()->id())->toBe($admin->id);
+});
+
+it('rechecks PIN assignment before authenticating a selected student', function () {
+    ['student' => $student] = evaluationFixture();
+    $student->update(['student_id' => '2026-RECHECK']);
+    $pin = StudentPins::issue(collect([$student]))->first()['pin'];
+    $component = Livewire::test(Login::class)->set('data.login', '2026-RECHECK')->call('authenticate');
+    $student->forceFill(['pin_issued_at' => null])->save();
+    $component->set('data.password', $pin)->call('authenticate')->assertRedirect(route('student.pin-pending'));
+    expect(auth()->check())->toBeFalse();
 });
 
 it('finds the My Profile forms on form requests, before the panel boots', function () {

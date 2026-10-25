@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Services\ClassroomUpdates;
 use App\Settings\KaidoSetting;
 use BezhanSalleh\FilamentShield\Traits\HasPageShield;
 use Filament\Forms\Components\Section;
@@ -18,9 +19,14 @@ class ManageSetting extends SettingsPage
 
     protected static string $settings = KaidoSetting::class;
 
-    protected static ?string $navigationGroup = 'Settings';
+    protected static ?string $navigationGroup = 'Administration';
 
     protected static ?int $navigationSort = 2;
+
+    protected function afterSave(): void
+    {
+        ClassroomUpdates::panel('settings');
+    }
 
     public function form(Form $form): Form
     {

@@ -10,6 +10,7 @@ use App\Models\ClassRecordSheet;
 use App\Models\ClassRecordUpload;
 use App\Models\CourseOffering;
 use App\Models\Quiz;
+use App\Services\AssessmentReadiness;
 use App\Services\ClassRecordSyncService;
 use App\Services\WorkbookPreviewService;
 use BezhanSalleh\FilamentShield\Contracts\HasShieldPermissions;
@@ -22,6 +23,7 @@ use Filament\Tables;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\HtmlString;
 
 class QuizResource extends Resource implements HasShieldPermissions
 {
@@ -374,6 +376,8 @@ class QuizResource extends Resource implements HasShieldPermissions
                 'notify_minutes_before',
                 'notified_at',
                 'assign_to_all',
+                'class_record_synced_at',
+                'class_record_sync_error',
             ])
             ->beforeReplicaSaved(function (Quiz $replica) {
                 $replica->title = "{$replica->title} (Copy)";
@@ -413,6 +417,12 @@ class QuizResource extends Resource implements HasShieldPermissions
     {
         return $form
             ->schema([
+                Forms\Components\Section::make('Ready to conduct?')
+                    ->visible(fn (?Quiz $record) => $record !== null)
+                    ->schema([
+                        Forms\Components\Placeholder::make('assessment_readiness')->hiddenLabel()
+                            ->content(fn (?Quiz $record) => $record ? new HtmlString(view('filament.partials.assessment-readiness', ['checks' => app(AssessmentReadiness::class)->forQuiz($record)])->render()) : ''),
+                    ]),
                 Forms\Components\Section::make('Assessment Details')
                     ->schema([
                         Forms\Components\Select::make('course_offering_id')
@@ -427,6 +437,7 @@ class QuizResource extends Resource implements HasShieldPermissions
                             ->maxLength(255),
 
                         Forms\Components\Radio::make('type')
+                            ->helperText('Quizzes and activities can sync to a mapped class record. Exam scores use Export results under Grade & results.')
                             ->options(Quiz::TYPES)
                             ->default('quiz')
                             ->live()
@@ -579,9 +590,7 @@ class QuizResource extends Resource implements HasShieldPermissions
                     ->label('Timing')
                     ->badge()
                     ->color(fn (string $state) => $state === 'scheduled' ? 'warning' : 'gray')
-                    ->formatStateUsing(fn (string $state, Quiz $record) => $state === 'scheduled'
-                        ? 'Scheduled'
-                        : ($record->duration_minutes ? "{$record->duration_minutes} min" : 'Untimed')),
+                    ->formatStateUsing(fn (string $state, Quiz $record) => $record->timingLabel()),
 
                 Tables\Columns\TextColumn::make('is_published')
                     ->label('Visibility')->badge()
@@ -602,11 +611,12 @@ class QuizResource extends Resource implements HasShieldPermissions
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                Tables\Filters\SelectFilter::make('type')
-                    ->options(Quiz::TYPES),
                 Tables\Filters\TernaryFilter::make('is_published'),
             ], layout: FiltersLayout::AboveContent)
             ->actions([
+                Tables\Actions\Action::make('studentAccess')->label('Students & sign-in')->icon('heroicon-o-user-group')
+                    ->visible(fn (Quiz $record) => auth()->user()->can('update', $record))
+                    ->url(fn (Quiz $record) => static::getUrl('edit', ['record' => $record, 'activeRelationManager' => '1'])),
                 static::buildAction(),
                 Tables\Actions\EditAction::make()->label('Settings & results'),
                 Tables\Actions\ActionGroup::make([

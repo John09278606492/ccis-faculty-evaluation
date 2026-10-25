@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\EnsureCampusAccess;
 use App\Models\Campus;
+use App\Models\FormSubmission;
 use App\Models\Quiz;
 use App\Models\User;
 use App\Services\EvaluationResultsRelease;
@@ -78,8 +79,12 @@ it('releases the results once enough students have answered', function () {
     ['offering' => $offering, 'form' => $form] = evaluationFixture();
     $offering->evaluationForm->update(['ends_at' => now()->subDay()]);
 
-    expect(EvaluationResultsRelease::isReleased($offering, 4))->toBeFalse()
-        ->and(EvaluationResultsRelease::isReleased($offering, 5))->toBeTrue();
+    foreach (range(1, 4) as $number) {
+        FormSubmission::create(['form_id' => $form->id, 'course_offering_id' => $offering->id, 'submission_fingerprint' => 'release-'.$number, 'data' => ['teaching_quality' => 5]]);
+    }
+    expect(EvaluationResultsRelease::isReleased($offering, 999))->toBeFalse();
+    FormSubmission::create(['form_id' => $form->id, 'course_offering_id' => $offering->id, 'submission_fingerprint' => 'release-5', 'data' => ['teaching_quality' => 5]]);
+    expect(EvaluationResultsRelease::isReleased($offering))->toBeTrue();
 });
 
 it('always needs at least one response', function () {

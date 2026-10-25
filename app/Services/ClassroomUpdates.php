@@ -11,6 +11,17 @@ use Illuminate\Support\Facades\Log;
 
 class ClassroomUpdates
 {
+    public static function viewer(int $userId, string $kind): void
+    {
+        DB::afterCommit(function () use ($userId, $kind) {
+            try {
+                broadcast(new PanelDataChanged($kind, viewerId: $userId));
+            } catch (\Throwable $e) {
+                Log::warning('Private live update could not be delivered', ['kind' => $kind, 'error' => $e->getMessage()]);
+            }
+        });
+    }
+
     public static function quiz(int $quizId, string $kind): void
     {
         $courseId = Quiz::whereKey($quizId)->value('course_offering_id');
@@ -61,7 +72,8 @@ class ClassroomUpdates
         self::$pendingPanel = [];
         foreach ($pending as $kind => $staffOnly) {
             try {
-                broadcast(new PanelDataChanged($kind, $staffOnly))->toOthers();
+                // The saving browser also has sibling widgets/context selectors to update.
+                broadcast(new PanelDataChanged($kind, $staffOnly));
             } catch (\Throwable $e) {
                 Log::warning('Live update could not be delivered', ['kind' => $kind, 'error' => $e->getMessage()]);
             }

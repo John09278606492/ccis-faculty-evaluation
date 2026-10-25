@@ -8,6 +8,8 @@ use App\Models\Department;
 use App\Models\Form;
 use App\Models\FormSubmission;
 use App\Models\User;
+use App\Services\AcademicPeriod;
+use App\Services\StudentEvaluationProgress;
 use BezhanSalleh\FilamentShield\Traits\HasWidgetShield;
 use Filament\Facades\Filament;
 use Filament\Widgets\StatsOverviewWidget as BaseWidget;
@@ -134,7 +136,7 @@ class StatsOverviewWidget extends BaseWidget
 
             $totalStudentsEnrolled = CourseOffering::where('user_id', $user->id)
                 ->where('is_active', true)
-                ->withCount('students')
+                ->withCount(['students' => fn ($q) => $q->withTrashed()])
                 ->get()
                 ->sum('students_count');
 
@@ -172,7 +174,7 @@ class StatsOverviewWidget extends BaseWidget
 
         if ($tenant) {
             $running = $tenant->users()->wherePivot('created_at', '<', $startDate)->count();
-            $dailyCounts = DB::table('campus_user')
+            $dailyCounts = DB::table('campus_user')->whereIn('user_id', User::query()->select('users.id')->toBase())
                 ->where('campus_id', $tenant->id)
                 ->where('created_at', '>=', $startDate)
                 ->selectRaw('DATE(created_at) as day, COUNT(*) as total')
@@ -221,15 +223,15 @@ class StatsOverviewWidget extends BaseWidget
 
     private function getPendingEvaluationsCount(object $user): int
     {
-        return $user->courseOfferings()
-            ->where('is_active', true)
-            ->whereNotNull('form_id')
-            ->whereDoesntHave('formSubmissions', fn ($q) => $q->where('user_id', $user->id))
-            ->count();
+        $campus = filament()->getTenant();
+
+        return $campus ? app(StudentEvaluationProgress::class)->summary($user, $campus, AcademicPeriod::current($campus))['open_pending'] : 0;
     }
 
     private function getCompletedEvaluationsCount(object $user): int
     {
-        return FormSubmission::where('user_id', $user->id)->count();
+        $campus = filament()->getTenant();
+
+        return $campus ? app(StudentEvaluationProgress::class)->summary($user, $campus, AcademicPeriod::current($campus))['completed'] : 0;
     }
 }

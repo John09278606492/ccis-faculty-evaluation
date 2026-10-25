@@ -137,14 +137,14 @@
                         x-bind:class="{ 'cq-toggle-on': livePreview }"
                         x-bind:aria-pressed="livePreview ? 'true' : 'false'"
                         title="Update the preview as you type">
-                        <span>Live</span>
+                        <span>Live preview</span>
                     </button>
                     <button type="button" class="cq-toggle" x-show="canRun && run.hasPreview"
                         x-on:click="toggleSideBySide()"
                         x-bind:class="{ 'cq-toggle-on': sideBySide }"
                         x-bind:aria-pressed="sideBySide ? 'true' : 'false'"
                         title="Show the preview next to the code">
-                        <span>Split</span>
+                        <span>Split view</span>
                     </button>
                     <button type="button" class="cq-run" x-show="canRun" x-on:click="runCode()" x-bind:disabled="run.running" title="Run (Ctrl+Enter)">
                         <span x-text="run.running ? 'Running…' : '▶ Run'"></span>

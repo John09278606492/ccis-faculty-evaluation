@@ -10,6 +10,7 @@ use Filament\Pages\Page;
 use Filament\Tables;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
+use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
@@ -34,7 +35,17 @@ class MyQuizzes extends Page implements HasTable
 
     protected static ?int $navigationSort = 2;
 
-    protected static ?string $navigationGroup = 'Student';
+    protected static ?string $navigationGroup = 'My Learning';
+
+    public static function shouldRegisterNavigation(): bool
+    {
+        return auth()->user()?->is_student && static::canAccess();
+    }
+
+    public function getSubheading(): ?string
+    {
+        return 'Your assigned quizzes, exams and activities. Check the schedule and status, then open an assessment when you are ready.';
+    }
 
     public function table(Table $table): Table
     {
@@ -52,7 +63,7 @@ class MyQuizzes extends Page implements HasTable
                     ->formatStateUsing(fn (string $state): string => Quiz::TYPES[$state] ?? $state),
                 Tables\Columns\TextColumn::make('duration_minutes')
                     ->label('Duration')
-                    ->formatStateUsing(fn (?int $state) => $state ? "{$state} min" : 'Untimed'),
+                    ->state(fn (Quiz $record) => $record->timingLabel()),
                 Tables\Columns\TextColumn::make('available_until')
                     ->label('Deadline')
                     ->dateTime('M j, Y g:ia')
@@ -71,6 +82,9 @@ class MyQuizzes extends Page implements HasTable
                         default => 'primary',
                     }),
             ])
+            ->filters([
+                Tables\Filters\SelectFilter::make('type')->label('Assessment type')->options(Quiz::TYPES),
+            ], layout: FiltersLayout::AboveContent)
             ->actions([
                 Tables\Actions\Action::make('open')
                     ->label(fn (Quiz $record) => $this->actionLabelFor($record))
@@ -135,9 +149,9 @@ class MyQuizzes extends Page implements HasTable
         }
 
         return match ($attempt->status) {
-            'in_progress' => 'In Progress',
+            'in_progress' => $attempt->isExpired() ? 'Time ended — finalizing' : 'In Progress',
             // Essay/file questions aren't graded yet, so this is a partial score, not the final one.
-            'submitted' => "Partial score {$attempt->score} / {$attempt->max_score} — essay pending",
+            'submitted' => "Partial score {$attempt->score} / {$attempt->max_score} — awaiting instructor grading",
             'graded' => "Final score: {$attempt->score} / {$attempt->max_score}",
             default => $attempt->status,
         };

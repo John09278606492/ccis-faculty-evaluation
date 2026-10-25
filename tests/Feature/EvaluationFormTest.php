@@ -16,10 +16,9 @@ it('sends a guest to sign in and remembers where they were going', function () {
     ['offering' => $offering] = evaluationFixture();
 
     $this->get(route('evaluate.course-offering', $offering))
-        ->assertRedirect(route('filament.admin.auth.login'))
-        ->assertSessionHas('warning', 'You must log in to access this evaluation form.');
+        ->assertRedirect(route('evaluation.entry'));
 
-    expect(session('url.intended'))->toContain(route('evaluate.course-offering', $offering));
+    expect(session('evaluation.intended_offering'))->toBe($offering->id);
 });
 
 it('shows the form to an enrolled student', function () {
@@ -105,7 +104,7 @@ it('shows the thanks page after a submission', function () {
 it('refuses the thanks page to a guest', function () {
     ['offering' => $offering] = evaluationFixture();
 
-    $this->get(route('evaluate.success', $offering))->assertRedirect(route('filament.admin.auth.login'));
+    $this->get(route('evaluate.success', $offering))->assertRedirect(route('evaluation.entry'));
 });
 
 it('sends a guest who tries to submit to sign in', function () {
@@ -113,8 +112,7 @@ it('sends a guest who tries to submit to sign in', function () {
 
     $this->from(route('evaluate.course-offering', $offering))
         ->post(route('evaluate.store', $offering), ['fields' => ['teaching_quality' => 5]])
-        ->assertRedirect(route('filament.admin.auth.login'))
-        ->assertSessionHas('warning', 'You must log in to submit this evaluation.');
+        ->assertRedirect(route('evaluation.entry'));
 });
 
 it('requires the rating when the field is required', function () {
@@ -135,13 +133,18 @@ it('rejects a rating that is not on the scale', function () {
         ->assertSessionHasErrors('fields.teaching_quality');
 });
 
-it('requires a comment on every question when the form asks for one', function () {
+it('ignores legacy required criterion comments and keeps overall comments available', function () {
     ['student' => $student, 'offering' => $offering, 'form' => $form] = evaluationFixture();
     $form->update(['scoring_config' => ['field_comments' => 'required']]);
 
     $this->actingAs($student)
-        ->post(route('evaluate.store', $offering), ['fields' => ['teaching_quality' => 5]])
-        ->assertSessionHasErrors('field_comments.teaching_quality');
+        ->get(route('evaluate.course-offering', $offering))
+        ->assertOk()
+        ->assertDontSee('name="field_comments[', false)
+        ->assertSee('name="overall_comment"', false);
+
+    $this->post(route('evaluate.store', $offering), ['fields' => ['teaching_quality' => 5]])
+        ->assertRedirect(route('evaluate.success', $offering));
 });
 
 it('requires an overall comment when the form asks for one', function () {
@@ -153,7 +156,7 @@ it('requires an overall comment when the form asks for one', function () {
         ->assertSessionHasErrors('overall_comment');
 });
 
-it('saves the comments with the answers', function () {
+it('saves only the overall comment with the answers', function () {
     ['student' => $student, 'offering' => $offering] = evaluationFixture();
 
     $this->actingAs($student)->post(route('evaluate.store', $offering), [
@@ -163,7 +166,7 @@ it('saves the comments with the answers', function () {
     ])->assertRedirect(route('evaluate.success', $offering));
 
     $submission = FormSubmission::sole();
-    expect($submission->data['_field_comments'])->toBe(['teaching_quality' => 'Clear explanations.'])
+    expect($submission->data)->not->toHaveKey('_field_comments')
         ->and($submission->data['_overall_comment'])->toBe('Very effective instructor.');
 });
 
@@ -262,7 +265,7 @@ it('lets only a user who may view forms preview one', function () {
         ->get(route('form.preview', $form))
         ->assertForbidden();
 
-    $staff = User::factory()->create();
+    $staff = User::factory()->create(['is_student' => false, 'instructor_department_id' => $offering->course->department_id]);
     $staff->givePermissionTo(Permission::findOrCreate('view_form', 'web'));
     $staff->campuses()->attach($offering->campus->id);
 

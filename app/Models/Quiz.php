@@ -259,6 +259,15 @@ class Quiz extends Model
         return $this->is_published && $this->hasWindowOpened() && ! $this->hasWindowClosed();
     }
 
+    public function timingLabel(): string
+    {
+        if ($this->type === 'activity') {
+            return $this->available_until ? 'Until the deadline' : 'Untimed';
+        }
+
+        return $this->isScheduled() ? 'Until scheduled close' : ($this->duration_minutes ? "{$this->duration_minutes} minutes" : 'Untimed');
+    }
+
     /**
      * Whether available_from has arrived yet (true if there's no start time at all).
      */

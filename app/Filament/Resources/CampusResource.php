@@ -10,6 +10,8 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class CampusResource extends Resource
@@ -20,7 +22,7 @@ class CampusResource extends Resource
 
     protected static ?string $navigationLabel = 'Campuses';
 
-    protected static ?string $navigationGroup = 'Settings';
+    protected static ?string $navigationGroup = 'Administration';
 
     protected static ?int $navigationSort = 1;
 
@@ -28,6 +30,15 @@ class CampusResource extends Resource
 
     // Disable tenancy for this resource - campuses are managed across all tenants
     protected static bool $isScopedToTenant = false;
+
+    public static function getEloquentQuery(): Builder
+    {
+        $query = parent::getEloquentQuery();
+        $user = auth()->user();
+
+        return $user?->isSuperAdmin() ? $query : $query->whereIn('campuses.id',
+            DB::table('campus_user')->select('campus_id')->where('user_id', $user?->id));
+    }
 
     public static function form(Form $form): Form
     {

@@ -156,14 +156,16 @@ it('keeps a global role out of an ordinary administrator\'s reach', function () 
         ->and(RoleResource::canEdit($global))->toBeFalse();
 });
 
-it('shows the users of the campus to a super admin', function () {
+it('keeps academic students separate from staff accounts', function () {
     ['offering' => $offering, 'student' => $student] = evaluationFixture();
+    $offering->evaluatee->campuses()->attach($offering->campus);
     Filament::setTenant($offering->campus, isQuiet: true);
     $this->actingAs(panelAdmin(['view_any_user', 'view_user']));
 
     Livewire::test(ListUsers::class)
         ->assertSuccessful()
-        ->assertCanSeeTableRecords([$student]);
+        ->assertCanSeeTableRecords([$offering->evaluatee])
+        ->assertCanNotSeeTableRecords([$student]);
 });
 
 it('counts the campus in the dashboard statistics', function () {

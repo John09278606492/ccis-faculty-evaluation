@@ -252,8 +252,36 @@ it('keeps instructor previews separate from saved student attempts across reques
     extract(quizWorkflowFixture());
     $this->actingAs($instructor);
     Livewire::test(TakeQuiz::class, ['quiz' => $quiz])->assertSet('previewMode', true)
+        ->assertSet('answers.'.$question->id, null)
         ->set('answers.'.$question->id, 'echo')->call('submit')->assertHasNoErrors();
     expect($quiz->attempts()->count())->toBe(0);
+});
+
+it('saves answers before confirming submission without ending the attempt', function () {
+    extract(quizWorkflowFixture());
+    $this->actingAs($student);
+    $page = Livewire::test(TakeQuiz::class, ['quiz' => $quiz])->call('beginAttempt')
+        ->set('answers.'.$question->id, 'echo')->call('confirmSubmission')
+        ->assertSet('confirmingSubmission', true)
+        ->assertDispatched('open-modal', id: 'confirm-assessment-submission');
+    $attempt = $quiz->attempts()->first();
+    expect($attempt->status)->toBe('in_progress')
+        ->and($attempt->answers()->first()->answer_text)->toBe('echo');
+    $page->set('confirmingSubmission', false)->assertSet('reviewMode', false)
+        ->call('confirmSubmission')->call('submit')->assertSet('reviewMode', true)
+        ->assertSet('confirmingSubmission', false);
+    expect($attempt->refresh()->status)->toBe('graded');
+});
+
+it('labels activity timing without showing a leftover duration', function () {
+    extract(quizWorkflowFixture());
+    $quiz->update(['type' => 'activity', 'duration_minutes' => 120]);
+    expect($quiz->timingLabel())->toBe('Untimed');
+    $quiz->available_until = now()->addDay();
+    expect($quiz->timingLabel())->toBe('Until the deadline');
+    $quiz->type = 'exam';
+    $quiz->timing_mode = 'scheduled';
+    expect($quiz->timingLabel())->toBe('Until scheduled close');
 });
 
 it('grades manual answers and updates the final total through the instructor form', function () {
@@ -753,6 +781,8 @@ function fakeStudentDatabases(bool $available = true): object
             return $answer->database_name ? "CREATE TABLE `{$answer->database_name}`;" : null;
         }
 
+        public function freeze(QuizAnswer $answer): void {}
+
         public function drop(string $database): void {}
     };
     app()->instance(StudentDatabases::class, $fake);
@@ -778,6 +808,7 @@ it('signs a student in to phpMyAdmin with their own database loaded from the sta
     $fixture = quizWorkflowFixture();
     $fake = fakeStudentDatabases();
     [$code, , $attempt, $answer] = databaseQuestionAttempt($fixture);
+    config(['classroom.student_db.phpmyadmin_url' => '/phpmyadmin']);
     $response = $this->get(route('student-databases.open', $answer));
     $database = "stu{$fixture['student']->id}_a{$attempt->id}_q{$code->id}";
     $response->assertRedirectContains('/phpmyadmin/signon.php?token=');
@@ -840,7 +871,7 @@ it('limits each student MySQL account to its own databases', function () {
     $pdo = new PDO('sqlite::memory:');
     $statements = MySqlStudentDatabases::accountStatements('stu12', 'pa55', $pdo);
     expect($statements[0])->toContain("CREATE USER IF NOT EXISTS 'stu12'@'%'")->toContain('MAX_USER_CONNECTIONS')
-        ->and($statements[2])->toBe("GRANT ALL PRIVILEGES ON `stu12\\_%`.* TO 'stu12'@'%'")
+        ->and(MySqlStudentDatabases::workspaceGrant('stu12', 'stu12_a1_q1', true))->toBe("GRANT ALL PRIVILEGES ON `stu12\\_a1\\_q1`.* TO 'stu12'@'%'")
         ->and(implode(' ', $statements))->not->toContain('*.*')->not->toContain('GRANT OPTION');
 });
 

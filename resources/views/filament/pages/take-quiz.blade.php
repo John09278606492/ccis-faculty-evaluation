@@ -186,7 +186,7 @@
                 </div>
                 <div>
                     <p class="text-xs text-gray-400">Duration</p>
-                    <p class="font-medium">{{ $quiz->duration_minutes ? "{$quiz->duration_minutes} minutes" : 'Untimed' }}</p>
+                    <p class="font-medium">{{ $quiz->timingLabel() }}</p>
                 </div>
                 <div>
                     <p class="text-xs text-gray-400">Highest Possible Score</p>
@@ -348,7 +348,9 @@
                                 <p class="mt-3 flex items-center gap-2 text-sm text-gray-500">
                                     <x-heroicon-o-circle-stack class="h-4 w-4 shrink-0" />
                                     {{ match (true) {
-                                        filled($savedAnswer->database_export) => 'Your database was saved with this answer when you submitted.',
+                                        $savedAnswer->hasVerifiedDatabaseSnapshot() => 'Your database was saved with this answer when you submitted.',
+                                        $savedAnswer->database_snapshot_status === 'failed' => 'Your answer was submitted. The database snapshot needs recovery; your instructor has been notified and the workspace is retained.',
+                                        $savedAnswer->database_snapshot_status === 'pending' => 'Your answer was submitted. The protected database snapshot is being prepared.',
                                         filled($savedAnswer->database_name) => 'Your database is kept for your instructor to review.',
                                         default => 'You did not open your database for this question.',
                                     } }}
@@ -391,7 +393,15 @@
             <div class="mt-6 flex flex-wrap gap-3">
                 <x-filament::button tag="a" color="gray" href="{{ \App\Filament\Pages\MyQuizzes::getUrl(panel: 'admin', tenant: $quiz->campus) }}">Back to My Assessments</x-filament::button>
                 @if ($quiz->isAvailable() && $attempt->attempt_number < $quiz->max_attempts)
-                    <x-filament::button wire:click="beginAttempt" wire:confirm="Start another attempt? The timer will begin immediately." wire:loading.attr="disabled">Start another attempt</x-filament::button>
+                    <x-filament::button x-on:click="$dispatch('open-modal', { id: 'confirm-assessment-restart' })" wire:loading.attr="disabled">Start another attempt</x-filament::button>
+                    <x-filament::modal id="confirm-assessment-restart" width="md">
+                        <x-slot name="heading">Start another attempt?</x-slot>
+                        <p>Your previous submission will be kept. {{ $quiz->type === 'activity' ? 'The new attempt follows the activity deadline.' : 'The timer starts when you continue.' }}</p>
+                        <x-slot name="footerActions">
+                            <x-filament::button color="gray" x-on:click="$dispatch('close-modal', { id: 'confirm-assessment-restart' })">Cancel</x-filament::button>
+                            <x-filament::button wire:click="beginAttempt" wire:loading.attr="disabled">Start new attempt</x-filament::button>
+                        </x-slot>
+                    </x-filament::modal>
                 @endif
             </div>
         @endif
@@ -405,14 +415,24 @@
                     <span class="text-xs text-gray-400">(Preview only — this won't save anything)</span>
                 @else
                     <x-filament::button
-                        wire:click="submit"
+                        wire:click="confirmSubmission"
                         wire:loading.attr="disabled"
-                        wire:confirm="Submit this attempt? {{ $totalCount - $answeredCount }} question(s) remain unanswered. You cannot change answers after submitting."
                     >
                         Submit
                     </x-filament::button>
                 @endif
             </div>
+            @if (! $previewMode)
+                <x-filament::modal id="confirm-assessment-submission" width="md">
+                    <x-slot name="heading">Submit your answers?</x-slot>
+                    <p>{{ $answeredCount }} of {{ $totalCount }} questions answered. {{ $totalCount - $answeredCount }} unanswered.</p>
+                    <p class="mt-2 text-sm text-gray-500">Your latest changes have been sent to the server. You cannot edit this attempt after submitting.</p>
+                    <x-slot name="footerActions">
+                        <x-filament::button color="gray" wire:click="$set('confirmingSubmission', false)" x-on:click="$dispatch('close-modal', { id: 'confirm-assessment-submission' })">Keep editing</x-filament::button>
+                        <x-filament::button wire:click="submit" wire:loading.attr="disabled">Submit answers</x-filament::button>
+                    </x-slot>
+                </x-filament::modal>
+            @endif
         @endif
     </div>
     @endif

@@ -1,4 +1,5 @@
 <x-filament-panels::page.simple>
+    <a href="{{ route('evaluation.entry') }}" class="block rounded-lg bg-primary-600 p-4 text-center font-semibold text-white">Faculty evaluation — enter student ID</a>
     @if (filament()->hasRegistration())
         <x-slot name="subheading">
             {{ __('filament-panels::pages/auth/login.actions.register.before') }}
@@ -11,6 +12,11 @@
 
     <x-filament-panels::form id="form" wire:submit="authenticate">
         {{ $this->form }}
+
+        @if (! $showPasswordField && $studentIdentifier !== null)
+            @include('auth.approval-poll')
+            <button type="button" wire:click="changeStudentId" class="text-sm text-primary-600 underline">Use a different student ID</button>
+        @endif
 
         <x-filament-panels::form.actions :actions="$this->getCachedFormActions()" :full-width="$this->hasFullWidthFormActions()" />
     </x-filament-panels::form>

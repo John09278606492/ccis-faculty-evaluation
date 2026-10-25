@@ -3,21 +3,20 @@
 namespace App\Filament\Imports;
 
 use App\Models\Department;
-use App\Models\Role;
 use App\Models\User;
+use App\Services\ScopedAccountImport;
+use App\Services\UserAccessAdministration;
 use Filament\Actions\Imports\ImportColumn;
 use Filament\Actions\Imports\Importer;
 use Filament\Actions\Imports\Models\Import;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\HtmlString;
-use Illuminate\Support\Str;
-use Illuminate\Validation\ValidationException;
 
 class StudentImporter extends Importer
 {
+    use QueuesBulkFiles;
+
     protected static ?string $model = User::class;
 
     /**
@@ -58,7 +57,7 @@ class StudentImporter extends Importer
             ImportColumn::make('student_id')
                 ->label('Student ID (Must map to "student_id" column)')
                 ->requiredMapping()
-                ->rules(['required', 'integer'])
+                ->rules(['required', 'max:50'])
                 ->guess(['student_id', 'studentid', 'student id', 'stud_id', 'studid', 'id_number', 'idnumber'])
                 ->example('2024001234'),
         ];
@@ -95,9 +94,9 @@ class StudentImporter extends Importer
                 ->required()
                 ->searchable(),
             Select::make('role_ids')
+                ->visible(fn () => auth()->user()?->isSuperAdmin() || auth()->user()?->can('assign_user_roles'))
                 ->label('Assign Roles')
                 ->multiple()
-                ->required()
                 ->options(function () {
                     return static::getAvailableRoles();
                 })
@@ -111,21 +110,10 @@ class StudentImporter extends Importer
      */
     protected static function getAvailableRoles(): array
     {
-        $user = auth()->user();
-        $campusId = filament()->getTenant()?->id;
+        $actor = auth()->user();
+        $campus = filament()->getTenant();
 
-        // Super admin can assign all roles except super_admin itself
-        if ($user && $user->hasRole('super_admin')) {
-            return Role::where('name', '!=', 'super_admin')
-                ->pluck('name', 'id')
-                ->toArray();
-        }
-
-        // Non-super admin can only assign campus-specific roles
-        return Role::where('team_id', $campusId)
-            ->where('name', '!=', 'super_admin')
-            ->pluck('name', 'id')
-            ->toArray();
+        return $actor && $campus ? app(UserAccessAdministration::class)->grantableRoles($actor, $campus)->pluck('name', 'id')->all() : [];
     }
 
     /**
@@ -165,73 +153,17 @@ class StudentImporter extends Importer
 
     public function resolveRecord(): ?User
     {
-        $email = $this->data['email'] ?? null;
-        $studentId = $this->data['student_id'] ?? null;
-
-        // Check if student_id already exists for a DIFFERENT user
-        $existingStudentId = User::where('student_id', $studentId)
-            ->whereNotNull('student_id')
-            ->first();
-
-        if ($existingStudentId) {
-            if ($existingStudentId->email === $email) {
-                return $existingStudentId;
-            }
-            // Throw validation exception for duplicate
-            throw ValidationException::withMessages([
-                'student_id' => "Student ID {$studentId} is already assigned to {$existingStudentId->email}.",
-            ]);
-        }
-
-        // Check if email already exists
-        $existingEmail = User::where('email', $email)->first();
-
-        if ($existingEmail) {
-            if ($existingEmail->is_instructor) {
-                throw ValidationException::withMessages([
-                    'email' => "Email {$email} is already registered as an instructor.",
-                ]);
-            }
-
-            return $existingEmail;
-        }
-
-        return new User;
+        return app(ScopedAccountImport::class)->resolve($this->import->user, $this->options, 'student', $this->data);
     }
 
     protected function beforeSave(): void
     {
-        if (! $this->record->password) {
-            // Nobody knows this password: students sign in with a PIN their instructor issues
-            // from the class list (Evaluators > Sign-in PINs).
-            $this->record->password = Hash::make(Str::random(40));
-        }
-
-        $this->record->is_student = true;
-        $this->record->is_instructor = false;
-        $this->record->instructor_department_id = null;
-        $this->record->employee_id = null;
-        $this->record->position = null;
+        app(ScopedAccountImport::class)->prepare($this->import->user, $this->record, $this->options, 'student');
     }
 
     protected function afterSave(): void
     {
-        // Use campus_id from options (passed from ListUsers to work in queue jobs)
-        $campusId = $this->options['campus_id'] ?? null;
-        $roleIds = $this->options['role_ids'] ?? [];
-
-        DB::transaction(function () use ($campusId, $roleIds) {
-            // Attach to campus
-            if ($campusId && ! $this->record->campuses()->where('campus_id', $campusId)->exists()) {
-                $this->record->campuses()->attach($campusId);
-            }
-
-            // Assign roles if selected
-            if (! empty($roleIds)) {
-                $roles = Role::whereIn('id', $roleIds)->pluck('name')->toArray();
-                $this->record->syncRoles($roles);
-            }
-        });
+        app(ScopedAccountImport::class)->finish($this->import->user, $this->record, $this->options, 'student');
     }
 
     public static function getCompletedNotificationBody(Import $import): string

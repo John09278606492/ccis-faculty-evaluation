@@ -15,7 +15,8 @@ $token = (string) ($_GET['token'] ?? '');
 $file = dirname(__DIR__, 2).DIRECTORY_SEPARATOR.'tokens'.DIRECTORY_SEPARATOR.$token.'.json';
 $data = preg_match('/^[A-Za-z0-9]{40}$/', $token) && is_file($file) ? json_decode((string) file_get_contents($file), true) : null;
 
-if (! is_array($data) || ($data['expires'] ?? 0) < time()) {
+if (! is_array($data) || ($data['expires'] ?? 0) <= time()
+    || (! ($data['read_only'] ?? false) && is_file(dirname(__DIR__, 2).'/closed/'.basename($data['database'] ?? '').'.json'))) {
     http_response_code(403);
     header('Content-Type: text/html; charset=utf-8');
     exit('<!DOCTYPE html><title>Link expired</title><p style="font-family:sans-serif">This phpMyAdmin link has expired. Go back to your assessment and press <strong>Open phpMyAdmin</strong> again.</p>');

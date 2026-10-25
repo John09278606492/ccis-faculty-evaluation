@@ -7,12 +7,12 @@ use Filament\Notifications\Notification;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
- * A Filament notification for the bell that is stored right away and shown at once.
- * Filament queues bell notifications, and the classroom server runs no queue worker,
- * so they used to wait in the jobs table and never appeared.
+ * Persist bell notifications immediately and announce them after the transaction
+ * commits, so another open browser can read the notification when signaled.
  */
 class BellNotification extends Notification
 {
@@ -26,11 +26,13 @@ class BellNotification extends Notification
             $user->notifyNow($this->toDatabase());
 
             if ($isEventDispatched) {
-                try {
-                    broadcast(new BellNotificationsChanged($user->getKey()));
-                } catch (\Throwable $e) {
-                    Log::warning('Live update could not be delivered', ['kind' => 'bell', 'error' => $e->getMessage()]);
-                }
+                DB::afterCommit(function () use ($user) {
+                    try {
+                        broadcast(new BellNotificationsChanged($user->getKey()));
+                    } catch (\Throwable $e) {
+                        Log::warning('Live update could not be delivered', ['kind' => 'bell', 'error' => $e->getMessage()]);
+                    }
+                });
             }
         }
 

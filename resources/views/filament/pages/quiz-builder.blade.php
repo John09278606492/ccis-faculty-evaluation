@@ -1,4 +1,6 @@
 <x-filament-panels::page>
+    @include('filament.partials.workspace-draft')
+    <div class="qb-responsive-host">
     @php($questionsLocked = $quizRecord->attempts()->exists())
     <div x-data="{
             dirty: false,
@@ -125,7 +127,7 @@
             },
         }" class="qb-container" x-on:input="dirty = true" x-on:change="dirty = true"
         x-on:question-saved.window="dirty = false"
-        x-on:question-selected.window="if (window.innerWidth <= 640) $nextTick(() => $refs.properties.scrollIntoView({ behavior: 'smooth', block: 'start' }))"
+        x-on:question-selected.window="if ($el.clientWidth <= 1050) $nextTick(() => $refs.properties.scrollIntoView({ behavior: 'smooth', block: 'start' }))"
         x-on:beforeunload.window="if (dirty) { $event.preventDefault(); $event.returnValue = ''; }">
 
         {{-- ═══════ LEFT SIDEBAR — QUESTION TYPE PALETTE ═══════ --}}
@@ -370,7 +372,7 @@
                         </div>
                         <div class="qb-prop-group">
                             <label class="qb-tf-option">
-                                <input @disabled($questionsLocked) type="checkbox" wire:model="selectedQuestionData.allow_student_files">
+                                <input @disabled($questionsLocked) type="checkbox" wire:model.live="selectedQuestionData.allow_student_files">
                                 <span>Students can create files and folders</span>
                             </label>
                             <span class="qb-prop-help">Like a VS Code workspace: students add, rename and delete files and folders. Turn off to keep students to exactly your starter files.</span>
@@ -402,7 +404,7 @@
                         @endif
                         <div class="qb-prop-group">
                             <span class="qb-prop-label">Starter Files</span>
-                            <span class="qb-prop-help">Students get exactly these files and edit them; they cannot add or remove files.</span>
+                            <span class="qb-prop-help">{{ ($selectedQuestionData['allow_student_files'] ?? true) ? 'Students start with these files and can add, rename or delete files and folders.' : 'Students edit these starter files; adding, renaming and deleting files is disabled.' }}</span>
                             <x-code-editor state-path="selectedQuestionData.starter_files"
                                 :read-only="$questionsLocked" :can-manage-files="! $questionsLocked" can-run autocomplete
                                 min-height="8rem" max-height="24rem"
@@ -507,6 +509,7 @@
         </div>
     </div>
 
+    </div>
     @push('styles')
         <style>
             .qb-container { display: flex; height: calc(100vh - 64px); margin: -1.5rem; overflow: hidden; background: #f3f4f6; }
@@ -627,6 +630,7 @@
             .dark .qb-btn-outline { background: #1f2937; border-color: #4b5563; color: #d1d5db; }
             .dark .qb-toast { background: #1f2937; border-color: #065f46; color: #6ee7b7; }
             .qb-container { height: auto; min-height: 65vh; margin: 0; border: 1px solid #e5e7eb; border-radius: 12px; align-items: stretch; }
+            .qb-responsive-host { container-type: inline-size; }
             .qb-sidebar { width: 190px; min-width: 190px; }
             .qb-canvas-wrapper { min-width: 0; }
             .qb-canvas-header { flex-wrap: wrap; gap: 12px; padding: 16px; }
@@ -658,6 +662,15 @@
                 .qb-question-card { padding: 12px; gap: 8px; }
                 .qb-empty-state { padding: 24px; }
                 .qb-properties-footer { position: sticky; bottom: 0; background: inherit; }
+            }
+            @container (max-width: 1050px) {
+                .qb-container { flex-wrap: wrap; }
+                .qb-sidebar { width: 100%; min-width: 0; border-right: 0; }
+                .qb-category { display: inline-block; padding: 8px 16px; }
+                .qb-palette-grid { flex-direction: row; flex-wrap: wrap; }
+                .qb-canvas-wrapper { flex: 1 1 100%; }
+                .qb-properties-open { width: 100%; min-width: 0; border-left: 0; border-top: 1px solid #64748b; }
+                .qb-field-label { overflow-wrap: break-word; }
             }
         </style>
     @endpush

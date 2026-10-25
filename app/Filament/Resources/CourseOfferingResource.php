@@ -11,6 +11,9 @@ use App\Models\Form as FormModel;
 use App\Models\FormSubmission;
 use App\Models\Semester;
 use App\Models\User;
+use App\Services\EvaluationCycles;
+use App\Support\EvaluationType;
+use BezhanSalleh\FilamentShield\Contracts\HasShieldPermissions;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
@@ -19,9 +22,30 @@ use Filament\Tables;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 
-class CourseOfferingResource extends Resource
+class CourseOfferingResource extends Resource implements HasShieldPermissions
 {
+    public static function canDelete(Model $record): bool
+    {
+        return ! $record->formSubmissions()->exists() && ! $record->quizzes()->exists() && parent::canDelete($record);
+    }
+
+    public static function canDeleteAny(): bool
+    {
+        return false;
+    }
+
+    public static function shouldRegisterNavigation(): bool
+    {
+        return false;
+    }
+
+    public static function getPermissionPrefixes(): array
+    {
+        return [...config('filament-shield.permission_prefixes.resource'), 'manage_evaluators'];
+    }
+
     protected static ?string $model = CourseOffering::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-list';
@@ -47,6 +71,7 @@ class CourseOfferingResource extends Resource
         $campusId = filament()->getTenant()?->id;
 
         return parent::getEloquentQuery()
+            ->with('evaluationForm')
             ->whereHas('semester.schoolYear', fn ($q) => $q->where('campus_id', $campusId));
     }
 
@@ -137,9 +162,11 @@ class CourseOfferingResource extends Resource
                                         return [];
                                     }
 
-                                    return User::where('instructor_department_id', $departmentId)
+                                    return User::where('is_instructor', true)
+                                        ->whereHas('campuses', fn ($q) => $q->where('campuses.id', filament()->getTenant()?->id))
+                                        ->with('instructorDepartment')
                                         ->get()
-                                        ->mapWithKeys(fn ($u) => [$u->id => $u->full_name]);
+                                        ->mapWithKeys(fn ($u) => [$u->id => $u->full_name.' ('.($u->instructorDepartment?->code ?? 'No home department').')']);
                                 }
 
                                 // General mode: all users in the tenant
@@ -154,7 +181,7 @@ class CourseOfferingResource extends Resource
                             ->searchable()
                             ->live()
                             ->visible(fn (callable $get) => ! $get('is_instructor_evaluation') || filled($get('department_id')))
-                            ->helperText(fn (callable $get) => ! $get('is_instructor_evaluation') ? 'Select any person to evaluate — not limited to instructors' : null),
+                            ->helperText(fn (callable $get) => ! $get('is_instructor_evaluation') ? 'Select any person to evaluate — not limited to instructors' : 'Choose any instructor in this campus, including visiting faculty from another department. Annex B evaluators must be explicitly selected for this faculty under Teaching Classes.'),
 
                         Forms\Components\TextInput::make('evaluatee_label')
                             ->label('Evaluatee Label')
@@ -185,7 +212,20 @@ class CourseOfferingResource extends Resource
                             })
                             ->searchable()
                             ->placeholder('Select an evaluation form')
+                            ->live()
                             ->helperText('Evaluators will use this form to evaluate the person assigned'),
+                        Forms\Components\Select::make('evaluation_type')
+                            ->label('Evaluation Type')
+                            ->options(EvaluationType::LABELS)
+                            ->placeholder('Automatic — follow selected form')
+                            ->helperText('Leave automatic for Annex A (Student) or Annex B (Supervisor). Choose a type here for other forms.')
+                            ->live(),
+                        Forms\Components\Placeholder::make('resolved_evaluation_type')->label('Shown in reports')
+                            ->content(function (Forms\Get $get) {
+                                $form = FormModel::find($get('form_id'));
+
+                                return EvaluationType::LABELS[EvaluationType::resolve($get('evaluation_type'), $form?->settings['instrument'] ?? null, $form?->evaluator_roles ?? [])];
+                            }),
                     ])
                     ->collapsible(),
             ]);
@@ -195,6 +235,7 @@ class CourseOfferingResource extends Resource
     {
         return $table
             ->columns([
+                Tables\Columns\TextColumn::make('evaluation_type_label')->label('Evaluation Type')->badge(),
                 Tables\Columns\TextColumn::make('semester.schoolYear.name')
                     ->label('School Year')
                     ->sortable(),
@@ -256,6 +297,7 @@ class CourseOfferingResource extends Resource
                     ->color('info'),
             ])
             ->filters([
+                Tables\Filters\SelectFilter::make('evaluation_cycle_id')->label('Evaluation')->options(fn () => app(EvaluationCycles::class)->query(auth()->user(), filament()->getTenant())->pluck('name', 'id')),
                 Tables\Filters\SelectFilter::make('semester')
                     ->relationship('semester', 'name'),
                 Tables\Filters\SelectFilter::make('course')
@@ -267,6 +309,9 @@ class CourseOfferingResource extends Resource
                     ->placeholder('All Forms'),
             ], layout: FiltersLayout::AboveContent)
             ->actions([
+                Tables\Actions\Action::make('studentAccess')->label('Evaluators')->icon('heroicon-o-user-group')
+                    ->visible(fn (CourseOffering $record) => auth()->user()->can('manageEvaluators', $record))
+                    ->url(fn (CourseOffering $record) => static::getUrl('edit', ['record' => $record, 'activeRelationManager' => '0'])),
                 Tables\Actions\Action::make('evaluationLink')
                     ->label('Get Link')
                     ->icon('heroicon-o-link')

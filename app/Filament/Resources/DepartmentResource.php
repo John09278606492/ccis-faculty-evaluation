@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\DepartmentResource\Pages;
 use App\Models\Department;
+use App\Models\User;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -43,6 +44,12 @@ class DepartmentResource extends Resource
                         Forms\Components\Toggle::make('is_active')
                             ->default(true),
                     ])->columns(2),
+                Forms\Components\Section::make('Department Leadership')
+                    ->description('Set the department leadership for access and report signatories. Annex B evaluators are selected separately for each faculty under Teaching Classes; leadership does not automatically assign evaluations.')
+                    ->schema(array_map(fn ($field) => Forms\Components\Select::make($field)
+                        ->label($field === 'supervisor_id' ? 'Dean / Department Head' : 'Chairperson')
+                        ->options(fn () => User::where('is_student', false)->whereHas('roles')->whereHas('campuses', fn ($q) => $q->where('campuses.id', filament()->getTenant()?->id))->orderBy('name')->pluck('name', 'id'))
+                        ->searchable()->preload()->placeholder('Not assigned'), ['supervisor_id', 'chairperson_id']))->columns(2),
             ]);
     }
 
@@ -58,6 +65,9 @@ class DepartmentResource extends Resource
                     ->searchable()
                     ->sortable()
                     ->badge(),
+
+                Tables\Columns\TextColumn::make('supervisor.name')->label('Dean / Department Head')->placeholder('Not assigned'),
+                Tables\Columns\TextColumn::make('chairperson.name')->label('Chairperson')->placeholder('Not assigned'),
 
                 Tables\Columns\TextColumn::make('instructors_count')
                     ->counts('instructors')

@@ -2,10 +2,11 @@
 
 namespace App\Filament\Pages;
 
-use App\Models\CourseOffering;
 use App\Models\Department;
 use App\Models\FormSubmission;
 use App\Models\Semester;
+use App\Services\AcademicPeriod;
+use App\Services\BackgroundTasks;
 use App\Services\ReportService;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\Select;
@@ -27,15 +28,24 @@ class DepartmentReport extends Page implements HasForms, HasTable
 
     protected static ?string $navigationIcon = 'heroicon-o-building-office-2';
 
-    protected static ?string $navigationGroup = 'Evaluations';
+    protected static ?string $navigationGroup = 'Evaluation Reports';
 
     protected static ?string $navigationLabel = 'Department Summary';
 
     protected static ?string $title = 'Department Summary';
 
-    protected static ?int $navigationSort = 51;
+    protected static ?int $navigationSort = 3;
 
     public ?string $selectedSemester = null;
+
+    private array $summaryCache = [];
+
+    private function summary(Department $department): array
+    {
+        $key = $department->id.':'.$this->selectedSemester;
+
+        return $this->summaryCache[$key] ??= app(ReportService::class)->getDepartmentSummary($department, $this->selectedSemester ? (int) $this->selectedSemester : null);
+    }
 
     /**
      * Only show to users who can view departments — matches the same check
@@ -56,6 +66,7 @@ class DepartmentReport extends Page implements HasForms, HasTable
     public function mount(): void
     {
         abort_unless(static::canAccess(), 403);
+        $this->selectedSemester = (string) AcademicPeriod::current(Filament::getTenant());
     }
 
     /**
@@ -83,7 +94,12 @@ class DepartmentReport extends Page implements HasForms, HasTable
                     ->placeholder('All Semesters')
                     ->searchable()
                     ->live()
-                    ->afterStateUpdated(fn () => $this->resetTable()),
+                    ->afterStateUpdated(function ($state) {
+                        if ($state) {
+                            AcademicPeriod::select(Filament::getTenant(), (int) $state);
+                        }
+                        $this->resetTable();
+                    }),
             ])
             ->columns(3)
             ->statePath(null);
@@ -119,8 +135,8 @@ class DepartmentReport extends Page implements HasForms, HasTable
 
                 Tables\Columns\TextColumn::make('evaluatees_count')
                     ->label('Evaluatees')
-                    ->getStateUsing(function (Department $record) use ($service) {
-                        $summary = $service->getDepartmentSummary($record, $this->selectedSemester ? (int) $this->selectedSemester : null);
+                    ->getStateUsing(function (Department $record) {
+                        $summary = $this->summary($record);
 
                         return $summary['total_evaluatees'];
                     })
@@ -130,8 +146,8 @@ class DepartmentReport extends Page implements HasForms, HasTable
 
                 Tables\Columns\TextColumn::make('submissions_count')
                     ->label('Submissions')
-                    ->getStateUsing(function (Department $record) use ($service) {
-                        $summary = $service->getDepartmentSummary($record, $this->selectedSemester ? (int) $this->selectedSemester : null);
+                    ->getStateUsing(function (Department $record) {
+                        $summary = $this->summary($record);
 
                         return $summary['total_submissions'];
                     })
@@ -139,47 +155,15 @@ class DepartmentReport extends Page implements HasForms, HasTable
                     ->color('info')
                     ->alignCenter(),
 
-                Tables\Columns\TextColumn::make('avg_score')
-                    ->label('Avg Score')
-                    ->getStateUsing(function (Department $record) use ($service) {
-                        $summary = $service->getDepartmentSummary($record, $this->selectedSemester ? (int) $this->selectedSemester : null);
-
-                        return $summary['avg_score'];
-                    })
-                    ->numeric(2)
-                    ->placeholder('—')
-                    ->badge()
-                    ->color(fn ($state) => match (true) {
-                        $state === null => 'gray',
-                        $state >= 4.5 => 'success',
-                        $state >= 3.5 => 'info',
-                        $state >= 2.5 => 'warning',
-                        default => 'danger',
-                    })
-                    ->alignCenter(),
-
-                Tables\Columns\TextColumn::make('rating')
-                    ->label('Rating')
-                    ->getStateUsing(function (Department $record) use ($service) {
-                        $summary = $service->getDepartmentSummary($record, $this->selectedSemester ? (int) $this->selectedSemester : null);
-
-                        return $summary['rating_label'];
-                    })
-                    ->badge()
-                    ->color(fn ($state) => match ($state) {
-                        'Outstanding' => 'success',
-                        'Very Satisfactory' => 'info',
-                        'Satisfactory' => 'warning',
-                        'Fair' => 'warning',
-                        'Poor' => 'danger',
-                        default => 'gray',
-                    })
-                    ->alignCenter(),
+                Tables\Columns\TextColumn::make('set_rating')->label('SET / 5')
+                    ->state(fn (Department $record) => $this->summary($record)['instruments']['SET']['mean_5'] ?? null)->numeric(2)->placeholder('Pending'),
+                Tables\Columns\TextColumn::make('sef_rating')->label('SEF / 5')
+                    ->state(fn (Department $record) => $this->summary($record)['instruments']['SEF']['mean_5'] ?? null)->numeric(2)->placeholder('Pending'),
 
                 Tables\Columns\TextColumn::make('completion')
                     ->label('Completion')
-                    ->getStateUsing(function (Department $record) use ($service) {
-                        $summary = $service->getDepartmentSummary($record, $this->selectedSemester ? (int) $this->selectedSemester : null);
+                    ->getStateUsing(function (Department $record) {
+                        $summary = $this->summary($record);
 
                         return $summary['completion_rate'].'%';
                     })
@@ -190,37 +174,10 @@ class DepartmentReport extends Page implements HasForms, HasTable
                     ->label('Export CSV')
                     ->icon('heroicon-o-arrow-down-tray')
                     ->color('gray')
-                    ->action(function () use ($service) {
-                        $tenant = Filament::getTenant();
-                        $query = Department::where('is_active', true)->orderBy('name');
-                        if ($tenant) {
-                            $query->where('campus_id', $tenant->id);
-                        }
-
-                        return response()->streamDownload(function () use ($service) {
-                            $tenant = Filament::getTenant();
-                            $query = Department::where('is_active', true)->orderBy('name');
-                            if ($tenant) {
-                                $query->where('campus_id', $tenant->id);
-                            }
-                            $departments = $query->get();
-                            $handle = fopen('php://output', 'w');
-                            fputcsv($handle, ['Department', 'Evaluatees', 'Submissions', 'Avg Score', 'Rating', 'Completion %']);
-
-                            foreach ($departments as $dept) {
-                                $summary = $service->getDepartmentSummary($dept, $this->selectedSemester ? (int) $this->selectedSemester : null);
-                                fputcsv($handle, [
-                                    $dept->name,
-                                    $summary['total_evaluatees'],
-                                    $summary['total_submissions'],
-                                    $summary['avg_score'] ?? 'N/A',
-                                    $summary['rating_label'],
-                                    $summary['completion_rate'].'%',
-                                ]);
-                            }
-
-                            fclose($handle);
-                        }, 'department-report-'.now()->format('Y-m-d').'.csv');
+                    ->action(function () {
+                        $campus = Filament::getTenant();
+                        app(BackgroundTasks::class)->enqueue(auth()->user(), $campus, 'department-export', 'Export department summary',
+                            ['ids' => Department::where('campus_id', $campus->id)->where('is_active', true)->pluck('id')->all(), 'semester_id' => $this->selectedSemester ? (int) $this->selectedSemester : null]);
                     }),
             ])
             ->striped()
@@ -235,7 +192,7 @@ class DepartmentReport extends Page implements HasForms, HasTable
         $tenant = Filament::getTenant();
         $service = app(ReportService::class);
 
-        $coQuery = CourseOffering::where('is_active', true)->whereNotNull('form_id');
+        $coQuery = $service->offerings(['campus_id' => $tenant?->id, 'semester_id' => $this->selectedSemester, 'evaluation_type' => 'SET']);
         if ($this->selectedSemester) {
             $coQuery->where('semester_id', (int) $this->selectedSemester);
         }
@@ -280,9 +237,7 @@ class DepartmentReport extends Page implements HasForms, HasTable
         foreach ($semesters as $sem) {
             $labels[] = ($sem->schoolYear?->name ?? '').' '.$sem->name;
 
-            $coQuery = CourseOffering::where('is_active', true)
-                ->whereNotNull('form_id')
-                ->where('semester_id', $sem->id);
+            $coQuery = $service->offerings(['campus_id' => $tenant?->id, 'semester_id' => $sem->id, 'evaluation_type' => 'SET']);
 
             if ($tenant) {
                 $coQuery->whereHas('semester.schoolYear', fn ($q) => $q->where('campus_id', $tenant->id));
@@ -295,7 +250,7 @@ class DepartmentReport extends Page implements HasForms, HasTable
                 continue;
             }
 
-            $submissions = FormSubmission::whereIn('course_offering_id', $coIds)->with('form.fields')->get();
+            $submissions = FormSubmission::whereIn('course_offering_id', $coIds)->whereHas('courseOffering', fn ($q) => $q->whereColumn('course_offerings.form_id', 'form_submissions.form_id'))->with('form.fields')->get();
             $scores = $submissions->map(fn ($s) => $service->calculateSubmissionScore($s))->filter();
             $data[] = $scores->isNotEmpty() ? round($scores->avg(), 2) : null;
         }

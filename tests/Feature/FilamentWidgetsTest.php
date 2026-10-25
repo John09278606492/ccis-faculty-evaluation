@@ -1,6 +1,7 @@
 <?php
 
 use App\Filament\Pages\DepartmentReport;
+use App\Filament\Pages\EvaluationResults;
 use App\Filament\Resources\CourseOfferingResource\Pages\EditCourseOffering;
 use App\Filament\Resources\CourseOfferingResource\Pages\ListCourseOfferings;
 use App\Filament\Resources\CourseOfferingResource\RelationManagers\StudentsRelationManager;
@@ -148,7 +149,7 @@ it('draws the charts of the dashboard', function () {
 it('shows the evaluation report of the campus', function () {
     ['offering' => $offering, 'form' => $form] = evaluationFixture();
     Filament::setTenant($offering->campus, isQuiet: true);
-    $this->actingAs(reportAdmin(['view_any_form', 'view_form']));
+    $this->actingAs(reportAdmin(['view_any_form', 'view_form', 'page_EvaluationResults']));
     FormSubmission::create([
         'form_id' => $form->id,
         'course_offering_id' => $offering->id,
@@ -157,8 +158,9 @@ it('shows the evaluation report of the campus', function () {
     ]);
 
     Livewire::test(ListEvaluationReports::class)
-        ->assertSuccessful()
-        ->assertCanSeeTableRecords([$offering->evaluatee]);
+        ->assertRedirect(EvaluationResults::getUrl());
+    Livewire::test(EvaluationResults::class)
+        ->assertSuccessful();
 });
 
 it('shows the department summary of the campus', function () {

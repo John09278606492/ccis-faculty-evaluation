@@ -19,6 +19,11 @@ class QuizAnswer extends Model
         'feedback',
         'database_name',
         'database_export',
+        'database_snapshot_status',
+        'database_snapshot_error',
+        'database_snapshot_hash',
+        'database_snapshot_at',
+        'database_snapshot_attempted_at',
         'auto_check',
     ];
 
@@ -26,7 +31,17 @@ class QuizAnswer extends Model
         'is_correct' => 'boolean',
         'points_awarded' => 'decimal:2',
         'auto_check' => 'array',
+        'database_snapshot_at' => 'datetime',
+        'database_snapshot_attempted_at' => 'datetime',
     ];
+
+    public function hasVerifiedDatabaseSnapshot(): bool
+    {
+        return $this->database_snapshot_status === 'ready'
+            && is_string($this->database_export) && $this->database_export !== ''
+            && is_string($this->database_snapshot_hash)
+            && hash_equals($this->database_snapshot_hash, hash('sha256', $this->database_export));
+    }
 
     public function attempt(): BelongsTo
     {

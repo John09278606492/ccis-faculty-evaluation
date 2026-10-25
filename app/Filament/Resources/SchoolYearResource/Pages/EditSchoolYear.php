@@ -4,7 +4,7 @@ namespace App\Filament\Resources\SchoolYearResource\Pages;
 
 use App\Filament\Resources\SchoolYearResource;
 use Filament\Actions;
-use Filament\Resources\Pages\EditRecord;
+use App\Filament\Pages\DraftEditRecord as EditRecord;
 
 class EditSchoolYear extends EditRecord
 {

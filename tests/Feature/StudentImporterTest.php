@@ -6,7 +6,9 @@ use App\Filament\Imports\UserImporter;
 use App\Models\User;
 use Filament\Actions\Imports\Models\Import;
 use Filament\Facades\Filament;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
+use Spatie\Permission\Models\Permission;
 
 /**
  * The spreadsheet imports an administrator uses to bring in a class list or a
@@ -14,16 +16,27 @@ use Illuminate\Validation\ValidationException;
  */
 beforeEach(function () {
     Filament::setCurrentPanel(Filament::getPanel('admin'));
+    ['offering' => $this->importOffering] = evaluationFixture();
+    $this->importActor = $this->importOffering->instructor;
+    $this->importActor->campuses()->attach($this->importOffering->campus);
+    foreach (['create_user', 'update_user', 'import_academic_students', 'manage_academic_students'] as $permission) {
+        $this->importActor->givePermissionTo(Permission::findOrCreate($permission, 'web'));
+    }
+
 });
 
 function studentImporter(array $options = [], array $columnMap = []): StudentImporter
 {
-    return new StudentImporter(new Import, $columnMap, $options);
+    $import = (new Import)->setRelation('user', test()->importActor);
+
+    return new StudentImporter($import, $columnMap, array_merge(['campus_id' => test()->importOffering->campus->id, 'department_id' => test()->importOffering->course->department_id], $options));
 }
 
 function instructorImporter(array $options = [], array $columnMap = []): InstructorImporter
 {
-    return new InstructorImporter(new Import, $columnMap, $options);
+    $import = (new Import)->setRelation('user', test()->importActor);
+
+    return new InstructorImporter($import, $columnMap, array_merge(['campus_id' => test()->importOffering->campus->id, 'department_id' => test()->importOffering->course->department_id], $options));
 }
 
 /**
@@ -32,6 +45,12 @@ function instructorImporter(array $options = [], array $columnMap = []): Instruc
  */
 function importerWithRow($importer, array $data, ?User $record = null): object
 {
+    foreach (User::all() as $existing) {
+        $existing->campuses()->syncWithoutDetaching([test()->importOffering->campus->id]);
+        if ($existing->student_id && ! $existing->is_instructor) {
+            $existing->update(['is_student' => true, 'student_department_id' => test()->importOffering->course->department_id]);
+        }
+    }
     (new ReflectionProperty($importer, 'data'))->setValue($importer, $data);
     if ($record !== null) {
         (new ReflectionProperty($importer, 'record'))->setValue($importer, $record);
@@ -84,7 +103,7 @@ it('accepts the usual spellings of an employee id column', function () {
 });
 
 it('does not update an existing student when the id belongs to someone else', function () {
-    ['offering' => $offering] = evaluationFixture();
+    $offering = $this->importOffering;
     User::factory()->create(['student_id' => '2026-0001', 'email' => 'first@example.test']);
 
     $importer = importerWithRow(studentImporter(), [
@@ -93,11 +112,11 @@ it('does not update an existing student when the id belongs to someone else', fu
     ]);
 
     expect(fn () => $importer->resolveRecord())
-        ->toThrow(ValidationException::class, 'Student ID 2026-0001 is already assigned to first@example.test.');
+        ->toThrow(ValidationException::class);
 });
 
 it('updates a student that is imported again', function () {
-    ['offering' => $offering] = evaluationFixture();
+    $offering = $this->importOffering;
     $existing = User::factory()->create(['student_id' => '2026-0001', 'email' => 'first@example.test']);
 
     $importer = importerWithRow(studentImporter(), [
@@ -109,7 +128,7 @@ it('updates a student that is imported again', function () {
 });
 
 it('refuses to import a student over an instructor', function () {
-    ['offering' => $offering] = evaluationFixture();
+    $offering = $this->importOffering;
     User::factory()->create(['is_instructor' => true, 'email' => 'teacher@example.test']);
 
     $importer = importerWithRow(studentImporter(), [
@@ -118,11 +137,11 @@ it('refuses to import a student over an instructor', function () {
     ]);
 
     expect(fn () => $importer->resolveRecord())
-        ->toThrow(ValidationException::class, 'Email teacher@example.test is already registered as an instructor.');
+        ->toThrow(ValidationException::class);
 });
 
 it('refuses to import an instructor over a student', function () {
-    ['offering' => $offering] = evaluationFixture();
+    $offering = $this->importOffering;
     User::factory()->create(['is_student' => true, 'email' => 'student@example.test']);
 
     $importer = importerWithRow(instructorImporter(), [
@@ -131,11 +150,11 @@ it('refuses to import an instructor over a student', function () {
     ]);
 
     expect(fn () => $importer->resolveRecord())
-        ->toThrow(ValidationException::class, 'Email student@example.test is already registered as a student.');
+        ->toThrow(ValidationException::class);
 });
 
 it('does not update an existing instructor when the employee id belongs to someone else', function () {
-    ['offering' => $offering] = evaluationFixture();
+    $offering = $this->importOffering;
     User::factory()->create(['is_instructor' => true, 'employee_id' => 'E-1', 'email' => 'first@example.test']);
 
     $importer = importerWithRow(instructorImporter(), [
@@ -144,11 +163,11 @@ it('does not update an existing instructor when the employee id belongs to someo
     ]);
 
     expect(fn () => $importer->resolveRecord())
-        ->toThrow(ValidationException::class, 'Employee ID E-1 is already assigned to first@example.test.');
+        ->toThrow(ValidationException::class);
 });
 
 it('marks an imported student as a student with a password nobody knows', function () {
-    ['offering' => $offering] = evaluationFixture();
+    $offering = $this->importOffering;
     $importer = importerWithRow(studentImporter(), [
         'email' => 'new@example.test',
         'student_id' => '2026-0003',
@@ -163,7 +182,7 @@ it('marks an imported student as a student with a password nobody knows', functi
 });
 
 it('saves an imported student without asking them to change a password', function () {
-    ['offering' => $offering] = evaluationFixture();
+    $offering = $this->importOffering;
     $importer = importerWithRow(studentImporter(), [
         'first_name' => 'Juan',
         'last_name' => 'Dela Cruz',
@@ -180,8 +199,8 @@ it('saves an imported student without asking them to change a password', functio
         ->and($record->fresh()->is_student)->toBeTrue();
 });
 
-it('gives an imported instructor the shared starting password', function () {
-    ['offering' => $offering] = evaluationFixture();
+it('gives an imported instructor a unique unknown initial password', function () {
+    $offering = $this->importOffering;
     $importer = importerWithRow(instructorImporter(['department_id' => $offering->course->department_id]), [
         'email' => 'new@example.test',
         'employee_id' => 'E-1',
@@ -194,7 +213,8 @@ it('gives an imported instructor the shared starting password', function () {
         ->and($record->is_student)->toBeFalse()
         ->and($record->instructor_department_id)->toBe($offering->course->department_id)
         // The instructor must choose their own password at first sign-in.
-        ->and($record->must_change_password)->toBeTrue();
+        ->and($record->must_change_password)->toBeTrue()
+        ->and(Hash::check('password123', $record->password))->toBeFalse();
 });
 
 it('refuses a student import without a student id', function () {

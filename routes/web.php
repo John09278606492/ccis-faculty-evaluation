@@ -1,18 +1,37 @@
 <?php
 
+use App\Http\Controllers\BackgroundTaskDownloadController;
 use App\Http\Controllers\ChangePasswordController;
 use App\Http\Controllers\EvaluationController;
+use App\Http\Controllers\EvaluationCopiesController;
+use App\Http\Controllers\EvaluationEntryController;
+use App\Http\Controllers\EvaluationTabularReportController;
+use App\Http\Controllers\FacultyReportController;
 use App\Http\Controllers\QuizSubmissionController;
+use App\Http\Controllers\SectionStudentTemplateController;
 use App\Http\Controllers\StudentDatabaseController;
+use App\Http\Controllers\StudentSignInController;
+use App\Http\Middleware\ResolveEvaluationStudent;
 use Illuminate\Support\Facades\Route;
+
+Route::get('/background-downloads/{task}', BackgroundTaskDownloadController::class)->middleware('auth')->name('background.download');
+Route::get('/section-student-template/{section}', SectionStudentTemplateController::class)->middleware('auth')->name('sections.template');
+
+Route::view('/student/pin-pending', 'auth.pin-pending')->name('student.pin-pending');
+Route::get('/evaluation-copies/{token}', EvaluationCopiesController::class)->middleware(['auth', 'signed:identity'])->name('evaluation.copies');
+Route::post('/student/sign-in/check', [StudentSignInController::class, 'check'])
+    ->middleware('throttle:60,1')->name('student.sign-in.check');
 
 // Route::get('/', function () {
 //     return view('welcome');
 // });
 
 // Evaluation routes for students to evaluate instructors
-// Rate limited to prevent abuse (10 requests per minute)
-Route::middleware('throttle:10,1')->group(function () {
+Route::get('/evaluations/start', [EvaluationEntryController::class, 'show'])->name('evaluation.entry');
+Route::post('/evaluations/start', [EvaluationEntryController::class, 'identify'])->middleware('throttle:evaluation-identify')->name('evaluation.identify');
+Route::post('/evaluations/leave', [EvaluationEntryController::class, 'leave'])->name('evaluation.leave');
+// Each evaluator has a separate request budget, including behind a shared campus IP.
+Route::middleware([ResolveEvaluationStudent::class, 'throttle:evaluation-access'])->group(function () {
     Route::get('/evaluate/{courseOffering}', [EvaluationController::class, 'show'])
         ->name('evaluate.course-offering');
     Route::post('/evaluate/{courseOffering}', [EvaluationController::class, 'store'])
@@ -22,6 +41,10 @@ Route::middleware('throttle:10,1')->group(function () {
 });
 
 // Form preview route (for admins)
+Route::get('/evaluation-reports/{offering}', [FacultyReportController::class, 'show'])->middleware('auth')->name('evaluation.report');
+Route::get('/evaluation-tabular-reports/{offering}/{kind}', EvaluationTabularReportController::class)
+    ->whereIn('kind', ['scores', 'tally'])->middleware('auth')->name('evaluation.tabular-report');
+Route::post('/evaluation-reports/{offering}', [FacultyReportController::class, 'save'])->middleware('auth')->name('evaluation.report.save');
 Route::get('/form-preview/{form}', [EvaluationController::class, 'preview'])
     ->name('form.preview')
     ->middleware('auth');

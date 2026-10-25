@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class Form extends Model
 {
@@ -26,10 +27,12 @@ class Form extends Model
         'ends_at',
         'max_submissions',
         'settings',
+        'previous_version_id', 'version', 'published_at', 'archived_at',
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
+        'published_at' => 'datetime', 'archived_at' => 'datetime',
         'requires_login' => 'boolean',
         'evaluator_roles' => 'array',
         'rating_scale' => 'array',
@@ -40,9 +43,41 @@ class Form extends Model
         'settings' => 'array',
     ];
 
+    public function isSupervisorInstrument(): bool
+    {
+        return ($this->settings['annex'] ?? null) === 'B';
+    }
+
+    public function isLocked(): bool
+    {
+        return $this->published_at !== null || $this->getRawOriginal('published_at') !== null || $this->submissions()->exists();
+    }
+
+    public function assertEditable(): void
+    {
+        if ($this->isLocked()) {
+            throw ValidationException::withMessages(['name' => 'This instrument is published or already has responses. Duplicate it as a new version to edit its criteria or scoring.']);
+        }
+    }
+
     protected static function boot(): void
     {
         parent::boot();
+
+        static::updating(function (Form $form) {
+            if ($form->isDirty('published_at') && $form->getRawOriginal('published_at') !== null) {
+                throw ValidationException::withMessages(['published_at' => 'A published instrument cannot be unlocked. Duplicate it as a new draft version.']);
+            }
+            if ($form->isDirty(['name', 'description', 'rating_scale', 'scoring_config', 'field_columns', 'settings', 'evaluator_roles'])) {
+                $form->assertEditable();
+            }
+        });
+        static::deleting(function (Form $form) {
+            $form->assertEditable();
+            if (CourseOffering::where('form_id', $form->id)->exists()) {
+                throw ValidationException::withMessages(['form' => 'This instrument is assigned to a class. Archive it instead of deleting it.']);
+            }
+        });
 
         static::creating(function (Form $form) {
             if (empty($form->slug)) {

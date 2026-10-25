@@ -20,11 +20,12 @@
             <p class="text-gray-600 mb-6">Your evaluation has been submitted successfully.</p>
 
             <div class="bg-gray-50 rounded-lg p-4 text-left text-sm text-gray-600">
-                <p><strong>Course:</strong> {{ $courseOffering->course->code }} - {{ $courseOffering->course->name }}
+                <p><strong>Course:</strong> {{ $courseOffering->course?->code ?? 'Faculty evaluation' }} {{ $courseOffering->course?->name }}
                 </p>
                 <p><strong>{{ $courseOffering->evaluatee_label ?? 'Faculty' }}:</strong>
                     {{ $courseOffering->evaluatee->name ?? 'N/A' }}</p>
             </div>
+            <a href="{{ route('evaluation.entry') }}" class="inline-block mt-6 text-indigo-600 underline">Back to my evaluations</a>
         </div>
     </div>
 </body>

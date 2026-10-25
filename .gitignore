@@ -32,3 +32,11 @@ frankenphp-worker.php
 rr
 .rr.yaml
 /public/code-runner
+/desktop-host/standalone/node_modules/
+/desktop-host/standalone/bundle/
+/desktop-host/standalone/dist/
+/desktop-host/standalone/.test-data/
+
+/work/
+
+/output/

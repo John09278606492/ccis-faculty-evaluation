@@ -1,11 +1,34 @@
 <?php
 
+use App\Models\Form;
 use App\Models\FormSubmission;
 use App\Models\User;
+use App\Services\EvaluationSubmissionIdentity;
 use App\Services\ReportService;
 
 beforeEach(function () {
     $this->service = app(ReportService::class);
+});
+
+it('counts anonymous roster responses once without exposing student identities', function () {
+    ['offering' => $offering, 'form' => $form, 'student' => $student] = evaluationFixture();
+    $fingerprint = app(EvaluationSubmissionIdentity::class)->fingerprint($offering, request(), $student);
+    scoredSubmission($offering, $form, 4)->update(['submission_fingerprint' => $fingerprint]);
+    scoredSubmission($offering, $form, 5)->update(['user_id' => $student->id, 'submission_fingerprint' => null]);
+    $summary = $this->service->getEvaluateeSummary($offering->evaluatee);
+    expect($summary['completion_rate'])->toBe(100.0)->and($summary['completed_students'])->toBe(1);
+    expect($this->service->getDepartmentSummary($offering->course->department)['completion_rate'])->toBe(100.0);
+});
+
+it('keeps old form responses out of the current evaluation summary', function () {
+    ['offering' => $offering, 'form' => $form] = evaluationFixture();
+    scoredSubmission($offering, $form, 5);
+    $replacement = Form::create(['name' => 'Replacement', 'is_active' => true]);
+    $replacement->fields()->create(['name' => 'teaching_quality', 'label' => 'New criterion', 'type' => 'likert_scale', 'order' => 1]);
+    $offering->update(['form_id' => $replacement->id]);
+    scoredSubmission($offering, $replacement, 1);
+    $summary = $this->service->getEvaluateeSummary($offering->evaluatee);
+    expect($summary['total_submissions'])->toBe(1)->and($summary['avg_score'])->toBe(1.0);
 });
 
 /**
@@ -31,12 +54,13 @@ it('averages the ratings of a submission', function () {
     expect($this->service->calculateSubmissionScore($submission))->toBe(4.0);
 });
 
-it('sums the ratings when the form asks for a sum', function () {
+it('keeps sum-configured forms on a normalized five-point reporting scale', function () {
     ['offering' => $offering, 'form' => $form] = evaluationFixture();
     $form->update(['scoring_config' => ['overall_method' => 'sum']]);
-    $submission = scoredSubmission($offering, $form, 5);
+    $form->fields()->create(['name' => 'second', 'label' => 'Second criterion', 'type' => 'likert_scale', 'order' => 2]);
+    $submission = scoredSubmission($offering, $form, 5, ['second' => 3]);
 
-    expect($this->service->calculateSubmissionScore($submission))->toBe(5.0);
+    expect($this->service->calculateSubmissionScore($submission))->toBe(4.0);
 });
 
 it('has no score for a submission without numeric ratings', function () {
@@ -83,7 +107,7 @@ it('summarises an evaluatee with their assignments and completion rate', functio
     expect($summary['avg_score'])->toBe(4.0)
         ->and($summary['total_submissions'])->toBe(2)
         ->and($summary['total_courses'])->toBe(1)
-        ->and($summary['completion_rate'])->toBe(200.0)
+        ->and($summary['completion_rate'])->toBe(0.0)
         ->and($summary['course_offerings'])->toHaveCount(1);
 });
 
@@ -102,12 +126,12 @@ it('has an empty summary for an evaluatee without assignments', function () {
 it('breaks the scores down per field and per section', function () {
     ['offering' => $offering, 'form' => $form] = evaluationFixture();
     $form->fields()->create(['name' => 'respect', 'label' => 'Respect', 'type' => 'likert_scale', 'section' => 'Teaching', 'is_required' => true, 'order' => 2]);
-    scoredSubmission($offering, $form, 4);
-    scoredSubmission($offering, $form, 2);
+    scoredSubmission($offering, $form, 4, ['respect' => 5]);
+    scoredSubmission($offering, $form, 2, ['respect' => 3]);
 
     $fields = $this->service->getFieldBreakdown(collect([$offering->id]));
 
-    expect($fields)->toHaveCount(1)
+    expect($fields)->toHaveCount(2)
         ->and($fields->first()['field_name'])->toBe('teaching_quality')
         ->and($fields->first()['avg'])->toBe(3.0)
         ->and($fields->first()['min'])->toBe(2.0)

@@ -3,8 +3,10 @@
 namespace App\Filament\Widgets;
 
 use App\Models\CourseOffering;
-use App\Models\FormSubmission;
+use App\Services\AcademicPeriod;
 use App\Services\EvaluationResultsRelease;
+use App\Services\EvaluationScoring;
+use App\Services\ReportService;
 use BezhanSalleh\FilamentShield\Traits\HasWidgetShield;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -40,8 +42,9 @@ class InstructorEvaluationSummaryWidget extends BaseWidget
                 CourseOffering::query()
                     ->where('user_id', $user->id)
                     ->where('is_active', true)
+                    ->when(filament()->getTenant(), fn ($q, $campus) => $q->whereHas('semester.schoolYear', fn ($q) => $q->where('campus_id', $campus->id))->where('semester_id', AcademicPeriod::current($campus)))
                     ->with(['course', 'semester.schoolYear', 'evaluationForm', 'semester'])
-                    ->withCount(['students', 'formSubmissions'])
+                    ->withCount(['students' => fn ($q) => $q->withTrashed(), 'formSubmissions'])
             )
             ->emptyStateHeading('No Evaluation Assignments')
             ->emptyStateDescription('You have no active evaluation assignments.')
@@ -71,54 +74,34 @@ class InstructorEvaluationSummaryWidget extends BaseWidget
                     ->badge()
                     ->color('info'),
                 Tables\Columns\TextColumn::make('form_submissions_count')
-                    ->label('Submissions')
-                    ->sortable()
+                    ->label('Current Responses')
+                    ->state(fn (CourseOffering $record) => app(EvaluationScoring::class)->assignment($record)['submission_count'])
                     ->alignCenter()
                     ->badge()
                     ->color('success'),
                 Tables\Columns\TextColumn::make('completion_rate')
                     ->label('Completion')
                     ->getStateUsing(function (CourseOffering $record) {
-                        if ($record->students_count === 0) {
-                            return 'N/A';
-                        }
-                        $rate = round(($record->form_submissions_count / $record->students_count) * 100, 1);
+                        $value = app(ReportService::class)->assignmentCompletion($record)['percentage'];
 
-                        return $rate.'%';
+                        return $value !== null ? $value.'%' : 'N/A';
                     })
                     ->badge()
                     ->color(function (CourseOffering $record) {
-                        if ($record->students_count === 0) {
-                            return 'gray';
-                        }
-                        $rate = ($record->form_submissions_count / $record->students_count) * 100;
+                        $rate = app(ReportService::class)->assignmentCompletion($record)['percentage'];
 
-                        return match (true) {
-                            $rate >= 100 => 'success',
-                            $rate >= 50 => 'warning',
-                            default => 'danger',
-                        };
+                        return $rate === null ? 'gray' : ($rate >= 100 ? 'success' : ($rate >= 50 ? 'warning' : 'danger'));
                     }),
                 Tables\Columns\TextColumn::make('average_score')
-                    ->label('Avg Score')
+                    ->label('Mean / 5')
                     ->getStateUsing(function (CourseOffering $record) {
                         if (! EvaluationResultsRelease::isReleased($record, $record->form_submissions_count)) {
                             return 'After close';
                         }
 
-                        $submissions = FormSubmission::where('course_offering_id', $record->id)->get();
-                        if ($submissions->isEmpty()) {
-                            return 'N/A';
-                        }
+                        $score = app(EvaluationScoring::class)->assignment($record);
 
-                        $scores = $submissions->map(function ($submission) {
-                            $data = $submission->data ?? [];
-                            $numericValues = collect($data)->filter(fn ($v) => is_numeric($v))->values();
-
-                            return $numericValues->isNotEmpty() ? $numericValues->avg() : null;
-                        })->filter();
-
-                        return $scores->isNotEmpty() ? number_format($scores->avg(), 2) : 'N/A';
+                        return $score['mean_5'] !== null ? number_format($score['mean_5'], 2) : 'N/A';
                     })
                     ->alignCenter(),
             ]);

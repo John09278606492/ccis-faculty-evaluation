@@ -1,5 +1,9 @@
 # CCIS Classroom Server
 
+**Current deployment:** use the web launcher `Start-Campus.cmd` in the current project folder. The main application now uses SQLite. See [campus access](../docs/CAMPUS-NETWORK.md) and [SQLite/server verification](../docs/SQLITE-DEPLOYMENT-AND-LOAD-TEST.md). The desktop installer and external D-drive/MySQL paths described below are legacy deployment instructions, not the current session setup.
+
+For the new self-contained installer with bundled PHP/MySQL, first-run setup and portable backup/restore, use [standalone/README.md](standalone/README.md). The instructions below describe the older host that requires an external project and database.
+
 Open `nativephp/electron/dist/win-unpacked/ccis-classroom-server.exe` on the main computer, or install `nativephp/electron/dist/CCIS Classroom Server-1.0.0-setup.exe`. Keep the entire win-unpacked folder together when using the runnable app. This installer is unsigned.
 
 The server starts automatically. Wait for **Live · ready**, then **Copy link**. Other devices open that link in their browser and use their existing accounts. **Open system** opens the system on the host computer.

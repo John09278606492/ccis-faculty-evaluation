@@ -174,6 +174,11 @@ class StudentDbServer
         if ($this->isRunning()) {
             throw new RuntimeException("Port {$this->port()} is already in use. Is the student database server already running?");
         }
+        // Empty runtime folders can disappear when a backup is moved to a new
+        // laptop. MySQL refuses to start if secure_file_priv points at one.
+        foreach (['logs', 'tmp', 'tokens', 'sessions', 'no-files', 'web/phpmyadmin/tmp'] as $folder) {
+            File::ensureDirectoryExists($this->path($folder));
+        }
         $this->writeMyIni($this->mysqlBin());
         $this->writeSignOn();
         File::ensureDirectoryExists($this->path('tokens'));
@@ -222,8 +227,16 @@ class StudentDbServer
             return false;
         }
         $this->connect()->exec('SHUTDOWN');
+        $pidFile = $this->path('mysqld.pid');
+        for ($attempt = 0; $attempt < 120; $attempt++) {
+            clearstatcache(true, $pidFile);
+            if (! is_file($pidFile) && ! $this->isRunning()) {
+                return true;
+            }
+            usleep(250_000);
+        }
 
-        return true;
+        throw new RuntimeException('Student MySQL is still flushing its data. Wait before closing or backing up the classroom.');
     }
 
     /**
@@ -233,7 +246,7 @@ class StudentDbServer
      * or opens it in a second tab still gets in; the app deletes expired tokens
      * as it issues new ones.
      */
-    public function signOnUrl(string $user, string $password, string $database): string
+    public function signOnUrl(string $user, string $password, string $database, array $context = []): string
     {
         $tokens = $this->path('tokens');
         File::ensureDirectoryExists($tokens);
@@ -247,10 +260,30 @@ class StudentDbServer
             'user' => $user,
             'password' => $password,
             'database' => $database,
-            'expires' => time() + self::SIGN_ON_LIFETIME,
+            'expires' => min(time() + self::SIGN_ON_LIFETIME, $context['expires'] ?? PHP_INT_MAX),
+            'read_only' => $context['read_only'] ?? false,
         ]));
 
         return rtrim(config('classroom.student_db.phpmyadmin_url'), '/')."/signon.php?token={$token}";
+    }
+
+    public function isWorkspaceClosed(string $database): bool
+    {
+        return preg_match('/^stu\d+_[A-Za-z0-9_]+$/', $database) === 1 && is_file($this->path('closed/'.$database.'.json'));
+    }
+
+    /** Tokens cannot reopen a workspace after the attempt has closed. */
+    public function closeWorkspace(string $database): void
+    {
+        abort_unless(preg_match('/^stu\d+_[A-Za-z0-9_]+$/', $database), 422);
+        File::ensureDirectoryExists($this->path('closed'));
+        file_put_contents($this->path('closed/'.$database.'.json'), json_encode(['closed_at' => now()->toIso8601String()]));
+        foreach (glob($this->path('tokens/*.json')) ?: [] as $file) {
+            $token = json_decode((string) @file_get_contents($file), true);
+            if (($token['database'] ?? null) === $database && ! ($token['read_only'] ?? false)) {
+                @unlink($file);
+            }
+        }
     }
 
     protected function writeMyIni(string $bin): void
@@ -281,7 +314,7 @@ class StudentDbServer
             return;
         }
         if (! $fresh) {
-            throw new RuntimeException('The student MySQL data exists but its root password is missing from secrets.json. Delete '.$this->path('data').' to start over.');
+            throw new RuntimeException('The student MySQL data exists but secrets.json is missing. Preserve the data and restore the original recovery bundle and APP_KEY before continuing.');
         }
         $startedHere = ! $this->isRunning();
         $server = $this->process([$this->mysqlBin().DIRECTORY_SEPARATOR.$this->exe('mysqld'), '--defaults-file='.$this->path('my.ini')]);
@@ -330,6 +363,13 @@ class StudentDbServer
      */
     protected function writeSignOn(): void
     {
+        // Rebuild configuration too: a restored laptop or a changed classroom
+        // port must not leave phpMyAdmin pointing at the previous MySQL port.
+        File::ensureDirectoryExists($this->path('web/phpmyadmin/tmp'));
+        file_put_contents($this->path('web/phpmyadmin/config.inc.php'), strtr(file_get_contents(resource_path('student-db/config.inc.php.stub')), [
+            '{{blowfish_secret}}' => bin2hex(random_bytes(16)),
+            '{{port}}' => (string) $this->port(),
+        ]));
         File::copy(resource_path('student-db/signon.php.stub'), $this->path('web/phpmyadmin/signon.php'));
         File::copy(resource_path('student-db/signed-out.html'), $this->path('web/phpmyadmin/signed-out.html'));
     }
@@ -351,10 +391,6 @@ class StudentDbServer
         File::ensureDirectoryExists("{$target}/tmp");
 
         $stubs = resource_path('student-db');
-        file_put_contents("{$target}/config.inc.php", strtr(file_get_contents("{$stubs}/config.inc.php.stub"), [
-            '{{blowfish_secret}}' => bin2hex(random_bytes(16)),
-            '{{port}}' => (string) $this->port(),
-        ]));
         $this->writeSignOn();
         File::copy("{$stubs}/signed-out.html", "{$target}/signed-out.html");
     }

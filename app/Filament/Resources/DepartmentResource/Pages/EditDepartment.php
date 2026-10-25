@@ -4,7 +4,7 @@ namespace App\Filament\Resources\DepartmentResource\Pages;
 
 use App\Filament\Resources\DepartmentResource;
 use Filament\Actions;
-use Filament\Resources\Pages\EditRecord;
+use App\Filament\Pages\DraftEditRecord as EditRecord;
 
 class EditDepartment extends EditRecord
 {

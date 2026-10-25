@@ -2,10 +2,15 @@
 
 use App\Events\BellNotificationsChanged;
 use App\Events\PanelDataChanged;
+use App\Livewire\WorkspaceContext;
 use App\Models\Department;
+use App\Models\EvaluationCycle;
+use App\Models\User;
 use App\Notifications\BellNotification;
 use App\Services\ClassroomUpdates;
+use App\Services\StudentAcademicRecords;
 use Illuminate\Support\Facades\Broadcast;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 
 it('tells open pages once per kind when shared records change', function () {
@@ -38,6 +43,19 @@ it('keeps staff-only changes off the student channel', function () {
         ->and($channels['{environment}.panel']($student, 'testing'))->toBeTrue();
 });
 
+it('updates a submitter own status and counters across tabs without sharing their answers or identity', function () {
+    ['student' => $student, 'offering' => $offering] = evaluationFixture();
+    ClassroomUpdates::sendPanel();
+    Event::fake([PanelDataChanged::class]);
+    $this->actingAs($student)->post(route('evaluate.store', $offering), ['fields' => ['teaching_quality' => 5]])
+        ->assertRedirect(route('evaluate.success', $offering));
+    Event::assertDispatched(PanelDataChanged::class, fn ($event) => $event->broadcastOn()[0]->name === 'private-App.Models.User.'.$student->id
+        && $event->broadcastWith() === ['kind' => 'evaluation']);
+    $channels = (new ReflectionProperty(Broadcast::driver(), 'channels'))->getValue(Broadcast::driver());
+    expect($channels['App.Models.User.{id}']($student, $student->id))->toBeTrue()
+        ->and($channels['App.Models.User.{id}']($student, $student->id + 1))->toBeFalse();
+});
+
 it('shows bell notifications at once without a queue worker', function () {
     ['student' => $student] = evaluationFixture();
     config(['queue.default' => 'database']);
@@ -62,4 +80,46 @@ it('fills in empty live updates keys and keeps existing ones', function () {
         ->toContain('REVERB_APP_ID=ccis-classroom')
         ->and(file_get_contents($env))->toBe($first);
     unlink($env);
+});
+
+it('broadcasts cycle changes and bulk subject replacements even when student profile data is unchanged', function () {
+    ['offering' => $offering, 'student' => $student] = evaluationFixture();
+    ClassroomUpdates::sendPanel();
+    Event::fake([PanelDataChanged::class]);
+    EvaluationCycle::create(['campus_id' => $offering->campus->id, 'department_id' => $offering->course->department_id,
+        'semester_id' => $offering->semester_id, 'name' => 'Live cycle']);
+    app(StudentAcademicRecords::class)->save($student, $offering->semester_id, ['subjects' => [['subject_code' => 'CS101', 'description' => 'New subject title', 'units' => 3]]]);
+    ClassroomUpdates::sendPanel();
+    Event::assertDispatched(PanelDataChanged::class, fn ($e) => $e->kind === 'setup');
+    Event::assertDispatched(PanelDataChanged::class, fn ($e) => $e->kind === 'users' && $e->staffOnly);
+    Event::assertDispatchedTimes(PanelDataChanged::class, 2);
+});
+
+it('does not publish changes for a rolled back import transaction', function () {
+    ['offering' => $offering] = evaluationFixture();
+    ClassroomUpdates::sendPanel();
+    Event::fake([PanelDataChanged::class]);
+    try {
+        DB::transaction(function () use ($offering) {
+            Department::create(['campus_id' => $offering->campus->id, 'code' => 'ROLLBACK', 'name' => 'Rolled back', 'is_active' => true]);
+            throw new RuntimeException('Reject import');
+        });
+    } catch (RuntimeException) {
+    }
+    ClassroomUpdates::sendPanel();
+    Event::assertNotDispatched(PanelDataChanged::class);
+});
+
+it('refreshes the academic context after the first period is configured without changing a valid user selection', function () {
+    ['offering' => $offering] = evaluationFixture();
+    $actor = User::factory()->create(['is_student' => false]);
+    $actor->assignRole('super_admin');
+    $this->actingAs($actor);
+    Filament\Facades\Filament::setCurrentPanel(Filament\Facades\Filament::getPanel('admin'));
+    Filament\Facades\Filament::setTenant($offering->campus, isQuiet: true);
+    $period = $offering->semester;
+    $period->update(['is_active' => false]);
+    $component = Livewire\Livewire::test(WorkspaceContext::class)->assertSet('semesterId', '');
+    $period->update(['is_active' => true]);
+    $component->call('$refresh')->assertSet('semesterId', (string) $period->id)->assertSee($period->name);
 });

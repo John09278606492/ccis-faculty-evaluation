@@ -67,17 +67,22 @@ var Xs=[],Yc=[];(()=>{let O="lc,34,7n,7,7b,19,,,,2,,2,,,20,b,1c,l,g,,2t,7,2,6,2,
             send({ type: 'check-result', value: value === undefined || value === null ? '' : format(value) });
         }, function (error) { send({ type: 'check-result', error: format(error) }); });
     });
+    function memoryStorage() {
+        var entries = Object.create(null);
+        return {
+            getItem: function (key) { return Object.prototype.hasOwnProperty.call(entries, key) ? entries[key] : null; },
+            setItem: function (key, value) { entries[key] = String(value); },
+            removeItem: function (key) { delete entries[key]; },
+            clear: function () { entries = Object.create(null); },
+            key: function (index) { return Object.keys(entries)[index] || null; },
+            get length() { return Object.keys(entries).length; }
+        };
+    }
     ['localStorage', 'sessionStorage'].forEach(function (name) {
+        /* Initialize the closure before probing the sandbox's storage getter. */
+        var fallback = memoryStorage();
         try { window[name].length; } catch (e) {
-            var data = {};
-            Object.defineProperty(window, name, { value: {
-                getItem: function (key) { return Object.prototype.hasOwnProperty.call(data, key) ? data[key] : null; },
-                setItem: function (key, value) { data[key] = String(value); },
-                removeItem: function (key) { delete data[key]; },
-                clear: function () { data = {}; },
-                key: function (index) { return Object.keys(data)[index] || null; },
-                get length() { return Object.keys(data).length; }
-            } });
+            Object.defineProperty(window, name, { value: fallback, configurable: true });
         }
     });
     document.addEventListener('click', function (event) {
