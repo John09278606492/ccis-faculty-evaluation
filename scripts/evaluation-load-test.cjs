@@ -25,7 +25,7 @@ const env = {...process.env, APP_ENV:'loadtesting', APP_DEBUG:'false', APP_URL:`
 if(args.profile)env.LOAD_TEST_METRICS=path.join(work,'php-metrics.jsonl');
 for (const dir of ['cache','sessions']) fs.mkdirSync(path.join(work,dir),{recursive:true});
 function artisan(...argv) {
-    const result=spawnSync(php,['-d','opcache.enable_cli=0','artisan',...argv],{cwd:root,env,encoding:'utf8',windowsHide:true,timeout:300000});
+    const result=spawnSync(php,['-d','opcache.enable_cli=0','artisan',...argv],{cwd:root,env,encoding:'utf8',windowsHide:true,timeout:1800000});
     if(result.status!==0) throw Error(result.stdout+'\n'+result.stderr);
     process.stdout.write(result.stdout);
 }
@@ -76,7 +76,7 @@ async function waitPort(port){for(let i=0;i<150;i++){try{const r=await fetch(`ht
 async function main(){
     if(args.resume){if(!fs.existsSync(db))throw Error('No isolated database to resume');}
     else if(args.fixture){if(fs.existsSync(db))throw Error('Never overwrite an existing test database');fs.copyFileSync(path.resolve(args.fixture),db);fs.copyFileSync(path.join(path.dirname(path.resolve(args.fixture)),'fixture.json'),manifestPath);}
-    else {if(fs.existsSync(db))throw Error('Use a new run directory');fs.closeSync(fs.openSync(db,'wx'));artisan('migrate','--force');artisan('classroom:evaluation-load-fixture',`--students=${studentCount}`,`--manifest=${manifestPath}`);fs.copyFileSync(db,path.join(work,'fixture-pristine.sqlite'));}
+    else {if(fs.existsSync(db))throw Error('Use a new run directory');fs.closeSync(fs.openSync(db,'wx'));artisan('migrate','--force');artisan('classroom:evaluation-load-fixture',`--students=${studentCount}`,`--manifest=${manifestPath}`,...['faculty','subjects','section-size'].filter(k=>args[k]).map(k=>`--${k}=${args[k]}`));fs.copyFileSync(db,path.join(work,'fixture-pristine.sqlite'));}
     artisan('migrate','--force');
     if(args.configCache)artisan('config:cache');
     artisan('route:cache');
@@ -144,15 +144,24 @@ async function main(){
                 if(!names.length)throw Error('No rating fields');
                 const data={overall_comment:'Isolated reliability test response.'};
                 for(const name of new Set(names))data[`fields[${name}]`]='4';
+                // --thinkMs: a student spends between half and all of this time reading and answering each form.
+                if(args.thinkMs)await new Promise(resolve=>setTimeout(resolve,Number(args.thinkMs)*(0.5+Math.random()/2)));
                 const saved=await client.form(`/evaluate/${assignment}`,data,client.token(form.text),'student_submit');
                 if(saved.status!==302 || !saved.location?.includes('/success'))throw Error(`submit ${saved.status} ${saved.location||''}`);
+                // --browse: like a browser, open the thank-you page and go back to the list before the next teacher.
+                if(args.browse){
+                    const done=await client.request(saved.location,{},'student_success');
+                    if(done.status!==200)throw Error(`success ${done.status}`);
+                    const list=await client.request('/evaluations/start',{},'student_assignments');
+                    if(list.status!==200)throw Error(`assignments ${list.status}`);
+                }
             }
             succeeded++;
         }catch(e){if(!entered)arrive();failures.push({student:student.student_id,error:e.message,cause:e.cause?.message,code:e.code});}
         completed++; if(completed%100===0)process.stdout.write(`${completed} finished, ${succeeded} succeeded, ${failures.length} failed\n`);
     });
     const elapsed=(performance.now()-start)/1000;
-    const studentRecords=records.filter(r=>['student_entry','student_identify','student_assignments','student_form','student_submit'].includes(r.label));
+    const studentRecords=records.filter(r=>['student_entry','student_identify','student_assignments','student_form','student_submit','student_success'].includes(r.label));
     if(args.verifyOnly || args.fullCycle){
         for(const account of fixture.staff.filter(a=>['dean','chairperson'].includes(a.role))){
             const client=staffClients.get(account.id);if(!client)continue;
@@ -163,7 +172,8 @@ async function main(){
             const progress=await client.request(`/${fixture.campus}/student-evaluation-progress`,{},'head_student_progress');
             const foreignStudent=fixture.students.find(s=>s.department===foreignDept).student_id;
             roleChecks.push({role:account.role,check:'progress_scoped',status:progress.status,passed:progress.status===200&&!progress.text.includes(foreignStudent)});
-            const tasks=fixture.supervisor_assignments.slice(deptIndex*2,deptIndex*2+2);
+            // Each head answers Annex B for every faculty member of their department.
+            const tasks=fixture.supervisor_tasks?fixture.supervisor_tasks[account.department]:fixture.supervisor_assignments.slice(deptIndex*2,deptIndex*2+2);
             for(const id of tasks){
                 const form=await client.request(`/evaluate/${id}`,{},'supervisor_form');
                 const data={overall_comment:'Isolated supervisor reliability test.'};
@@ -185,7 +195,7 @@ async function main(){
         const duplicates=await Promise.all(Array.from({length:20},async()=>{const duplicate=new Client();duplicate.cookies=new Map(client.cookies);return duplicate.form(`/evaluate/${student.assignments[0]}`,answers,client.token(entry.text),'duplicate_submission');}));
         roleChecks.push({check:'concurrent_duplicate_posts',passed:duplicates.every(r=>r.status===302&&!r.location?.includes('/success')),requests:duplicates.length});
         for(const account of fixture.staff.filter(a=>a.role==='instructor')){
-            const client=staffClients.get(account.id),assignment=fixture.students.find(s=>s.department===account.department).assignments[Number(account.email.match(/faculty\.(\d+)/)?.[1]||1)-1];
+            const client=staffClients.get(account.id),assignment=fixture.faculty_classes?.[account.id]??fixture.students.find(s=>s.department===account.department).assignments[Number(account.email.match(/faculty\.(\d+)/)?.[1]||1)-1];
             const hidden=await client.request(`/evaluation-reports/${assignment}`,{},'faculty_report_before_close');
             roleChecks.push({role:'instructor',check:'report_hidden_before_close',status:hidden.status,passed:hidden.status===403});
         }
@@ -193,9 +203,10 @@ async function main(){
             const results=await staffClients.get(account.id).request(`/${fixture.campus}/evaluation-results`,{},'staff_results_after_load');
             roleChecks.push({role:account.role,check:'results_render_after_load',status:results.status,passed:results.status===200&&results.text.includes('80.00')&&results.text.includes('100.00')});
         }
-        artisan('classroom:evaluation-load-audit',manifestPath,'--close');
+        // A failed data check is reported with the timings instead of discarding them.
+        try{artisan('classroom:evaluation-load-audit',manifestPath,'--close');}catch(error){failures.push({phase:'data_audit',error:error.message.slice(0,2000)});}
         for(const account of fixture.staff.filter(a=>a.role==='instructor')){
-            const client=staffClients.get(account.id),assignment=fixture.students.find(s=>s.department===account.department).assignments[Number(account.email.match(/faculty\.(\d+)/)?.[1]||1)-1];
+            const client=staffClients.get(account.id),assignment=fixture.faculty_classes?.[account.id]??fixture.students.find(s=>s.department===account.department).assignments[Number(account.email.match(/faculty\.(\d+)/)?.[1]||1)-1];
             const released=await client.request(`/evaluation-reports/${assignment}`,{},'faculty_report_after_close');
             roleChecks.push({role:'instructor',check:'report_released_after_close',status:released.status,passed:released.status===200&&released.text.includes('80.00')});
         }
