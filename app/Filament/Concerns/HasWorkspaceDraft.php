@@ -30,7 +30,9 @@ trait HasWorkspaceDraft
 
     public function mountHasWorkspaceDraft(): void
     {
-        if (! $this->shouldKeepWorkspaceDraft()) return;
+        if (! $this->shouldKeepWorkspaceDraft()) {
+            return;
+        }
         $this->workspaceDraftContext = static::class.':'.$this->workspaceDraftRecordKey();
         $this->workspaceDraftInitial = WorkspaceDrafts::hash($this->workspaceDraftState());
         $this->workspaceDraftBase = $this->workspaceDraftRecordRevision();
@@ -142,6 +144,7 @@ trait HasWorkspaceDraft
                 $result[$key] = $value;
             }
         }
+
         return $result;
     }
 }

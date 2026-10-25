@@ -3,11 +3,13 @@
 namespace App\Filament\Pages;
 
 use App\Filament\Concerns\HasResourceFormDraft;
+use App\Filament\Concerns\ShowsEvaluationWorkflow;
+use Filament\Resources\Pages\CreateRecord;
 
-abstract class DraftCreateRecord extends \Filament\Resources\Pages\CreateRecord
+abstract class DraftCreateRecord extends CreateRecord
 {
     use HasResourceFormDraft;
-    use \App\Filament\Concerns\ShowsEvaluationWorkflow;
+    use ShowsEvaluationWorkflow;
 
     protected function fillForm(): void
     {

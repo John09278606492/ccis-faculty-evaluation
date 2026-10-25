@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\WorkspaceDraft;
 use App\Services\DatabaseNotificationActions;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -19,7 +20,7 @@ Schedule::call(fn () => app(DatabaseNotificationActions::class)->flushAll())
     ->name('sync-notification-actions')->everyMinute()->withoutOverlapping();
 
 Artisan::command('workspace-drafts:prune', function () {
-    $count = \App\Models\WorkspaceDraft::where('expires_at', '<=', now())->delete();
+    $count = WorkspaceDraft::where('expires_at', '<=', now())->delete();
     $this->info("Removed {$count} expired working drafts.");
 })->purpose('Remove expired private working drafts');
 Schedule::command('workspace-drafts:prune')->daily()->withoutOverlapping();

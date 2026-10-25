@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\CourseOfferingResource\RelationManagers;
 
+use App\Filament\Concerns\HasEvaluatorSelectionDraft;
 use App\Filament\Resources\SectionResource;
 use App\Filament\Resources\TeachingClassResource\Pages\EditTeachingClass;
 use App\Models\User;
@@ -17,13 +18,15 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class StudentsRelationManager extends RelationManager
 {
-    use \App\Filament\Concerns\HasEvaluatorSelectionDraft;
+    use HasEvaluatorSelectionDraft;
 
     protected static string $view = 'filament.resources.evaluator-list';
+
     protected static string $relationship = 'students';
 
     protected static ?string $title = 'Evaluators';
@@ -222,7 +225,7 @@ class StudentsRelationManager extends RelationManager
                     Forms\Components\Section::make('Supervisor evaluators')->description('Choose who will complete Annex B for this faculty. Deans and chairpersons must also be selected explicitly.')->schema([
                         Forms\Components\Select::make('supervisor_ids')->label('Supervisor evaluators')->multiple()->searchable()->preload()
                             ->options(fn () => app(FacultySupervisorEvaluators::class)->candidates($this->getOwnerRecord())->pluck('name', 'id'))
-                            ->nestedRecursiveRules([fn () => \Illuminate\Validation\Rule::in(app(FacultySupervisorEvaluators::class)->candidates($this->getOwnerRecord())->pluck('id')->all())])
+                            ->nestedRecursiveRules([fn () => Rule::in(app(FacultySupervisorEvaluators::class)->candidates($this->getOwnerRecord())->pluck('id')->all())])
                             ->helperText('Select same-campus staff for this faculty and evaluation setup. At least one supervisor is required before opening the evaluation. You can save an unfinished selection as a draft.'),
                     ]),
                 ]),
@@ -243,6 +246,7 @@ class StudentsRelationManager extends RelationManager
                     $count = DB::transaction(function () use ($data) {
                         $count = app(AcademicStudents::class)->assignSections(auth()->user(), $this->getOwnerRecord()->fresh(), $data['sections'] ?? [], ! empty($data['use_exceptions']) ? ($data['include'] ?? []) : [], ! empty($data['use_exceptions']) ? ($data['exclude'] ?? []) : []);
                         app(FacultySupervisorEvaluators::class)->save(auth()->user(), $this->getOwnerRecord(), $data['supervisor_ids'] ?? []);
+
                         return $count;
                     });
                 } catch (ValidationException $e) {

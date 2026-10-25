@@ -1,6 +1,7 @@
 <?php
 
 use App\Filament\Resources\EvaluationCycleResource;
+use App\Filament\Resources\EvaluationCycleResource\Pages\EditEvaluationCycle;
 use App\Models\Campus;
 use App\Models\CourseOffering;
 use App\Models\Department;
@@ -11,6 +12,7 @@ use App\Services\EvaluationTemplates;
 use App\Services\SupervisorEvaluationAssignments;
 use Filament\Facades\Filament;
 use Illuminate\Validation\ValidationException;
+use Livewire\Livewire;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -77,7 +79,7 @@ it('saves the current setup before reviewing and waits for explicit confirmation
     Filament::setCurrentPanel(Filament::getPanel('admin'));
     Filament::setTenant($campus, isQuiet: true);
     $this->actingAs($head);
-    $page = \Livewire\Livewire::test(\App\Filament\Resources\EvaluationCycleResource\Pages\EditEvaluationCycle::class, ['record' => $cycle->id])
+    $page = Livewire::test(EditEvaluationCycle::class, ['record' => $cycle->id])
         ->fillForm(['name' => 'Reviewed current edits'])->mountAction('review')->assertHasNoErrors();
     expect($cycle->fresh()->name)->toBe('Reviewed current edits')->and($cycle->fresh()->status)->toBe('draft')
         ->and($cycle->assignments()->where('evaluation_type', 'SEF')->count())->toBe(0);

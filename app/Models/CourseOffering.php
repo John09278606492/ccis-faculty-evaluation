@@ -184,6 +184,7 @@ class CourseOffering extends Model
                 return $sections->join(', ');
             }
         }
+
         return $this->section ?: '—';
     }
 }

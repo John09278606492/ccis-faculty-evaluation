@@ -2,15 +2,17 @@
 
 namespace App\Filament\Resources\EvaluationCycleResource\Pages;
 
+use App\Filament\Concerns\ShowsEvaluationWorkflow;
 use App\Filament\Resources\EvaluationCycleResource;
 use Filament\Actions\CreateAction;
 use Filament\Resources\Pages\ListRecords;
 
 class ListEvaluationCycles extends ListRecords
 {
-    use \App\Filament\Concerns\ShowsEvaluationWorkflow;
+    use ShowsEvaluationWorkflow;
 
     protected static string $view = 'filament.resources.workflow-list';
+
     protected static string $resource = EvaluationCycleResource::class;
 
     protected function getHeaderActions(): array

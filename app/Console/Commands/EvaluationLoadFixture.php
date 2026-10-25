@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Services\AcademicStudents;
 use App\Services\EvaluationCycles;
 use App\Services\EvaluationTemplates;
+use App\Services\FacultySupervisorEvaluators;
 use App\Services\TeachingClasses;
 use App\Services\UserAccessAdministration;
 use Database\Seeders\RolesSeeder;
@@ -104,7 +105,7 @@ class EvaluationLoadFixture extends Command
                 $course = Course::create(['department_id' => $department->id, 'code' => 'LOAD-'.$code.'-'.$i, 'name' => 'Load Teaching Course '.$i, 'is_active' => true]);
                 $class = app(TeachingClasses::class)->save($dean, $campus, ['semester_id' => $semester->id, 'course_id' => $course->id, 'user_id' => $faculty->id, 'section' => $code.' Combined', 'is_active' => true]);
                 app(AcademicStudents::class)->assign($dean, $class, $groups);
-                app(\App\Services\FacultySupervisorEvaluators::class)->save($dean, $class, [$dean->id, $chair->id]);
+                app(FacultySupervisorEvaluators::class)->save($dean, $class, [$dean->id, $chair->id]);
                 $classes[] = $class;
                 $staff[] = ['role' => 'instructor', 'id' => $faculty->id, 'email' => $faculty->email, 'department' => $department->id];
             }

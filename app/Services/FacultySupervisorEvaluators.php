@@ -2,7 +2,9 @@
 
 namespace App\Services;
 
-use App\Models\{Campus, CourseOffering, User};
+use App\Models\Campus;
+use App\Models\CourseOffering;
+use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -12,6 +14,7 @@ class FacultySupervisorEvaluators
     public function candidates(CourseOffering $class)
     {
         $class->loadMissing('semester.schoolYear.campus');
+
         return User::withoutGlobalScope('assigned_data')->where('is_student', false)->where('id', '!=', $class->user_id)
             ->whereHas('roles')->whereHas('campuses', fn ($q) => $q->whereKey($class->campus->id))->orderBy('name');
     }
@@ -41,6 +44,7 @@ class FacultySupervisorEvaluators
     {
         $task->loadMissing(['course', 'evaluatee' => fn ($q) => $q->withoutGlobalScope('assigned_data')]);
         $department = $task->teaching_department_id ?? $task->course?->department_id ?? $task->evaluatee?->instructor_department_id;
+
         return DB::table('course_offerings as source')->join('courses as source_course', 'source_course.id', '=', 'source.course_id')
             ->where('source.user_id', $task->user_id)->where('source.semester_id', $task->semester_id)
             ->where('source.is_active', true)->whereRaw('COALESCE(source.teaching_department_id, source_course.department_id) = ?', [$department])
@@ -51,6 +55,7 @@ class FacultySupervisorEvaluators
     public function forTask(CourseOffering $task)
     {
         $task->loadMissing('semester.schoolYear.campus');
+
         return User::withoutGlobalScope('assigned_data')->where('is_student', false)->where('id', '!=', $task->user_id)->whereHas('roles')
             ->whereHas('campuses', fn ($q) => $q->whereKey($task->campus->id))
             ->whereIn('users.id', DB::table('course_offering_supervisor')->select('user_id')->whereIn('course_offering_id', $this->sourcesForTask($task)));
@@ -76,6 +81,7 @@ class FacultySupervisorEvaluators
         if ($user->isStudent() || $user->trashed() || ! $user->campuses()->whereKey($campus->id)->exists() || ! $user->roles()->exists()) {
             $query->whereRaw('1 = 0');
         }
+
         return $query;
     }
 }

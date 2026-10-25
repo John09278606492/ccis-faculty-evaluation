@@ -2,15 +2,17 @@
 
 namespace App\Filament\Resources\TeachingClassResource\Pages;
 
+use App\Filament\Concerns\ShowsEvaluationWorkflow;
 use App\Filament\Resources\TeachingClassResource;
 use Filament\Actions\CreateAction;
 use Filament\Resources\Pages\ListRecords;
 
 class ListTeachingClasses extends ListRecords
 {
-    use \App\Filament\Concerns\ShowsEvaluationWorkflow;
+    use ShowsEvaluationWorkflow;
 
     protected static string $view = 'filament.resources.workflow-list';
+
     protected static string $resource = TeachingClassResource::class;
 
     protected function getHeaderActions(): array

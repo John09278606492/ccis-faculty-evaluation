@@ -79,6 +79,7 @@ class ReportService
         }
         $ids = $assignments->filter(fn ($class) => (int) $class->form_id === (int) $formId
             || in_array(app(EvaluationScoring::class)->instrument($class), $pairs[$group($class)] ?? [], true))->pluck('id');
+
         return $query->whereKey($ids);
     }
 

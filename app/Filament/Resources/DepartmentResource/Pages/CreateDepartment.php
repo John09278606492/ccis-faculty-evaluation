@@ -2,8 +2,8 @@
 
 namespace App\Filament\Resources\DepartmentResource\Pages;
 
-use App\Filament\Resources\DepartmentResource;
 use App\Filament\Pages\DraftCreateRecord as CreateRecord;
+use App\Filament\Resources\DepartmentResource;
 
 class CreateDepartment extends CreateRecord
 {

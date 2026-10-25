@@ -10,6 +10,7 @@ use App\Models\FormSubmission;
 use App\Models\User;
 use App\Services\AcademicStudents;
 use Filament\Facades\Filament;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
@@ -82,7 +83,7 @@ it('provides the example download and processes the CSV upload action', function
     $csv = "student_id,first_name,middle_name,last_name,email,department_code,sections\nUPLOAD-001,Juan,,Cruz,,{$this->department->code},BSIT 3A|BSIT 2B\n";
     Storage::disk('local')->put('academic-imports/test.csv', $csv);
     Livewire::test(ListAcademicStudents::class)->callAction('exampleCsv')->assertFileDownloaded('academic-students-example.csv');
-    Livewire::test(ListAcademicStudents::class)->callAction('importStudents', data: ['semester_id' => $this->offering->semester_id, 'file' => \Illuminate\Http\UploadedFile::fake()->createWithContent('students.csv', $csv)])->assertHasNoActionErrors();
+    Livewire::test(ListAcademicStudents::class)->callAction('importStudents', data: ['semester_id' => $this->offering->semester_id, 'file' => UploadedFile::fake()->createWithContent('students.csv', $csv)])->assertHasNoActionErrors();
     expect(User::where('student_id', 'UPLOAD-001')->exists())->toBeFalse();
     $review = finishBackgroundReview();
     confirmBackgroundReview($review);

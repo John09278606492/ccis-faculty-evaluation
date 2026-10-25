@@ -5,6 +5,7 @@ namespace App\Filament\Concerns;
 use App\Services\WorkspaceDrafts;
 use Filament\Forms\Components\BaseFileUpload;
 use Filament\Forms\Components\TextInput;
+use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Support\Arr;
 
 trait HasResourceFormDraft
@@ -33,6 +34,7 @@ trait HasResourceFormDraft
                 $keys[] = $key;
             }
         }
+
         return array_values(array_diff(array_unique($keys), $blocked));
     }
 
@@ -53,20 +55,21 @@ trait HasResourceFormDraft
 
     protected function workspaceDraftRecordKey(): string
     {
-        return $this instanceof \Filament\Resources\Pages\CreateRecord ? 'new' : (string) $this->getRecord()->getKey();
+        return $this instanceof CreateRecord ? 'new' : (string) $this->getRecord()->getKey();
     }
 
     protected function workspaceDraftRecordRevision(): string
     {
-        if ($this instanceof \Filament\Resources\Pages\CreateRecord) {
+        if ($this instanceof CreateRecord) {
             return WorkspaceDrafts::hash(['new' => static::class]);
         }
+
         return WorkspaceDrafts::hash($this->getRecord()->fresh()?->attributesToArray() ?? []);
     }
 
     protected function authorizeWorkspaceDraft(): void
     {
-        if (! ($this instanceof \Filament\Resources\Pages\CreateRecord)) {
+        if (! ($this instanceof CreateRecord)) {
             $this->record = $this->resolveRecord($this->getRecord()->getKey());
         }
         $this->authorizeAccess();

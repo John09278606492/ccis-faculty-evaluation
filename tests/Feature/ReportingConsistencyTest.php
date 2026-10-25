@@ -2,14 +2,17 @@
 
 use App\Filament\Pages\EvaluationResults;
 use App\Filament\Widgets\EvaluationCompletionChart;
+use App\Models\BackgroundTask;
 use App\Models\Course;
 use App\Models\Department;
 use App\Models\FormSubmission;
 use App\Models\User;
+use App\Services\BackgroundTasks;
 use App\Services\EvaluationScoring;
 use App\Services\EvaluationTemplates;
 use App\Services\ReportService;
 use Filament\Facades\Filament;
+use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Permission;
 
@@ -82,10 +85,10 @@ it('uses the selected semester in the main table and its CSV export', function (
         ->assertTableColumnStateSet('set_rating', 1.0, $offering->evaluatee)
         ->assertTableColumnStateSet('evaluations_count', 1, $offering->evaluatee)
         ->callTableAction('export_csv')->assertHasNoTableActionErrors();
-    $task = \App\Models\BackgroundTask::where('kind', 'faculty-export')->sole();
-    app(\App\Services\BackgroundTasks::class)->run($task->id);
+    $task = BackgroundTask::where('kind', 'faculty-export')->sole();
+    app(BackgroundTasks::class)->run($task->id);
     expect($task->fresh()->status)->toBe('completed', $task->fresh()->error ?? '');
-    $csv = \Illuminate\Support\Facades\Storage::disk('local')->get($task->fresh()->file_path);
+    $csv = Storage::disk('local')->get($task->fresh()->file_path);
     expect($csv)->toContain('SET,1.00,20.00,1')->not->toContain('SET,5.00,100.00');
 });
 

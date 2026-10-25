@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Services\AssignedDataAccess;
 use App\Services\EvaluationResultsRelease;
 use App\Services\EvaluationScoring;
+use App\Services\FacultySupervisorEvaluators;
 use App\Services\ReportService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -72,7 +73,7 @@ class FacultyReportController extends Controller
         $departmentIds = $offerings->map(fn ($assignment) => $assignment->teaching_department_id ?? $assignment->course?->department_id ?? $offering->evaluatee->instructor_department_id)->filter()->unique();
         $heads = Department::where('campus_id', $scope['campus_id'])->whereIn('id', $departmentIds)->with(['supervisor', 'chairperson'])->get();
         $additionalSupervisors = $offerings->flatMap(fn ($assignment) => $assignment->course_id
-            ? $assignment->supervisorEvaluators : app(\App\Services\FacultySupervisorEvaluators::class)->forTask($assignment)->get())->unique('id');
+            ? $assignment->supervisorEvaluators : app(FacultySupervisorEvaluators::class)->forTask($assignment)->get())->unique('id');
         $staff = $staff->merge($additionalSupervisors)->unique('id')->sortBy('name')->values();
         $details = $stored ? json_decode($stored->details, true) : [];
         $primary = $heads->firstWhere('id', $offering->teaching_department_id ?? $offering->course?->department_id) ?? $heads->first();

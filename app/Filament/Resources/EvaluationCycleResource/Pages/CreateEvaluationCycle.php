@@ -2,9 +2,9 @@
 
 namespace App\Filament\Resources\EvaluationCycleResource\Pages;
 
+use App\Filament\Pages\DraftCreateRecord as CreateRecord;
 use App\Filament\Resources\EvaluationCycleResource;
 use App\Services\EvaluationCycles;
-use App\Filament\Pages\DraftCreateRecord as CreateRecord;
 use Illuminate\Database\Eloquent\Model;
 
 class CreateEvaluationCycle extends CreateRecord

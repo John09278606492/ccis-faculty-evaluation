@@ -2,10 +2,10 @@
 
 namespace App\Filament\Resources\CourseOfferingResource\Pages;
 
+use App\Filament\Pages\DraftEditRecord as EditRecord;
 use App\Filament\Resources\CourseOfferingResource;
 use App\Models\Course;
 use Filament\Actions;
-use App\Filament\Pages\DraftEditRecord as EditRecord;
 
 class EditCourseOffering extends EditRecord
 {

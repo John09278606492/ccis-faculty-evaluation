@@ -4,6 +4,7 @@ namespace App\Policies;
 
 use App\Models\CourseOffering;
 use App\Models\User;
+use App\Services\AssignedDataAccess;
 use Illuminate\Auth\Access\HandlesAuthorization;
 
 class CourseOfferingPolicy
@@ -52,7 +53,7 @@ class CourseOfferingPolicy
      */
     public function update(User $user, CourseOffering $courseOffering): bool
     {
-        return $user->can('update_course::offering') && app(\App\Services\AssignedDataAccess::class)->managesOffering($user, $courseOffering);
+        return $user->can('update_course::offering') && app(AssignedDataAccess::class)->managesOffering($user, $courseOffering);
     }
 
     /**
@@ -60,7 +61,7 @@ class CourseOfferingPolicy
      */
     public function delete(User $user, CourseOffering $courseOffering): bool
     {
-        return $user->can('delete_course::offering') && app(\App\Services\AssignedDataAccess::class)->managesOffering($user, $courseOffering);
+        return $user->can('delete_course::offering') && app(AssignedDataAccess::class)->managesOffering($user, $courseOffering);
     }
 
     /**

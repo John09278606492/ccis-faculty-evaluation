@@ -2,9 +2,9 @@
 
 namespace App\Filament\Resources\TeachingClassResource\Pages;
 
+use App\Filament\Pages\DraftEditRecord as EditRecord;
 use App\Filament\Resources\TeachingClassResource;
 use App\Services\TeachingClasses;
-use App\Filament\Pages\DraftEditRecord as EditRecord;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\ValidationException;
 

@@ -2,9 +2,9 @@
 
 namespace App\Filament\Resources\AcademicStudentResource\Pages;
 
+use App\Filament\Pages\DraftCreateRecord as CreateRecord;
 use App\Filament\Resources\AcademicStudentResource;
 use App\Services\AcademicStudents;
-use App\Filament\Pages\DraftCreateRecord as CreateRecord;
 use Illuminate\Database\Eloquent\Model;
 
 class CreateAcademicStudent extends CreateRecord

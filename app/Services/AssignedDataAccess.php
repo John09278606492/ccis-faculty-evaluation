@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Campus;
+use App\Models\CourseOffering;
 use App\Models\Form;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
@@ -66,10 +67,11 @@ class AssignedDataAccess
         return $query->where($fallback);
     }
 
-    public function managesOffering(User $actor, \App\Models\CourseOffering $offering): bool
+    public function managesOffering(User $actor, CourseOffering $offering): bool
     {
         $offering->loadMissing('semester.schoolYear.campus');
         $campus = $offering->campus;
+
         return $campus && $actor->canAccessTenant($campus)
             && $this->offerings($campus, $this->departmentIds($actor, $campus))->where('id', $offering->id)->exists();
     }

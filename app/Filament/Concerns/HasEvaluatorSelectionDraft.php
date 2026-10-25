@@ -38,6 +38,7 @@ trait HasEvaluatorSelectionDraft
         if ($supervisors !== []) {
             $state['supervisor_evaluators'] = $supervisors;
         }
+
         return WorkspaceDrafts::hash($state);
     }
 
@@ -53,6 +54,7 @@ trait HasEvaluatorSelectionDraft
         $trusted = ($saved['source'] ?? null) === 'sections_v1';
         $include = $trusted ? ($saved['include'] ?? []) : [];
         $exclude = $trusted ? ($saved['exclude'] ?? []) : [];
+
         return ['sections' => $saved['sections'] ?? [], 'include' => $include, 'exclude' => $exclude,
             'supervisor_ids' => $this->getOwnerRecord()->supervisorEvaluators()->pluck('users.id')->all(),
             'use_exceptions' => filled($include) || filled($exclude)];
@@ -65,6 +67,7 @@ trait HasEvaluatorSelectionDraft
         if (! $data['use_exceptions']) {
             $data['include'] = $data['exclude'] = [];
         }
+
         return ['mountedTableActionsData' => [$this->cleanDraftValues($data)]];
     }
 

@@ -2,9 +2,9 @@
 
 namespace App\Filament\Resources\QuizResource\Pages;
 
+use App\Filament\Pages\DraftEditRecord as EditRecord;
 use App\Filament\Resources\QuizResource;
 use Filament\Actions;
-use App\Filament\Pages\DraftEditRecord as EditRecord;
 use Illuminate\Contracts\View\View;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Locked;

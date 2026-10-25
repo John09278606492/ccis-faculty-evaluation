@@ -38,6 +38,7 @@ class TeachingClasses
                 409, 'This class has prepared evaluations or assessment records. Create a new class for a different course, faculty member or academic period.');
         }
         $record ??= new CourseOffering;
+
         return DB::transaction(function () use ($record, $data, $identityChanged) {
             $record->fill([...$data, 'teaching_department_id' => Course::findOrFail($data['course_id'])->department_id]);
             if ($identityChanged) {
@@ -48,6 +49,7 @@ class TeachingClasses
                 $record->students()->detach();
                 $record->supervisorEvaluators()->detach();
             }
+
             return $record;
         });
     }

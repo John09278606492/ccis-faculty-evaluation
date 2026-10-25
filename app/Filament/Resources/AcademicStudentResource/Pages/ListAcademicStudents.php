@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\AcademicStudentResource\Pages;
 
+use App\Filament\Concerns\ShowsEvaluationWorkflow;
 use App\Filament\Resources\AcademicStudentResource;
 use App\Services\AcademicPeriod;
 use App\Services\AcademicStudents;
@@ -13,7 +14,7 @@ use Filament\Resources\Pages\ListRecords;
 
 class ListAcademicStudents extends ListRecords
 {
-    use \App\Filament\Concerns\ShowsEvaluationWorkflow;
+    use ShowsEvaluationWorkflow;
 
     protected static string $view = 'filament.resources.workflow-list';
 
@@ -26,6 +27,7 @@ class ListAcademicStudents extends ListRecords
     {
         return 'Step 1: upload the campus master list, review and confirm it. Then go to Sections to upload each section’s students. Imported subjects and departments are reviewed with the master list.';
     }
+
     protected static string $resource = AcademicStudentResource::class;
 
     protected function getHeaderActions(): array
@@ -77,6 +79,7 @@ class ListAcademicStudents extends ListRecords
                 }),
         ];
         $byName = collect($actions)->keyBy(fn ($action) => $action->getName());
+
         return [
             $byName['importStudents']->color('primary'),
             $byName['create']->color('gray'),

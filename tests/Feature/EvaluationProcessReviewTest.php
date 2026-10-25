@@ -1,10 +1,23 @@
 <?php
 
-use App\Models\{BackgroundTask, CourseOffering, Department, EvaluationCycle, FormSubmission, StudentAcademicRecord, User};
-use App\Services\{AcademicSections, AcademicStudents, BackgroundTasks, EvaluationCopies, EvaluationCycles, EvaluationTemplates, FacultySupervisorEvaluators, ReportService, StudentDeletion};
-use Filament\Facades\Filament;
-use Illuminate\Support\Facades\{DB, Storage};
-use Spatie\Permission\Models\{Permission, Role};
+use App\Models\Department;
+use App\Models\EvaluationCycle;
+use App\Models\FormSubmission;
+use App\Models\StudentAcademicRecord;
+use App\Models\User;
+use App\Services\AcademicSections;
+use App\Services\AcademicStudents;
+use App\Services\BackgroundTasks;
+use App\Services\EvaluationCopies;
+use App\Services\EvaluationCycles;
+use App\Services\EvaluationTemplates;
+use App\Services\FacultySupervisorEvaluators;
+use App\Services\ReportService;
+use App\Services\StudentDeletion;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 
 function reviewedEvaluationFlow(): array
 {
@@ -15,6 +28,7 @@ function reviewedEvaluationFlow(): array
         $user = User::factory()->create(['is_student' => false, 'instructor_department_id' => $departmentId]);
         $user->assignRole(Role::findOrCreate($role, 'web'));
         $user->campuses()->attach($campus);
+
         return $user;
     };
     $owner = $staff('super_admin');
@@ -57,6 +71,7 @@ function reviewedEvaluationFlow(): array
         'starts_at' => now()->subMinute(), 'ends_at' => now()->addDays(2), 'assignment_ids' => [$class->id]]);
     $cycles->publish($admin, $cycle);
     $task = $cycle->assignments()->where('evaluation_type', 'SEF')->sole();
+
     return compact('class', 'student', 'pending', 'campus', 'department', 'owner', 'admin', 'head', 'chair', 'extra', 'faculty', 'a', 'b', 'cycle', 'task');
 }
 
