@@ -34,7 +34,7 @@
         .ccis-brand { position: absolute; top: 0; left: 0; right: 0; }
         .fi-simple-main-ctn { padding-top: 235px; }
         .fi-simple-main { margin-top: 0 !important; }
-        .ccis-brand-footer { display: none; }
+        .ccis-brand-tagline, .ccis-brand-rule, .ccis-brand-footer { display: none; }
     }
 </style>
 <div class="ccis-brand">
