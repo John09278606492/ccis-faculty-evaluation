@@ -9,12 +9,14 @@ use App\Models\StudentAcademicRecord;
 use App\Models\User;
 use App\Services\AcademicSections;
 use App\Services\AssignedDataAccess;
+use App\Services\EvaluationAccessService;
 use App\Services\EvaluationCycles;
 use App\Services\EvaluationTemplates;
 use App\Services\FacultySupervisorEvaluators;
 use App\Services\SupervisorEvaluationAssignments;
 use App\Services\WorkspaceSummary;
 use Filament\Facades\Filament;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Permission;
@@ -257,8 +259,8 @@ it('does not let a dean or chairperson role answer a legacy supervisor evaluatio
     $legacy->update(['is_active' => true, 'evaluator_roles' => ['supervisor'], 'settings' => [...$legacy->settings, 'annex' => null, 'instrument' => 'SEF']]);
     $offering->update(['form_id' => $legacy->id, 'evaluation_type' => 'SEF', 'is_active' => true]);
     foreach ([$head, $extra, $owner] as $user) {
-        expect(fn () => app(\App\Services\EvaluationAccessService::class)->authorize($offering->fresh(), $user))
-            ->toThrow(\Illuminate\Auth\Access\AuthorizationException::class, 'supervisors explicitly selected');
+        expect(fn () => app(EvaluationAccessService::class)->authorize($offering->fresh(), $user))
+            ->toThrow(AuthorizationException::class, 'supervisors explicitly selected');
     }
     expect(app(EvaluationTemplates::class)->create('B', $campus)->evaluator_roles)->toBe([]);
 });
