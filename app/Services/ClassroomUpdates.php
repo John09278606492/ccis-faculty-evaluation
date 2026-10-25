@@ -15,7 +15,8 @@ class ClassroomUpdates
     {
         DB::afterCommit(function () use ($userId, $kind) {
             try {
-                broadcast(new PanelDataChanged($kind, viewerId: $userId));
+                // The page that made the change has already re-rendered it.
+                broadcast(new PanelDataChanged($kind, viewerId: $userId))->toOthers();
             } catch (\Throwable $e) {
                 Log::warning('Private live update could not be delivered', ['kind' => $kind, 'error' => $e->getMessage()]);
             }

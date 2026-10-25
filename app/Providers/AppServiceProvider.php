@@ -130,7 +130,12 @@ class AppServiceProvider extends ServiceProvider
 
         foreach (['saved', 'deleted'] as $action) {
             Event::listen('eloquent.'.$action.': '.Quiz::class, fn ($quiz) => ClassroomUpdates::course($quiz->course_offering_id, 'quiz', $quiz->id));
-            Event::listen('eloquent.'.$action.': '.QuizAttempt::class, fn ($attempt) => ClassroomUpdates::quiz($attempt->quiz_id, 'attempt'));
+            // Staff see every attempt; a student hears only of their own, privately, so a class
+            // starting or submitting together does not make every classmate's page call back.
+            Event::listen('eloquent.'.$action.': '.QuizAttempt::class, function ($attempt) {
+                ClassroomUpdates::quiz($attempt->quiz_id, 'attempt');
+                ClassroomUpdates::viewer($attempt->user_id, 'attempt');
+            });
             Event::listen('eloquent.'.$action.': '.QuizQuestion::class, fn ($question) => ClassroomUpdates::quiz($question->quiz_id, 'question'));
             Event::listen('eloquent.'.$action.': '.ClassRecordSheet::class, fn ($sheet) => ClassroomUpdates::course($sheet->course_offering_id, 'workbook'));
         }

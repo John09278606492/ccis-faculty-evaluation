@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\QuizAttempt;
 use App\Models\QuizQuestion;
+use App\Support\SqliteWriter;
 use Illuminate\Support\Facades\DB;
 
 /** The browser and the scheduled expiry sweep share one idempotent finalizer. */
@@ -12,6 +13,7 @@ class FinalizeAssessmentAttempt
     public function handle(QuizAttempt $attempt, string $reason = 'submitted'): QuizAttempt
     {
         $closed = DB::transaction(function () use ($attempt, $reason) {
+            SqliteWriter::reserve('quiz_attempts', $attempt->id);
             $locked = QuizAttempt::query()->lockForUpdate()->findOrFail($attempt->id);
             if ($locked->status !== 'in_progress') {
                 return false;
