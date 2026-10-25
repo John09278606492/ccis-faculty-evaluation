@@ -15,6 +15,8 @@ const saveEvery = Number(args.saveEvery || 5000);
 const rampMs = Number(args.rampMs || 20000);
 const startSpreadMs = Number(args.startSpreadMs || 10000);
 const useSockets = args.ws !== '0';
+// Late in a long exam the projects are large: start each one at about this many KB.
+const startKb = Number(args.startKb || 0);
 const out = args.out ? path.resolve(args.out) : null;
 const records = [];
 const failures = [];
@@ -236,6 +238,9 @@ async function main() {
             if (!JSON.stringify(begun.effects.html || '').includes('code-')) throw Error('Attempt did not start');
             started++;
             const projects = {php: JSON.parse(fixture.starter.php), web: JSON.parse(fixture.starter.web)};
+            for (const project of Object.values(projects)) {
+                for (let step = 1000; JSON.stringify(project).length < startKb * 1024; step++) edit(project, step);
+            }
             let step = 0;
             while (performance.now() < endAt.value) {
                 await sleep(jitter(saveEvery));
@@ -244,7 +249,8 @@ async function main() {
                 const which = step % 3 === 0 ? 'web' : 'php';
                 edit(projects[which], step);
                 const json = JSON.stringify(projects[which]);
-                await browser.commit(exam, {updates: {[`answers.${fixture.questions[which]}`]: json}}, 'code_save');
+                const saved = await browser.commit(exam, {updates: {[`answers.${fixture.questions[which]}`]: json}}, 'code_save');
+                if ((saved.effects?.dispatches || []).some(d => d.name === 'code-save-rejected')) { counters.rejectedSaves = (counters.rejectedSaves || 0) + 1; continue; }
                 finals.set(`${student.id}:${fixture.questions[which]}`, json);
                 if (step === 3) await browser.commit(exam, {updates: {[`answers.${fixture.questions.short}`]: '$_POST'}}, 'short_answer_save');
                 // Exam supervision: a paste from outside and a tab switch now and then.

@@ -45,6 +45,21 @@ Linux container, 4 CPUs, so 4 PHP workers (the campus launcher uses one per CPU,
 - Live updates messages: about 78,000 small WebSocket messages for 120 students over the exam (progress and tab-leave notices reach every open page, which ignores them). Reverb handled them without errors.
 - SQL questions with MySQL workspaces were not part of this test.
 
+## A 3-hour exam with 50 students
+
+A 180-minute exam, tested at its heaviest point, the end: each student's two projects start at about 38 KB and grow to the 50,000-character limit while they save every ~5 seconds for 15 minutes.
+
+| | Result |
+|---|---:|
+| Attempts started and submitted | 50 / 50 |
+| Saved answers matching the student's last save | 100 / 100 |
+| Code saves | 8,937, p50 44 ms / p95 60 ms, no errors |
+| Size of one save near the end | about 140 KB |
+| Timer submit (two thirds at once): p50 / p95 | 195 / 665 ms |
+| Database after the exam | 5.8 MB, `integrity_check` ok |
+
+Saves replace the stored answer rather than adding to it, so the database does not grow with exam length. Typing keeps each student signed in (sessions last 120 minutes after the last request); the server closes attempts when the timer ends even if a browser is closed, keeping everything already saved. On Wi-Fi, 50 students saving large projects send about 1.4 MB per second in total near the end of the exam.
+
 ## Reproduce
 
 Run it against a server whose `.env` points at an isolated database under `storage/app/load-tests` with `APP_ENV=loadtesting`, never the live `database/campus.sqlite`. The fixture command refuses any other database.
@@ -58,4 +73,4 @@ node scripts/assessment-load-test.cjs --url=http://127.0.0.1:8300 --manifest=sto
   --minutes=4 --saveEvery=5000 --rampMs=30000 --db=storage/app/load-tests/coding/assessment.sqlite --out=storage/app/load-tests/coding/result.json
 ```
 
-Options: `--students` (fewer than the fixture), `--minutes` of typing, `--saveEvery` (average milliseconds between saves per student), `--rampMs` (sign-in spread), `--startSpreadMs` (Start spread), `--ws=0` (no live updates). The exit code is nonzero when any student fails or the data audit finds a difference.
+Options: `--students` (fewer than the fixture), `--minutes` of typing, `--saveEvery` (average milliseconds between saves per student), `--rampMs` (sign-in spread), `--startSpreadMs` (Start spread), `--startKb` (start each project at this size, as late in a long exam), `--ws=0` (no live updates). The exit code is nonzero when any student fails or the data audit finds a difference.
