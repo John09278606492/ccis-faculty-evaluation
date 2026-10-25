@@ -348,8 +348,10 @@ class TakeQuiz extends Page
     {
         $this->previewMode = true;
         $this->answers = $quiz->questions->mapWithKeys(fn ($question) => [$question->id => null])->all();
-        $this->previewStartedAt = now()->toISOString();
-        $this->previewExpiresAt = optional($this->computeExpiresAt($quiz, now()))->toISOString();
+        // Wall-clock times in the app timezone: the attempt's datetime casts drop a
+        // UTC "Z", so an ISO string would read back hours off outside UTC.
+        $this->previewStartedAt = now()->toDateTimeString();
+        $this->previewExpiresAt = $this->computeExpiresAt($quiz, now())?->toDateTimeString();
         $this->previewMaxScore = $quiz->questions()->sum('points');
         // boot() only rebuilds $attempt from the preview* scalars above on requests
         // *after* this one (mount() runs after boot(), which is too early to see

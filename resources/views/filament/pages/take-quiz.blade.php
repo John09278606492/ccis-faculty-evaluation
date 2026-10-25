@@ -157,7 +157,7 @@
             <p class="text-sm text-gray-500">{{ $quiz->courseOffering->display_name }}</p>
 
             @if ($quiz->instructions)
-                <p class="mt-2 text-sm">{{ $quiz->instructions }}</p>
+                <p class="mt-2 whitespace-pre-line text-sm">{{ $quiz->instructions }}</p>
             @endif
 
             {{-- Exam header — the student's name, course, instructor, date, duration, and the
@@ -264,7 +264,7 @@
                             {{ $index + 1 }}
                         </span>
                         <p class="font-medium">
-                            {{ $question->question_text }}
+                            <span class="whitespace-pre-line" style="font-feature-settings: 'calt' 0">{{ $question->question_text }}</span>
                             <span class="ml-1 text-xs font-normal text-gray-400">
                                 ({{ $question->points }} {{ Str::plural('point', $question->points) }})
                             </span>

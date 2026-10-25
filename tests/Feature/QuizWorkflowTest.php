@@ -258,6 +258,20 @@ it('keeps instructor previews separate from saved student attempts across reques
     expect($quiz->attempts()->count())->toBe(0);
 });
 
+it('gives an instructor preview the full time outside UTC', function () {
+    extract(quizWorkflowFixture());
+    config(['app.timezone' => 'Asia/Manila']);
+    date_default_timezone_set('Asia/Manila');
+    try {
+        $this->actingAs($instructor);
+        $page = Livewire::test(TakeQuiz::class, ['quiz' => $quiz]);
+        expect(now()->diffInMinutes($page->get('attempt')->expires_at))->toBeGreaterThan(19)
+            ->and($page->set('answers.'.$question->id, 'echo')->get('attempt')->expires_at->isFuture())->toBeTrue();
+    } finally {
+        date_default_timezone_set('UTC');
+    }
+});
+
 it('saves answers before confirming submission without ending the attempt', function () {
     extract(quizWorkflowFixture());
     $this->actingAs($student);
