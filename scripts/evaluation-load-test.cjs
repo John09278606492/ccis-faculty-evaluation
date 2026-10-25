@@ -20,7 +20,8 @@ const env = {...process.env, APP_ENV:'loadtesting', APP_DEBUG:'false', APP_URL:`
     DB_CONNECTION:'sqlite', DB_DATABASE:db, DB_URL:'', SESSION_DRIVER:args.sessions || 'database', CACHE_STORE:args.cache || 'database',
     CACHE_PREFIX:'load-'+path.basename(work), CACHE_FILE_PATH:path.join(work,'cache'), SESSION_FILES:path.join(work,'sessions'),
     SESSION_COOKIE:'load_evaluation_session', QUEUE_CONNECTION:'sync', BROADCAST_CONNECTION:'null', BCRYPT_ROUNDS:'4', LOG_LEVEL:'error',
-    APP_CONFIG_CACHE:path.relative(root,path.join(work,'config.php')), APP_ROUTES_CACHE:path.relative(root,path.join(work,'routes.php'))};
+    APP_CONFIG_CACHE:path.relative(root,path.join(work,'config.php')), APP_ROUTES_CACHE:path.relative(root,path.join(work,'routes.php')),
+    APP_EVENTS_CACHE:path.relative(root,path.join(work,'events.php')), FILAMENT_CACHE_PATH:path.join(work,'filament')};
 if(args.profile)env.LOAD_TEST_METRICS=path.join(work,'php-metrics.jsonl');
 for (const dir of ['cache','sessions']) fs.mkdirSync(path.join(work,dir),{recursive:true});
 function artisan(...argv) {
@@ -79,10 +80,18 @@ async function main(){
     artisan('migrate','--force');
     if(args.configCache)artisan('config:cache');
     artisan('route:cache');
+    artisan('event:cache');
+    artisan('filament:cache-components');
     const fixture=JSON.parse(fs.readFileSync(manifestPath,'utf8'));
+    // Same PHP settings as the campus launcher (desktop-host/resources/server/host.cjs), so results match what students get.
+    const opcacheDir=path.join(work,'opcache');fs.mkdirSync(opcacheDir,{recursive:true});
+    const opcache=['-d','opcache.enable=1','-d','opcache.enable_cli=1','-d','opcache.validate_timestamps=1','-d','opcache.revalidate_freq=2',
+        '-d','opcache.memory_consumption=192','-d','opcache.max_accelerated_files=20000','-d',`opcache.file_cache=${opcacheDir}`,'-d','opcache.file_cache_fallback=1'];
+    const opcacheLoaded=extra=>spawnSync(php,[...extra,'-r',"exit(extension_loaded('Zend OPcache') ? 0 : 1);"],{windowsHide:true,timeout:15000,stdio:'ignore'}).status===0;
+    if(!opcacheLoaded([])){if(opcacheLoaded(['-d','zend_extension=opcache']))opcache.unshift('-d','zend_extension=opcache');else{opcache.length=0;process.stderr.write('Warning: OPcache is unavailable; results will be slower than the campus launcher.\n');}}
     for(let i=1;i<=workers;i++){
         const log=fs.openSync(path.join(work,`worker-${i}.log`),'a');
-        const child=spawn(php,['-d','opcache.enable_cli=1','-d','opcache.validate_timestamps=1','-d','opcache.revalidate_freq=0','-S',`127.0.0.1:${basePort+i}`,path.join(root,'vendor/laravel/framework/src/Illuminate/Foundation/resources/server.php')],{cwd:path.join(root,'public'),env,windowsHide:true,stdio:['ignore',log,log]});
+        const child=spawn(php,[...opcache,'-S',`127.0.0.1:${basePort+i}`,path.join(root,'vendor/laravel/framework/src/Illuminate/Foundation/resources/server.php')],{cwd:path.join(root,'public'),env,windowsHide:true,stdio:['ignore',log,log]});
         children.push(child); child.once('exit',code=>{if(code!==null&&code!==0)process.stderr.write(`Worker exited: ${code}\n`);});
     }
     await Promise.all(children.map((_,i)=>waitPort(basePort+i+1)));

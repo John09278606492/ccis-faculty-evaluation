@@ -96,6 +96,19 @@ Automated verification: **413 tests / 1,898 assertions passed**, plus two runtim
 
 After the final report-signatory adjustment, the affected report/migration tests were rerun: **6 passed / 44 assertions**, including that personal-results access cannot edit reports or silently make the evaluated instructor their own preparer.
 
+## Re-test, 25 October 2026
+
+The harness now starts its PHP workers with the same settings as the campus launcher: OPcache (loaded with `zend_extension=opcache` when php.ini leaves it off, plus a file cache for Windows), a two-second file revalidation interval, and isolated event and Filament component caches. Earlier runs did not load OPcache when php.ini had it switched off, as Laragon's PHP 8.3 does, so the Windows figures above are probably slower than the real campus server. Re-run them on the server computer to confirm.
+
+Linux container, 4 logical CPUs, 4 PHP workers, load generator on the same CPUs, 300 students, 7 requests each:
+
+| Test | Students completing both forms | Requests/s | Student request p50 | p95 |
+|---|---:|---:|---:|---:|
+| 32 students at a time | 300 / 300 | 67 | 0.40 s | 1.15 s |
+| All 300 within 3 seconds | 300 / 300 | 67 | 4.3 s | 5.6 s |
+
+Inside Laravel, a request takes 15–25 ms (entry 14 ms, form 16 ms, submission 26 ms); framework start-up adds about 20 ms. The rest of the time is spent waiting for a free PHP worker, so a burst queues rather than failing. No errors, duplicates or lock failures occurred. Capacity grows with the number of PHP workers, and the launcher uses one per logical CPU, up to 16. In practice students take minutes to read and answer each form, so their requests spread out far more than in this test.
+
 ## Reproduce safely
 
 Use Node 20+ and a new directory under `storage/app/load-tests`. The harness binds only loopback and refuses to overwrite an existing test database. It never replaces the live `.env` or database. The fixture command itself rejects the normal application environment and non-isolated databases.
