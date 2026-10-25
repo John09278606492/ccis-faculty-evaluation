@@ -181,7 +181,9 @@ class FormResource extends Resource implements HasShieldPermissions
                                     ->toArray();
                             })
                             ->columns(3)
-                            ->helperText('Select which roles can evaluate using this form. Leave empty to allow all roles.')
+                            ->helperText(fn (?Form $record) => $record?->isSupervisorInstrument()
+                                ? 'Annex B ignores roles. Only supervisors explicitly selected for each faculty under Teaching Classes can answer it.'
+                                : 'Select which roles can evaluate using this form. Leave empty to allow all roles.')
                             ->disabled(! $isSuperAdmin),
                     ])
                     ->visible($isSuperAdmin),

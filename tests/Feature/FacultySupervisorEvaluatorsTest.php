@@ -249,3 +249,16 @@ it('denies unselected deans chairpersons and administrators even when another su
     expect($department->fresh()->supervisor_id)->toBe($head->id)
         ->and($task->formSubmissions()->count())->toBe(1);
 });
+
+it('does not let a dean or chairperson role answer a legacy supervisor evaluation without explicit selection', function () {
+    extract(facultySupervisorFixture());
+    $department->update(['chairperson_id' => $extra->id]);
+    $legacy = app(EvaluationTemplates::class)->create('A', $campus);
+    $legacy->update(['is_active' => true, 'evaluator_roles' => ['supervisor'], 'settings' => [...$legacy->settings, 'annex' => null, 'instrument' => 'SEF']]);
+    $offering->update(['form_id' => $legacy->id, 'evaluation_type' => 'SEF', 'is_active' => true]);
+    foreach ([$head, $extra, $owner] as $user) {
+        expect(fn () => app(\App\Services\EvaluationAccessService::class)->authorize($offering->fresh(), $user))
+            ->toThrow(\Illuminate\Auth\Access\AuthorizationException::class, 'supervisors explicitly selected');
+    }
+    expect(app(EvaluationTemplates::class)->create('B', $campus)->evaluator_roles)->toBe([]);
+});

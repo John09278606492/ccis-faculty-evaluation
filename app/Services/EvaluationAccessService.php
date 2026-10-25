@@ -61,6 +61,11 @@ class EvaluationAccessService
             return $form;
         }
 
+        // A role such as dean or chairperson never confers supervisor evaluator authority.
+        if ($courseOffering->evaluation_type_code === 'SEF') {
+            throw new AuthorizationException('Supervisor evaluations require an Annex B instrument and supervisors explicitly selected for this faculty.');
+        }
+
         if (! $user) {
             if ($form->requires_login) {
                 throw new AuthorizationException('You must log in to access this evaluation form.');

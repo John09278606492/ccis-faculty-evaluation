@@ -26,7 +26,9 @@ the forms, included teaching classes and response schedule within that semester.
 The former “Evaluation Cycles” page is now named “Evaluation Setup”; existing URLs,
 records, permissions, schedules, drafts and historical results are retained.
 
-Supervisors answer Annex B through **My Supervisor Tasks**. Students use their own
+Supervisors answer Annex B through **My Supervisor Tasks**, and only after they are
+selected for that faculty in Teaching Classes → Evaluators. Being a Dean or Chairperson
+(Department Leadership) or holding a role listed on a form never makes someone an evaluator. Students use their own
 evaluation entry flow. PIN and approval controls remain exclusive to assessments.
 Assessments and administration stay separate from faculty evaluation and their
 sidebar groups start collapsed. The Dashboard prioritizes the evaluation steps.
