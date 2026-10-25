@@ -22,6 +22,8 @@ class AccessAssignments extends Page implements HasTable
 
     protected static ?string $navigationGroup = 'Administration';
 
+    protected static ?int $navigationSort = 3;
+
     protected static ?string $navigationIcon = 'heroicon-o-shield-check';
 
     protected static ?string $title = 'Access & Assignments';

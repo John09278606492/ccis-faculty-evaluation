@@ -21,7 +21,7 @@ class CourseResource extends Resource
 
     protected static ?string $navigationGroup = 'Academic Management';
 
-    protected static ?int $navigationSort = 4;
+    protected static ?int $navigationSort = 3;
 
     // Disable automatic tenancy scoping - we'll handle it manually
     protected static bool $isScopedToTenant = false;

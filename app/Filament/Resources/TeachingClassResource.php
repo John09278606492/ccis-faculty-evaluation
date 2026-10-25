@@ -60,7 +60,7 @@ class TeachingClassResource extends CourseOfferingResource
 
     public static function table(Table $table): Table
     {
-        return $table->description('Upload students to Sections first, then assign those sections to a faculty member and subject.')
+        return $table
             ->modifyQueryUsing(fn (Builder $query) => $query->with(['course', 'evaluatee', 'semester.schoolYear'])->withCount('students'))
             ->columns([
                 Tables\Columns\TextColumn::make('course.code')->label('Subject')->description(fn (CourseOffering $record) => $record->course?->name)->searchable(['code', 'name'])->wrap()->grow(),

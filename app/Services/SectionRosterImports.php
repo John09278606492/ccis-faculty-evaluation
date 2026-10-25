@@ -27,7 +27,7 @@ class SectionRosterImports
     {
         $section = $this->section($actor, $campus, $id);
         $reader = app(TeachingClassRosterImports::class);
-        $rows = $reader->read($source, $section->name);
+        $rows = $reader->read($source, $section->name, true);
         $analysis = $reader->analyzeRows($actor, $campus, $section->semester_id, $rows, $section->department_id, $section->name);
 
         return ['review' => [...$analysis['review'], 'target' => 'section', 'class_label' => $section->name,

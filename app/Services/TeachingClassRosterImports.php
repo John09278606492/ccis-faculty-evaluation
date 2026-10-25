@@ -66,7 +66,8 @@ class TeachingClassRosterImports
         return $header;
     }
 
-    public function read(string $source, string $defaultSection = ''): array
+    /** Section uploads may list ID No. only; the masterlist supplies the names shown for review. */
+    public function read(string $source, string $defaultSection = '', bool $allowIdOnly = false): array
     {
         abort_unless((bool) preg_match('#^background-tasks/[a-f0-9-]{36}/source\.(csv|xlsx|xls)$#i', $source), 403);
         $path = Storage::disk('local')->path($source);
@@ -120,7 +121,8 @@ class TeachingClassRosterImports
             if ($header === null) {
                 $candidate = $this->header($row);
                 if (isset($candidate['student_id'])) {
-                    if (array_diff(['first_name', 'last_name', 'middle_name'], array_keys($candidate))) {
+                    $missingNames = array_diff(['first_name', 'last_name', 'middle_name'], array_keys($candidate));
+                    if ($missingNames && ! ($allowIdOnly && count($missingNames) === 3)) {
                         throw ValidationException::withMessages(['file' => 'Use ID No., Lastname, Firstname and Middlename columns. Download the Section Roster CSV example.']);
                     }
                     $header = $candidate;
@@ -137,6 +139,7 @@ class TeachingClassRosterImports
                 $record[$field] = isset($header[$field]) ? ($row[$header[$field]] ?? '') : '';
             }
             $record['student_id'] = mb_strtoupper($record['student_id']);
+            $record['check_names'] = isset($header['last_name']);
             $record['section'] = self::section($record['section'] ?: $section);
             $result[] = $record;
         }
@@ -195,7 +198,7 @@ class TeachingClassRosterImports
                 if ($departmentId !== null && $student->student_department_id !== $departmentId) {
                     $messages[] = 'This student belongs to a different department than the selected section.';
                 }
-                foreach (['last_name' => 'Lastname', 'first_name' => 'Firstname', 'middle_name' => 'Middlename'] as $field => $label) {
+                foreach (($row['check_names'] ?? true) ? ['last_name' => 'Lastname', 'first_name' => 'Firstname', 'middle_name' => 'Middlename'] : [] as $field => $label) {
                     if ($this->name($row[$field]) !== $this->name($student->$field) || ($field !== 'middle_name' && $this->name($row[$field]) === '')) {
                         $messages[] = $label.' does not match the masterlist for this ID. Names are not changed by this upload.';
                     }
@@ -225,6 +228,9 @@ class TeachingClassRosterImports
                 $sections[$row['section']][$student->id] = true;
             } else {
                 $errorCount++;
+            }
+            if (! ($row['check_names'] ?? true) && $student && $messages === []) {
+                $row = [...$row, 'last_name' => $student->last_name, 'first_name' => $student->first_name, 'middle_name' => (string) $student->middle_name];
             }
             $details[] = [...$row, 'messages' => $messages, 'warnings' => $warnings];
         }

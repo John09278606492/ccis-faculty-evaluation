@@ -63,7 +63,7 @@ class EvaluationLoadAudit extends Command
         }
         $first = User::findOrFail($manifest['students'][0]['id']);
         $progress = app(StudentEvaluationProgress::class)->summary($first, $campus, $manifest['period']);
-        $check('student_progress_complete', $progress['completed'] === 2 && $progress['remaining'] === 0, $progress);
+        $check('student_progress_complete', $progress['completed'] === count($manifest['students'][0]['assignments']) && $progress['remaining'] === 0, $progress);
         $releaseBefore = [];
         $ratings = [];
         foreach (collect($manifest['staff'])->where('role', 'instructor') as $staff) {

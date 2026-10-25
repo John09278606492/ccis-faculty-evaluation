@@ -24,6 +24,8 @@ class BackgroundProcessing extends Page implements HasTable
 
     protected static ?string $navigationGroup = 'Administration';
 
+    protected static ?int $navigationSort = 6;
+
     protected static ?string $navigationIcon = 'heroicon-o-arrow-path';
 
     public static function canAccess(): bool

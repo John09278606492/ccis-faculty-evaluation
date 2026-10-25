@@ -65,21 +65,23 @@ class EvaluationCycleResource extends Resource
     public static function form(Form $form): Form
     {
         return $form->schema([
-            Forms\Components\Section::make('1. Evaluation schedule')->description('The academic period identifies the semester. Opens and Closes control when evaluators may respond.')->schema([
-                Forms\Components\TextInput::make('name')->label('Evaluation name')->required()->maxLength(255)->placeholder('CCIS Faculty Evaluation — First Semester'),
+            Forms\Components\Section::make('1. Evaluation details')->description('Which department and semester this evaluation covers.')->schema([
+                Forms\Components\TextInput::make('name')->label('Evaluation name')->required()->maxLength(255)->placeholder('CCIS Faculty Evaluation — First Semester')->columnSpanFull(),
                 Forms\Components\Select::make('department_id')->label('Department')->required()->live()
                     ->options(fn () => app(AssignedDataAccess::class)->apply(Department::query(), auth()->user(), filament()->getTenant())->pluck('name', 'id')),
                 Forms\Components\Select::make('semester_id')->label('Academic Period')->required()->live()->options(fn () => AcademicPeriod::options(filament()->getTenant()))->default(fn () => AcademicPeriod::current(filament()->getTenant())),
+            ])->columns(2),
+            Forms\Components\Section::make('2. Response window')->description('Evaluators can respond only between these dates.')->schema([
                 Forms\Components\DateTimePicker::make('starts_at')->label('Opens')->required(),
                 Forms\Components\DateTimePicker::make('ends_at')->label('Closes')->required()->after('starts_at'),
             ])->columns(2),
-            Forms\Components\Section::make('2. Evaluation forms')->description('Annex A is answered by students; Annex B is answered by the supervisors explicitly selected for each faculty. Published forms are protected.')->schema([
+            Forms\Components\Section::make('3. Evaluation forms')->description('Annex A is answered by students; Annex B is answered by the supervisors explicitly selected for each faculty. Published forms are protected.')->schema([
                 Forms\Components\Select::make('student_form_id')->label('Annex A — Student Evaluation')->required()->searchable()
                     ->options(fn () => Instrument::whereHas('campuses', fn ($q) => $q->whereKey(filament()->getTenant()->id))->where('settings->annex', 'A')->whereNull('archived_at')->pluck('name', 'id')),
                 Forms\Components\Select::make('supervisor_form_id')->label('Annex B — Supervisor Evaluation')->required()->searchable()
                     ->options(fn () => Instrument::whereHas('campuses', fn ($q) => $q->whereKey(filament()->getTenant()->id))->where('settings->annex', 'B')->whereNull('archived_at')->pluck('name', 'id')),
             ])->columns(2),
-            Forms\Components\Section::make('3. Classes included')->description('Select the teaching classes prepared in Step 2. Their assigned section students are reused; no student list needs to be uploaded here.')->schema([
+            Forms\Components\Section::make('4. Classes included')->description('Select the classes prepared under Teaching Classes. Their assigned section students are reused; no student list needs to be uploaded here.')->schema([
                 Forms\Components\Select::make('assignment_ids')->label('Teaching classes')->multiple()->searchable()->preload()
                     ->options(fn (Forms\Get $get, ?EvaluationCycle $record) => CourseOffering::where('semester_id', $get('semester_id'))
                         ->whereHas('course', fn ($q) => $q->where('department_id', $get('department_id')))

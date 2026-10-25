@@ -15,6 +15,8 @@ class SystemHealth extends Page
 
     protected static ?string $navigationGroup = 'Administration';
 
+    protected static ?int $navigationSort = 7;
+
     protected static ?string $navigationIcon = 'heroicon-o-heart';
 
     public static function canAccess(): bool

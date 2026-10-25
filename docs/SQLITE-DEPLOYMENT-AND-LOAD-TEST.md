@@ -96,6 +96,34 @@ Automated verification: **413 tests / 1,898 assertions passed**, plus two runtim
 
 After the final report-signatory adjustment, the affected report/migration tests were rerun: **6 passed / 44 assertions**, including that personal-results access cannot edit reports or silently make the evaluated instructor their own preparer.
 
+## Re-test, 25 October 2026
+
+The harness now starts its PHP workers with the same settings as the campus launcher: OPcache (loaded with `zend_extension=opcache` when php.ini leaves it off, plus a file cache for Windows), a two-second file revalidation interval, and isolated event and Filament component caches. Earlier runs did not load OPcache when php.ini had it switched off, as Laragon's PHP 8.3 does, so the Windows figures above are probably slower than the real campus server. Re-run them on the server computer to confirm.
+
+Linux container, 4 logical CPUs, 4 PHP workers, load generator on the same CPUs, 300 students, 7 requests each:
+
+| Test | Students completing both forms | Requests/s | Student request p50 | p95 |
+|---|---:|---:|---:|---:|
+| 32 students at a time | 300 / 300 | 67 | 0.40 s | 1.15 s |
+| All 300 within 3 seconds | 300 / 300 | 67 | 4.3 s | 5.6 s |
+
+Inside Laravel, a request takes 15–25 ms (entry 14 ms, form 16 ms, submission 26 ms); framework start-up adds about 20 ms. The rest of the time is spent waiting for a free PHP worker, so a burst queues rather than failing. No errors, duplicates or lock failures occurred. Capacity grows with the number of PHP workers, and the launcher uses one per logical CPU, up to 16. In practice students take minutes to read and answer each form, so their requests spread out far more than in this test.
+
+### Campus-sized test: 2,000 students and 60 faculty
+
+Fixture: `--students=2000 --faculty=60 --subjects=7 --section-size=40`. That gives 3 departments, 51 sections of 40 students, 357 teaching classes (one per section and subject), and teachers rotating so each handles several subjects and sections. Each student evaluates 7 teachers: 14,000 Annex A responses. Deans and chairpersons are explicitly selected for every class and submit 120 Annex B responses. Same 4-CPU Linux container with 4 PHP workers.
+
+| Test | Students done | Evaluations | Requests | Requests/s | Student request p50 | p95 |
+|---|---:|---:|---:|---:|---:|---:|
+| Back-to-back, 200 at a time, no reading time | 2,000 / 2,000 | 14,000 | 34,000 | 63 | 3.2 s | 5.2 s |
+| Arrivals over 10 min, 15–30 s per form, thank-you page and list after each (`--rampMs=600000 --thinkMs=30000 --browse=1 --fullCycle=1`) | 2,000 / 2,000 | 14,000 + 120 | 62,000 | 59 | 10.1 s | 19.0 s |
+
+Both runs had 0 failed students, 0 duplicates and 0 missing responses. The full-cycle run passed 331/331 role checks and 77/77 data checks. Server time per request stayed flat from the first to the 14,000th response (submission p50 25–29 ms).
+
+The second scenario asks for about 80 requests/s, more than 4 workers provide (about 60/s), so requests queued. Capacity grows with PHP workers; the campus launcher uses one per logical CPU, up to 16. Real students usually take longer than 30 s per form, and opening departments at different times divides the peak.
+
+After the load, with the server idle, Monitor Student Progress took 2.6 s and Faculty Results 3.8 s for a head or administrator at this data size.
+
 ## Reproduce safely
 
 Use Node 20+ and a new directory under `storage/app/load-tests`. The harness binds only loopback and refuses to overwrite an existing test database. It never replaces the live `.env` or database. The fixture command itself rejects the normal application environment and non-isolated databases.
