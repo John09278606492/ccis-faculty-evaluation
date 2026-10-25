@@ -6,6 +6,18 @@ return [
     'websocket_port' => (int) env('CLASSROOM_WEBSOCKET_PORT', env('REVERB_PORT', 8085)),
     'websocket_scheme' => env('CLASSROOM_WEBSOCKET_SCHEME'),
 
+    // Sign-in page branding. Without a title the plain sign-in card is shown.
+    // The image and logo are paths under public/, e.g. images/campus.jpg.
+    'login' => [
+        'title' => env('LOGIN_TITLE'),
+        'tagline' => env('LOGIN_TAGLINE'),
+        'campus' => env('LOGIN_CAMPUS'),
+        'image' => env('LOGIN_IMAGE'),
+        'logo' => env('LOGIN_LOGO'),
+        // The "Faculty evaluation" button; an assessment-only installation hides it.
+        'evaluation_entry' => (bool) env('LOGIN_EVALUATION_ENTRY', true),
+    ],
+
     /*
     | Student database workspaces: a second MySQL server, separate from the
     | application's own database, where each student gets their own account and

@@ -137,6 +137,7 @@ class AdminPanelProvider extends PanelProvider
             ->renderHook(PanelsRenderHook::HEAD_START, fn () => view('filament.partials.light-first'))
             ->renderHook(PanelsRenderHook::CONTENT_START, fn () => Blade::render('@livewire("workspace-context")'))
             ->renderHook(PanelsRenderHook::BODY_END, fn () => view('filament.partials.live-connection'))
+            ->renderHook(PanelsRenderHook::BODY_START, fn () => filled(config('classroom.login.title')) ? view('filament.partials.login-brand') : '', scopes: Login::class)
             // Multi-tenancy with Campus
             ->tenant(Campus::class)
             ->tenantRegistration(null)
