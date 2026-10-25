@@ -67,7 +67,7 @@ it('has a standalone section resource with empty sections, visible period filter
     Livewire::test(ListSections::class)->assertSuccessful()->assertCanSeeTableRecords([$this->section])->assertSee('Academic Period');
     $download = $this->get(route('sections.template', $this->section))->assertOk()->assertDownload('bsit-3a-student-list.csv');
     $lines = preg_split('/\r\n|\n|\r/', $download->streamedContent());
-    expect(str_getcsv($lines[1]))->toBe(['ID No.', 'Lastname', 'Firstname', 'Middlename']);
+    expect(str_getcsv($lines[1]))->toBe(['ID No.']);
     Livewire::test(CreateSection::class)->fillForm(['name' => 'BSIT 3B', 'semester_id' => $this->offering->semester_id, 'department_id' => $this->department->id, 'is_active' => true])->call('create')->assertHasNoFormErrors();
     $created = AcademicSection::where('name', 'BSIT 3B')->sole();
     expect($created->students()->count())->toBe(0);
@@ -93,6 +93,21 @@ it('uploads and confirms section students first and assigns that saved section t
     $group = $this->section->department_id.'~'.$this->section->semester_id.'~'.rawurlencode($this->section->name);
     app(AcademicStudents::class)->assign($this->actor, $this->offering, [$group]);
     expect($this->offering->students()->pluck('users.id')->all())->toBe([$this->student->id]);
+});
+
+it('accepts an ID-only section list and shows masterlist names for review', function () {
+    $review = ($this->review)("BSIT - 3A\nID No.\n000123\nMISSING\n");
+    $details = $review->result['review']['details'];
+    expect($review->result['review']['error_count'])->toBe(1)
+        ->and([$details[0]['last_name'], $details[0]['first_name'], $details[0]['middle_name']])->toBe(['Dador', 'Juan', 'Santos'])
+        ->and($details[0]['messages'])->toBe([])
+        ->and(implode(' ', $details[1]['messages']))->toContain('not found in the masterlist');
+
+    $review = ($this->review)("ID No.\n000123\n");
+    $import = $this->tasks->confirm($review, $this->actor, $this->campus);
+    $this->tasks->run($import->id);
+    expect($import->fresh()->status)->toBe('completed', $import->fresh()->error ?? '')
+        ->and($this->section->students()->pluck('users.id')->all())->toBe([$this->student->id]);
 });
 
 it('blocks wrong sections, unknown IDs and mismatched names without adding even the valid rows', function () {
