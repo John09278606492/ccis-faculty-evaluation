@@ -41,6 +41,10 @@ class UserResource extends Resource
 
     protected static ?string $navigationLabel = 'Staff Accounts';
 
+    protected static ?string $modelLabel = 'Staff Account';
+
+    protected static ?string $pluralModelLabel = 'Staff Accounts';
+
     protected static ?int $navigationSort = 1;
 
     protected static ?string $tenantOwnershipRelationshipName = 'campuses';
@@ -279,53 +283,45 @@ class UserResource extends Resource
                     ->relationship('roles', 'name')
                     ->multiple()
                     ->preload(),
-                TernaryFilter::make('is_student')
-                    ->label('Student Account')
-                    ->trueLabel('Students Only')
-                    ->falseLabel('Non-Students Only'),
                 TernaryFilter::make('is_instructor')
                     ->label('Instructor Account')
                     ->trueLabel('Instructors Only')
                     ->falseLabel('Non-Instructors Only'),
             ], layout: FiltersLayout::AboveContent)
             ->actions([
-                Action::make('issueTemporaryPassword')->label('Issue Temporary Password')->icon('heroicon-o-key')
-                    ->visible(fn (User $record) => ! $record->isStudent() && ! $record->isSuperAdmin() && static::canEdit($record))
-                    ->requiresConfirmation()->modalDescription('Issue a unique temporary password. Give it privately to this staff member. They must change it at first sign-in.')
-                    ->action(function (User $record) {
-                        abort_unless(static::canEdit($record), 403);
-                        $password = Str::password(18);
-                        $record->update(['password' => $password, 'must_change_password' => true]);
-                        Notification::make()->title('Temporary password: '.$password)->body('For '.$record->name.'. Copy it now; it will not be displayed again.')->success()->persistent()->send();
-                    }),
-                Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make(),
-                Action::make('newPin')
-                    ->label('New PIN')
-                    ->icon('heroicon-o-key')
-                    ->visible(fn (User $record) => $record->is_student && auth()->user()?->can('update', $record))
-                    ->requiresConfirmation()
-                    ->modalDescription(fn (User $record) => "Give {$record->full_name} a new sign-in PIN? Their old PIN stops working.")
-                    ->action(function (User $record) {
-                        $pin = StudentPins::issue(collect([$record]))->first()['pin'];
+                Tables\Actions\ActionGroup::make([
+                    Tables\Actions\ViewAction::make(),
+                    Action::make('issueTemporaryPassword')->label('Issue Temporary Password')->icon('heroicon-o-key')
+                        ->visible(fn (User $record) => ! $record->isStudent() && ! $record->isSuperAdmin() && static::canEdit($record))
+                        ->requiresConfirmation()->modalDescription('Issue a unique temporary password. Give it privately to this staff member. They must change it at first sign-in.')
+                        ->action(function (User $record) {
+                            abort_unless(static::canEdit($record), 403);
+                            $password = Str::password(18);
+                            $record->update(['password' => $password, 'must_change_password' => true]);
+                            Notification::make()->title('Temporary password: '.$password)->body('For '.$record->name.'. Copy it now; it will not be displayed again.')->success()->persistent()->send();
+                        }),
+                    Action::make('newPin')
+                        ->label('New PIN')
+                        ->icon('heroicon-o-key')
+                        ->visible(fn (User $record) => $record->is_student && auth()->user()?->can('update', $record))
+                        ->requiresConfirmation()
+                        ->modalDescription(fn (User $record) => "Give {$record->full_name} a new sign-in PIN? Their old PIN stops working.")
+                        ->action(function (User $record) {
+                            $pin = StudentPins::issue(collect([$record]))->first()['pin'];
 
-                        Notification::make()
-                            ->title("New PIN for {$record->full_name}: {$pin}")
-                            ->body('Write it down now. It will not be shown again.')
-                            ->success()
-                            ->persistent()
-                            ->send();
-                    }),
-                // Impersonate::make(),
-                Tables\Actions\DeleteAction::make()
-                    // Prevent deletion of super_admin accounts
-                    ->hidden(fn ($record) => static::isSuperAdmin($record)),
-            ])
-            ->headerActions([
-                Action::make('export')->label('Export CSV')->icon('heroicon-o-arrow-down-tray')
-                    ->action(fn ($livewire) => app(BackgroundTasks::class)->enqueue(auth()->user(), filament()->getTenant(), 'staff-export', 'Export filtered staff accounts',
-                        ['ids' => $livewire->getFilteredTableQuery()->pluck('users.id')->all()])),
-
+                            Notification::make()
+                                ->title("New PIN for {$record->full_name}: {$pin}")
+                                ->body('Write it down now. It will not be shown again.')
+                                ->success()
+                                ->persistent()
+                                ->send();
+                        }),
+                    // Impersonate::make(),
+                    Tables\Actions\DeleteAction::make()
+                        // Prevent deletion of super_admin accounts
+                        ->hidden(fn ($record) => static::isSuperAdmin($record)),
+                ])->tooltip('More actions'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([

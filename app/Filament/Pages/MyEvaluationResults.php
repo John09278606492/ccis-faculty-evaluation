@@ -32,9 +32,9 @@ class MyEvaluationResults extends Page implements HasTable
 
     protected static ?string $title = 'My Evaluation Results';
 
-    protected static ?int $navigationSort = 4;
+    protected static ?int $navigationSort = 2;
 
-    protected static ?string $navigationGroup = 'Evaluation Reports';
+    protected static ?string $navigationGroup = 'My Work';
 
     protected function getHeaderWidgets(): array
     {

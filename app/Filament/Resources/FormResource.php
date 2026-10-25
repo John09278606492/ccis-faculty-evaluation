@@ -33,6 +33,10 @@ class FormResource extends Resource implements HasShieldPermissions
 
     protected static ?string $navigationLabel = 'Evaluation Forms';
 
+    protected static ?string $modelLabel = 'Evaluation Form';
+
+    protected static ?string $pluralModelLabel = 'Evaluation Forms';
+
     // Disable built-in tenant scoping — we use custom scoping via pivot table
     protected static bool $isScopedToTenant = false;
 

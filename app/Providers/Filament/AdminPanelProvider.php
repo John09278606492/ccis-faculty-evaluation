@@ -89,6 +89,7 @@ class AdminPanelProvider extends PanelProvider
             ->widgets([])
             ->navigationGroups([
                 NavigationGroup::make('My Learning')->icon('heroicon-o-academic-cap'),
+                NavigationGroup::make('My Work')->icon('heroicon-o-inbox-stack'),
                 NavigationGroup::make('Academic Management')->icon('heroicon-o-building-library'),
                 NavigationGroup::make('Faculty Evaluation')->icon('heroicon-o-clipboard-document-list'),
                 NavigationGroup::make('Evaluation Reports')->icon('heroicon-o-chart-bar'),

@@ -23,11 +23,11 @@ class SupervisorEvaluations extends Page implements HasTable
 
     protected static ?string $navigationLabel = 'My Supervisor Tasks';
 
-    protected static ?string $navigationGroup = 'Faculty Evaluation';
+    protected static ?string $navigationGroup = 'My Work';
 
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-check';
 
-    protected static ?int $navigationSort = 5;
+    protected static ?int $navigationSort = 1;
 
     public function mount(): void
     {
