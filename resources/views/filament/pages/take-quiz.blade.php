@@ -39,6 +39,7 @@
         <div
             x-data="{
                 startsAt: @js($availableFromIso),
+                clockOffset: new Date(@js(now()->toIso8601String())) - Date.now(),
                 remaining: null,
                 timer: null,
                 init() {
@@ -46,7 +47,7 @@
                     this.timer = setInterval(() => this.tick(), 1000);
                 },
                 tick() {
-                    let diff = Math.floor((new Date(this.startsAt) - new Date()) / 1000);
+                    let diff = Math.floor((new Date(this.startsAt) - (Date.now() + this.clockOffset)) / 1000);
                     this.remaining = Math.max(diff, 0);
                     if (diff <= 0) {
                         clearInterval(this.timer);
@@ -119,6 +120,8 @@
     <div wire:key="quiz-attempt-{{ $attempt->id ?? 'preview' }}-{{ $attempt->status }}"
         x-data="{
             expiresAt: @js($reviewMode ? null : optional($attempt->expires_at)?->toIso8601String()),
+            // Count down on the server's clock: a student device set to the wrong time must not end the attempt.
+            clockOffset: new Date(@js(now()->toIso8601String())) - Date.now(),
             remaining: null,
             timer: null,
             init() {
@@ -127,7 +130,7 @@
                 this.timer = setInterval(() => this.tick(), 1000);
             },
             tick() {
-                let diff = Math.floor((new Date(this.expiresAt) - new Date()) / 1000);
+                let diff = Math.floor((new Date(this.expiresAt) - (Date.now() + this.clockOffset)) / 1000);
                 this.remaining = Math.max(diff, 0);
                 if (diff <= 0) {
                     clearInterval(this.timer);
