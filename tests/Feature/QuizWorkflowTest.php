@@ -278,7 +278,9 @@ it('saves answers before confirming submission without ending the attempt', func
     $page = Livewire::test(TakeQuiz::class, ['quiz' => $quiz])->call('beginAttempt')
         ->set('answers.'.$question->id, 'echo')->call('confirmSubmission')
         ->assertSet('confirmingSubmission', true)
-        ->assertDispatched('open-modal', id: 'confirm-assessment-submission');
+        ->assertDispatched('open-modal', id: 'confirm-assessment-submission')
+        ->assertSee('Review your answers')->assertSee('Answered')->assertSee('Continue to submit')
+        ->assertSee('This is final.')->assertSee('No, go back')->assertSee('Yes, submit');
     $attempt = $quiz->attempts()->first();
     expect($attempt->status)->toBe('in_progress')
         ->and($attempt->answers()->first()->answer_text)->toBe('echo');
