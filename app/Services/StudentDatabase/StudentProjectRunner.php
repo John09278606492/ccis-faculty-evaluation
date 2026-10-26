@@ -90,7 +90,7 @@ class StudentProjectRunner
 
         // A FormData body arrives already parsed, so it is passed on as an ordinary form post.
         $isMultipart = str_starts_with(strtolower((string) $request->header('Content-Type')), 'multipart/form-data');
-        $body = $isMultipart ? http_build_query($request->post()) : (string) $request->getContent();
+        $body = $isMultipart ? http_build_query(self::formFields($request)) : (string) $request->getContent();
         $contentType = $isMultipart ? 'application/x-www-form-urlencoded' : (string) $request->header('Content-Type');
         $script = $www.DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, $path);
         $base = '/project-run/'.$answer->id.'/';
@@ -167,6 +167,20 @@ class StudentProjectRunner
                 @unlink($existing->getPathname());
             }
         }
+    }
+
+    /**
+     * The form exactly as the browser sent it. Laravel turns empty fields into null (which
+     * http_build_query leaves out) and trims spaces; the student's PHP must see '' as XAMPP does.
+     */
+    public static function formFields(Request $request): array
+    {
+        $fields = $_POST ?: $request->post();
+        array_walk_recursive($fields, function (&$value) {
+            $value ??= '';
+        });
+
+        return $fields;
     }
 
     /** Every mysqli connection the student writes goes to their own workspace instead. */

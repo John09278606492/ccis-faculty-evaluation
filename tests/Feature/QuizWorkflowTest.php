@@ -24,6 +24,7 @@ use App\Services\StudentDatabase\StudentProjectRunner;
 use App\Services\WorkbookPreviewService;
 use App\Support\CodeProject;
 use Filament\Facades\Filament;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Storage;
@@ -1144,4 +1145,10 @@ it('runs only the owner\'s open project and points every mysqli connection at th
 
     expect(StudentProjectRunner::redirectConnections('$a = new mysqli("localhost", "root", "", "x"); $b = mysqli_connect("localhost"); $c = new \mysqli(); $d->mysqli_connect(1);'))
         ->toBe('$a = new \ExamMysqli("localhost", "root", "", "x"); $b = \exam_mysqli_connect("localhost"); $c = new \ExamMysqli(); $d->mysqli_connect(1);');
+});
+
+it('passes empty and spaced form fields to a student project as the browser sent them', function () {
+    $request = Request::create('/project-run/1/insert.php', 'POST', ['firstname' => ' Ana ', 'middlename' => null, 'tags' => ['a', null]]);
+
+    expect(StudentProjectRunner::formFields($request))->toBe(['firstname' => ' Ana ', 'middlename' => '', 'tags' => ['a', '']]);
 });
