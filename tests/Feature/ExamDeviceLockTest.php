@@ -54,3 +54,35 @@ it('does not tie quizzes to one device', function () {
     examOn('second', $quiz)->assertSet('accessDenied', false);
     expect(QuizAttempt::sole()->device_hash)->toBeNull();
 });
+
+it('lets the instructor reset an attempt that was submitted by mistake', function () {
+    extract(quizWorkflowFixture());
+    $quiz->update(['type' => 'exam', 'max_attempts' => 1]);
+    $this->actingAs($student);
+    examOn('first', $quiz)->call('beginAttempt')->set('answers.'.$question->id, 'echo')->call('submit');
+    $attempt = QuizAttempt::sole();
+    expect($attempt->status)->not->toBe('in_progress');
+
+    $this->actingAs($instructor);
+    Livewire::test(AttemptsRelationManager::class, ['ownerRecord' => $quiz, 'pageClass' => EditQuiz::class])
+        ->callTableAction('resetAttempt', $attempt)
+        ->assertHasNoTableActionErrors();
+    expect(QuizAttempt::count())->toBe(0)->and(\App\Models\QuizAnswer::count())->toBe(0);
+
+    // The student starts again from the beginning, on any computer.
+    $this->actingAs($student);
+    examOn('second', $quiz)->assertSet('accessDenied', false)->call('beginAttempt');
+    expect(QuizAttempt::sole())->attempt_number->toBe(1)->status->toBe('in_progress');
+});
+
+it('only offers reset on the latest attempt', function () {
+    extract(quizWorkflowFixture());
+    $quiz->update(['type' => 'quiz', 'max_attempts' => 2]);
+    $first = QuizAttempt::create(['quiz_id' => $quiz->id, 'user_id' => $student->id, 'attempt_number' => 1, 'status' => 'graded', 'started_at' => now(), 'submitted_at' => now()]);
+    $second = QuizAttempt::create(['quiz_id' => $quiz->id, 'user_id' => $student->id, 'attempt_number' => 2, 'status' => 'submitted', 'started_at' => now(), 'submitted_at' => now()]);
+
+    $this->actingAs($instructor);
+    Livewire::test(AttemptsRelationManager::class, ['ownerRecord' => $quiz, 'pageClass' => EditQuiz::class])
+        ->assertTableActionHidden('resetAttempt', $first)
+        ->assertTableActionVisible('resetAttempt', $second);
+});

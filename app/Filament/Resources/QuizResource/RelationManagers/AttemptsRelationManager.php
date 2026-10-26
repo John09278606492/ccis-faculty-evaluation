@@ -197,6 +197,26 @@ class AttemptsRelationManager extends RelationManager
                         Notification::make()->title($moved ? 'New device allowed' : 'Nothing to allow')
                             ->body($moved ? 'Ask the student to reload the exam page on the new device.' : null)->success()->send();
                     }),
+                // Only the student's latest attempt, so the next one takes its number again.
+                Tables\Actions\Action::make('resetAttempt')
+                    ->label('Reset attempt')
+                    ->icon('heroicon-o-arrow-path')
+                    ->color('danger')
+                    ->visible(fn (QuizAttempt $record) => (auth()->user()?->can('update', $this->getOwnerRecord()) ?? false)
+                        && ! QuizAttempt::where('quiz_id', $record->quiz_id)->where('user_id', $record->user_id)->where('attempt_number', '>', $record->attempt_number)->exists())
+                    ->requiresConfirmation()
+                    ->modalHeading(fn (QuizAttempt $record) => 'Reset '.($record->user?->name ?? 'this student')."'s attempt?")
+                    ->modalDescription('This deletes the attempt and every answer in it, so the student can start again from the beginning with the full time. Use it when a student was submitted by mistake. It cannot be undone.')
+                    ->modalSubmitActionLabel('Delete attempt and let them start again')
+                    ->action(function (QuizAttempt $record) {
+                        abort_unless(auth()->user()?->can('update', $this->getOwnerRecord()) && $record->quiz_id === $this->getOwnerRecord()->id, 403);
+                        DB::transaction(function () use ($record) {
+                            SqliteWriter::reserve('quiz_attempts', $record->id);
+                            $record->delete();
+                        });
+                        Notification::make()->title('Attempt reset')
+                            ->body('The student can sign in and start again. If the exam is open in their browser, ask them to reload it.')->success()->send();
+                    }),
             ])
             ->headerActions([
                 Tables\Actions\Action::make('autoCheck')
