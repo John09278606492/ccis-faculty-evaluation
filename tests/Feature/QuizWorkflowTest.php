@@ -20,6 +20,7 @@ use App\Services\ClassRecordSyncService;
 use App\Services\StudentDatabase\MySqlStudentDatabases;
 use App\Services\StudentDatabase\StudentDatabases;
 use App\Services\StudentDatabase\StudentDbServer;
+use App\Services\StudentDatabase\StudentProjectRunner;
 use App\Services\WorkbookPreviewService;
 use App\Support\CodeProject;
 use Filament\Facades\Filament;
@@ -1116,11 +1117,31 @@ it('duplicates an assessment with its questions into another section', function 
     $instructor->givePermissionTo(Permission::findOrCreate('replicate_quiz', 'web'));
     $this->actingAs($instructor);
 
-    Livewire::test(\App\Filament\Resources\QuizResource\Pages\ListQuizzes::class)
+    Livewire::test(ListQuizzes::class)
         ->callTableAction('replicate', $quiz, data: ['course_offering_id' => $other->id])
         ->assertHasNoTableActionErrors();
 
     $copy = Quiz::where('course_offering_id', $other->id)->sole();
     expect($copy->title)->toBe('PHP Basics')->and($copy->is_published)->toBeFalse()
         ->and($copy->questions()->pluck('question_text')->all())->toBe(['Name the output statement']);
+});
+
+it('runs only the owner\'s open project and points every mysqli connection at their own database', function () {
+    $fixture = quizWorkflowFixture();
+    fakeStudentDatabases();
+    [, $page, , $answer] = databaseQuestionAttempt($fixture);
+    $page->assertSee('Run my project');
+    $answer->update(['answer_text' => CodeProject::encode([['name' => 'index.php', 'content' => '<?php echo 1;'], ['name' => 'style.css', 'content' => 'b{}']])]);
+    $this->get(route('project-run', ['quizAnswer' => $answer]))->assertRedirect(route('project-run', ['quizAnswer' => $answer, 'path' => 'index.php']));
+    $this->get(route('project-run', ['quizAnswer' => $answer, 'path' => 'style.css']))->assertOk()->assertHeader('Content-Type', 'text/css; charset=utf-8');
+    $this->get(route('project-run', ['quizAnswer' => $answer, 'path' => '../.env']))->assertNotFound();
+    $classmate = User::factory()->create();
+    $fixture['offering']->students()->attach($classmate);
+    $this->actingAs($classmate)->get(route('project-run', ['quizAnswer' => $answer, 'path' => 'index.php']))->assertForbidden();
+    $this->actingAs($fixture['student']);
+    $page->set('answers.'.$fixture['question']->id, 'echo')->call('submit');
+    $this->get(route('project-run', ['quizAnswer' => $answer, 'path' => 'index.php']))->assertForbidden();
+
+    expect(StudentProjectRunner::redirectConnections('$a = new mysqli("localhost", "root", "", "x"); $b = mysqli_connect("localhost"); $c = new \mysqli(); $d->mysqli_connect(1);'))
+        ->toBe('$a = new \ExamMysqli("localhost", "root", "", "x"); $b = \exam_mysqli_connect("localhost"); $c = new \ExamMysqli(); $d->mysqli_connect(1);');
 });

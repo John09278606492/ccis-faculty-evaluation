@@ -65,6 +65,8 @@ Route::middleware('auth')->group(function () {
         ->middleware('throttle:30,1')->name('quiz-submissions.download');
     Route::get('/student-databases/{quizAnswer}/open', [StudentDatabaseController::class, 'open'])
         ->middleware('throttle:20,1')->name('student-databases.open');
+    Route::match(['get', 'post'], '/project-run/{quizAnswer}/{path?}', [StudentDatabaseController::class, 'run'])
+        ->where('path', '.*')->middleware('throttle:300,1')->name('project-run');
 });
 
 /*

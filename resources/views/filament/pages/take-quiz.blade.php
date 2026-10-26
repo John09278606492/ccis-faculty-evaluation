@@ -363,6 +363,30 @@
                                         </x-filament::button>
                                     @endif
                                 </div>
+                                @if (! $previewMode && $databaseAnswer)
+                                    {{-- Runs the saved files on the server with this student's own database, like XAMPP. --}}
+                                    <div wire:ignore class="mt-3 rounded-lg border border-gray-200 dark:border-gray-700"
+                                        x-data="{ shown: false, running: false, src: '', base: @js(route('project-run', ['quizAnswer' => $databaseAnswer])),
+                                            async run() {
+                                                this.running = true
+                                                await new Promise(resolve => setTimeout(resolve, 800))
+                                                try { await $wire.$commit() } catch (error) {}
+                                                this.src = this.base + '?run=' + Date.now()
+                                                this.shown = true
+                                                this.running = false
+                                            } }">
+                                        <div class="flex flex-wrap items-center gap-3 px-3 py-2 text-sm">
+                                            <x-heroicon-o-play class="h-5 w-5 shrink-0 text-primary-600" />
+                                            <span class="flex-1">Test your project: runs your saved files on the server with your own database, like XAMPP. Click again after each change.</span>
+                                            <x-filament::button type="button" size="sm" icon="heroicon-o-play" x-on:click="run()" x-bind:disabled="running">
+                                                <span x-text="running ? 'Saving…' : (shown ? 'Run again' : 'Run my project')">Run my project</span>
+                                            </x-filament::button>
+                                        </div>
+                                        <template x-if="shown">
+                                            <iframe :src="src" title="Your project" class="block w-full border-t border-gray-200 bg-white dark:border-gray-700" style="height: 520px"></iframe>
+                                        </template>
+                                    </div>
+                                @endif
                             @elseif ($question->hasDatabase() && $savedAnswer)
                                 <p class="mt-3 flex items-center gap-2 text-sm text-gray-500">
                                     <x-heroicon-o-circle-stack class="h-4 w-4 shrink-0" />

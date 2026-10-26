@@ -24,6 +24,8 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
         // The Filament panel owns sign-in; there is no route named "login".
         $middleware->redirectGuestsTo('/login');
+        // A student's own project posts its forms without the app's CSRF token.
+        $middleware->validateCsrfTokens(except: ['project-run/*']);
         // The classroom server's gateway passes on each device's address, so sign-in
         // limits and logs see the student's own device instead of the gateway.
         if ($proxies = env('TRUSTED_PROXIES')) {
