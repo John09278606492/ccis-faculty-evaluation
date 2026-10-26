@@ -378,9 +378,26 @@ class QuizResource extends Resource implements HasShieldPermissions
                 'assign_to_all',
                 'class_record_synced_at',
                 'class_record_sync_error',
+                // Counts and sums the list table loads are not columns.
+                'questions_count',
+                'questions_sum_points',
+                'attempts_count',
+                'pending_grading_count',
             ])
-            ->beforeReplicaSaved(function (Quiz $replica) {
-                $replica->title = "{$replica->title} (Copy)";
+            ->modalDescription('Makes an unpublished copy with all the questions, for this class or another one, such as another section.')
+            ->form([
+                Forms\Components\Select::make('course_offering_id')
+                    ->label('Copy to class')
+                    ->options(fn () => static::courseOfferingOptions())
+                    ->default(fn (Quiz $record) => $record->course_offering_id)
+                    ->searchable()
+                    ->required(),
+            ])
+            ->beforeReplicaSaved(function (Quiz $replica, Quiz $record, array $data) {
+                abort_unless(array_key_exists((int) $data['course_offering_id'], static::courseOfferingOptions()), 403);
+                // A copy for another section keeps the title; a copy in the same class is marked.
+                $replica->title = (int) $data['course_offering_id'] === $record->course_offering_id ? "{$record->title} (Copy)" : $record->title;
+                $replica->course_offering_id = (int) $data['course_offering_id'];
                 $replica->is_published = false;
                 $replica->assign_to_all = true;
             })

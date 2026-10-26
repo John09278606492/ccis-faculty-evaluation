@@ -1106,3 +1106,19 @@ it('keeps automatic checking settings when a code question is edited in the buil
         ->set('selectedQuestionData.question_text', 'Print the grand total')->call('saveQuestionProperties')->assertHasNoErrors();
     expect($code->refresh()->autoChecks())->toBeTrue();
 });
+
+it('duplicates an assessment with its questions into another section', function () {
+    extract(quizWorkflowFixture());
+    $other = $offering->replicate()->fill(['section' => 'BSIT 3B']);
+    $other->save();
+    $instructor->givePermissionTo(Permission::findOrCreate('replicate_quiz', 'web'));
+    $this->actingAs($instructor);
+
+    Livewire::test(\App\Filament\Resources\QuizResource\Pages\ListQuizzes::class)
+        ->callTableAction('replicate', $quiz, data: ['course_offering_id' => $other->id])
+        ->assertHasNoTableActionErrors();
+
+    $copy = Quiz::where('course_offering_id', $other->id)->sole();
+    expect($copy->title)->toBe('PHP Basics')->and($copy->is_published)->toBeFalse()
+        ->and($copy->questions()->pluck('question_text')->all())->toBe(['Name the output statement']);
+});
