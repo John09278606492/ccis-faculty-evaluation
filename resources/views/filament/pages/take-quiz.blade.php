@@ -39,6 +39,7 @@
         <div
             x-data="{
                 startsAt: @js($availableFromIso),
+                clockOffset: new Date(@js(now()->toIso8601String())) - Date.now(),
                 remaining: null,
                 timer: null,
                 init() {
@@ -46,7 +47,7 @@
                     this.timer = setInterval(() => this.tick(), 1000);
                 },
                 tick() {
-                    let diff = Math.floor((new Date(this.startsAt) - new Date()) / 1000);
+                    let diff = Math.floor((new Date(this.startsAt) - (Date.now() + this.clockOffset)) / 1000);
                     this.remaining = Math.max(diff, 0);
                     if (diff <= 0) {
                         clearInterval(this.timer);
@@ -119,6 +120,8 @@
     <div wire:key="quiz-attempt-{{ $attempt->id ?? 'preview' }}-{{ $attempt->status }}"
         x-data="{
             expiresAt: @js($reviewMode ? null : optional($attempt->expires_at)?->toIso8601String()),
+            // Count down on the server's clock: a student device set to the wrong time must not end the attempt.
+            clockOffset: new Date(@js(now()->toIso8601String())) - Date.now(),
             remaining: null,
             timer: null,
             init() {
@@ -127,7 +130,7 @@
                 this.timer = setInterval(() => this.tick(), 1000);
             },
             tick() {
-                let diff = Math.floor((new Date(this.expiresAt) - new Date()) / 1000);
+                let diff = Math.floor((new Date(this.expiresAt) - (Date.now() + this.clockOffset)) / 1000);
                 this.remaining = Math.max(diff, 0);
                 if (diff <= 0) {
                     clearInterval(this.timer);
@@ -157,7 +160,7 @@
             <p class="text-sm text-gray-500">{{ $quiz->courseOffering->display_name }}</p>
 
             @if ($quiz->instructions)
-                <p class="mt-2 text-sm">{{ $quiz->instructions }}</p>
+                <p class="mt-2 whitespace-pre-line text-sm">{{ $quiz->instructions }}</p>
             @endif
 
             {{-- Exam header — the student's name, course, instructor, date, duration, and the
@@ -264,12 +267,28 @@
                             {{ $index + 1 }}
                         </span>
                         <p class="font-medium">
-                            {{ $question->question_text }}
+                            <span class="whitespace-pre-line" style="font-feature-settings: 'calt' 0">{{ $question->question_text }}</span>
                             <span class="ml-1 text-xs font-normal text-gray-400">
                                 ({{ $question->points }} {{ Str::plural('point', $question->points) }})
                             </span>
                         </p>
                     </div>
+
+                    @if ($expectedOutput = $question->expectedOutputImages())
+                        <div class="mb-4 pl-9">
+                            <p class="mb-2 text-sm font-semibold">Expected output</p>
+                            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                @foreach ($expectedOutput as $image)
+                                    <figure class="rounded-lg border border-gray-200 bg-white p-2 dark:border-gray-700">
+                                        <img src="{{ $image['url'] }}" alt="{{ $image['caption'] }}" loading="lazy" class="mx-auto max-w-full" style="max-height: 22rem; object-fit: contain">
+                                        @if ($image['caption'] !== '')
+                                            <figcaption class="mt-2 text-xs text-gray-600">{{ $image['caption'] }}</figcaption>
+                                        @endif
+                                    </figure>
+                                @endforeach
+                            </div>
+                        </div>
+                    @endif
 
                     <div class="pl-9">
                         @if ($question->type === 'multiple_choice')
@@ -344,6 +363,30 @@
                                         </x-filament::button>
                                     @endif
                                 </div>
+                                @if (! $previewMode && $databaseAnswer)
+                                    {{-- Runs the saved files on the server with this student's own database, like XAMPP. --}}
+                                    <div wire:ignore class="mt-3 rounded-lg border border-gray-200 dark:border-gray-700"
+                                        x-data="{ shown: false, running: false, src: '', base: @js(route('project-run', ['quizAnswer' => $databaseAnswer])),
+                                            async run() {
+                                                this.running = true
+                                                await new Promise(resolve => setTimeout(resolve, 800))
+                                                try { await $wire.$commit() } catch (error) {}
+                                                this.src = this.base + '?run=' + Date.now()
+                                                this.shown = true
+                                                this.running = false
+                                            } }">
+                                        <div class="flex flex-wrap items-center gap-3 px-3 py-2 text-sm">
+                                            <x-heroicon-o-play class="h-5 w-5 shrink-0 text-primary-600" />
+                                            <span class="flex-1">Test your project: runs your saved files on the server with your own database, like XAMPP. Click again after each change.</span>
+                                            <x-filament::button type="button" size="sm" icon="heroicon-o-play" x-on:click="run()" x-bind:disabled="running">
+                                                <span x-text="running ? 'Saving…' : (shown ? 'Run again' : 'Run my project')">Run my project</span>
+                                            </x-filament::button>
+                                        </div>
+                                        <template x-if="shown">
+                                            <iframe :src="src" title="Your project" class="block w-full border-t border-gray-200 bg-white dark:border-gray-700" style="height: 520px"></iframe>
+                                        </template>
+                                    </div>
+                                @endif
                             @elseif ($question->hasDatabase() && $savedAnswer)
                                 <p class="mt-3 flex items-center gap-2 text-sm text-gray-500">
                                     <x-heroicon-o-circle-stack class="h-4 w-4 shrink-0" />
@@ -423,14 +466,50 @@
                 @endif
             </div>
             @if (! $previewMode)
-                <x-filament::modal id="confirm-assessment-submission" width="md">
-                    <x-slot name="heading">Submit your answers?</x-slot>
-                    <p>{{ $answeredCount }} of {{ $totalCount }} questions answered. {{ $totalCount - $answeredCount }} unanswered.</p>
-                    <p class="mt-2 text-sm text-gray-500">Your latest changes have been sent to the server. You cannot edit this attempt after submitting.</p>
-                    <x-slot name="footerActions">
-                        <x-filament::button color="gray" wire:click="$set('confirmingSubmission', false)" x-on:click="$dispatch('close-modal', { id: 'confirm-assessment-submission' })">Keep editing</x-filament::button>
-                        <x-filament::button wire:click="submit" wire:loading.attr="disabled">Submit answers</x-filament::button>
-                    </x-slot>
+                {{-- Two steps: review every question, then read what submitting means and answer yes or no. --}}
+                <x-filament::modal id="confirm-assessment-submission" width="2xl">
+                    <div x-data="{ step: 'review' }"
+                        x-on:open-modal.window="if ($event.detail.id === 'confirm-assessment-submission') step = 'review'">
+                        <div x-show="step === 'review'">
+                            <h2 class="text-lg font-semibold">Review your answers</h2>
+                            <p class="mt-1 text-sm text-gray-500">{{ $answeredCount }} of {{ $totalCount }} questions answered. {{ $totalCount - $answeredCount }} unanswered.</p>
+                            <ul style="max-height: 50vh" class="mt-4 divide-y divide-gray-100 overflow-y-auto rounded-lg border border-gray-200 dark:divide-gray-800 dark:border-gray-700" aria-label="Your answers">
+                                @foreach ($this->questions as $number => $item)
+                                    @php($isAnswered = filled($answers[$item->id] ?? null))
+                                    <li class="flex items-center gap-3 px-3 py-2 text-sm">
+                                        <span class="w-8 shrink-0 font-semibold text-gray-500">{{ $number + 1 }}.</span>
+                                        <span class="min-w-0 flex-1 truncate">{{ Str::limit(preg_replace('/\s+/', ' ', $item->question_text), 90) }}</span>
+                                        @if ($isAnswered)
+                                            <span class="shrink-0 rounded-full bg-success-50 px-2 py-0.5 text-xs font-medium text-success-700 dark:bg-success-500/10 dark:text-success-400">Answered</span>
+                                        @else
+                                            <span class="shrink-0 rounded-full bg-danger-50 px-2 py-0.5 text-xs font-medium text-danger-700 dark:bg-danger-500/10 dark:text-danger-400">Not answered</span>
+                                        @endif
+                                        <a href="#question-{{ $item->id }}" class="shrink-0 text-xs font-medium text-primary-600 hover:underline dark:text-primary-400"
+                                            x-on:click="$wire.set('confirmingSubmission', false); $dispatch('close-modal', { id: 'confirm-assessment-submission' })">Go to question</a>
+                                    </li>
+                                @endforeach
+                            </ul>
+                            <div class="mt-6 flex flex-wrap justify-end gap-3">
+                                <x-filament::button color="gray" wire:click="$set('confirmingSubmission', false)" x-on:click="$dispatch('close-modal', { id: 'confirm-assessment-submission' })">Keep working</x-filament::button>
+                                <x-filament::button x-on:click="step = 'confirm'">Continue to submit</x-filament::button>
+                            </div>
+                        </div>
+                        <div x-show="step === 'confirm'" x-cloak>
+                            <h2 class="text-lg font-semibold">Submit your final answers?</h2>
+                            <div class="mt-3 space-y-2 rounded-lg border border-warning-200 bg-warning-50 p-4 text-sm text-warning-800 dark:border-warning-500/30 dark:bg-warning-500/10 dark:text-warning-300">
+                                <p><strong>This is final.</strong> After you click "Yes, submit", you can no longer open, edit, or add to any answer in this attempt.</p>
+                                <p>Everything you saved so far{{ $this->questions->contains(fn ($item) => $item->type === 'code') ? ', including your code files'.($this->questions->contains(fn ($item) => $item->hasDatabase()) ? ' and your database' : '').',' : '' }} is sent to your instructor exactly as it is now.</p>
+                                @if ($totalCount - $answeredCount > 0)
+                                    <p><strong>{{ $totalCount - $answeredCount }} {{ Str::plural('question', $totalCount - $answeredCount) }} still unanswered</strong> and will get no points.</p>
+                                @endif
+                                <p>If you are not sure, click "No, go back" and keep working while there is time left.</p>
+                            </div>
+                            <div class="mt-6 flex flex-wrap justify-end gap-3">
+                                <x-filament::button color="gray" x-on:click="step = 'review'">No, go back</x-filament::button>
+                                <x-filament::button color="danger" wire:click="submit" wire:loading.attr="disabled">Yes, submit</x-filament::button>
+                            </div>
+                        </div>
+                    </div>
                 </x-filament::modal>
             @endif
         @endif

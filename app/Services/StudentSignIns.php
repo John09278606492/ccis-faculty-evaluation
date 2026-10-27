@@ -26,6 +26,8 @@ class StudentSignIns
         ]);
         session()->put('student_sign_in_token', $token);
         session()->put('student_sign_in_code', $code);
+        // Teachers approving a room of students see each new waiting browser without reloading.
+        ClassroomUpdates::panel('signins', true);
     }
 
     public static function cancel(): void

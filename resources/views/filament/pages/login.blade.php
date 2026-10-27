@@ -1,5 +1,7 @@
 <x-filament-panels::page.simple>
-    <a href="{{ route('evaluation.entry') }}" class="block rounded-lg bg-primary-600 p-4 text-center font-semibold text-white">Faculty evaluation — enter student ID</a>
+    @if (config('classroom.login.evaluation_entry'))
+        <a href="{{ route('evaluation.entry') }}" class="block rounded-lg bg-primary-600 p-4 text-center font-semibold text-white">Faculty evaluation — enter student ID</a>
+    @endif
     @if (filament()->hasRegistration())
         <x-slot name="subheading">
             {{ __('filament-panels::pages/auth/login.actions.register.before') }}

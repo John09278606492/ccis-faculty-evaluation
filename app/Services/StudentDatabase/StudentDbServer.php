@@ -184,7 +184,8 @@ class StudentDbServer
         File::ensureDirectoryExists($this->path('tokens'));
         $processes = [$this->process([$this->mysqlBin().DIRECTORY_SEPARATOR.$this->exe('mysqld'), '--defaults-file='.$this->path('my.ini')])];
         if ($phpMyAdminPort) {
-            $processes[] = $this->process([PHP_BINARY, ...$this->phpMyAdminServerArguments($phpMyAdminPort)]);
+            // Nothing reads its request log, so a piped log would fill and stall every request.
+            $processes[] = $this->process([PHP_BINARY, ...$this->phpMyAdminServerArguments($phpMyAdminPort)])->disableOutput();
             $log("phpMyAdmin: http://127.0.0.1:{$phpMyAdminPort}/phpmyadmin/");
         }
         foreach ($processes as $process) {

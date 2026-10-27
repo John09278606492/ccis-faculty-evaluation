@@ -29,8 +29,9 @@ function status(message, connected = false) {
 }
 
 function refreshRelatedViews(event = { kind: 'reconnected', quizId: null, courseId: null }) {
-    // Exam progress and tab-leave updates only matter to instructors watching attempts.
-    if (!staff && ['focus', 'progress'].includes(event.kind)) return;
+    // Exam progress, tab-leave and attempt updates only matter to instructors watching attempts.
+    // A student's own attempt changes arrive on their private channel instead.
+    if (!staff && ['focus', 'progress', 'attempt'].includes(event.kind)) return;
     if (window.Livewire) window.Livewire.dispatch('classroom-push', event);
     if (!['focus', 'progress'].includes(event.kind)) panelRefresh.mark({ skipPushHandlers: true, kind: event.kind });
 }
@@ -89,7 +90,10 @@ function connect() {
         echo.private(channel)
             .subscribed(() => { channelReady(channel); schedulePanelRefresh(); })
             .error(() => { subscribedChannels.delete(channel); liveReady = false; status('Live updates unavailable — retrying automatically'); })
-            .listen('.panel.changed', schedulePanelRefresh);
+            .listen('.panel.changed', event => {
+                if (event?.kind === 'attempt' && window.Livewire) window.Livewire.dispatch('classroom-push', event);
+                schedulePanelRefresh(event);
+            });
     }
     // Filament's notification bell listens on window.Echo once it announces itself.
     window.Echo = echo;

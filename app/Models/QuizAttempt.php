@@ -42,6 +42,9 @@ class QuizAttempt extends Model
         'pastes',
         'pasted_chars',
         'paste_log',
+        'device_hash',
+        'blocked_device_hash',
+        'device_blocks',
     ];
 
     /** Pastes shorter than this are ignored: a word or a variable name is not an answer. */
@@ -53,8 +56,11 @@ class QuizAttempt extends Model
     /** Entries kept in focus_log; the counters keep counting past it. */
     public const FOCUS_LOG_LIMIT = 100;
 
+    protected $hidden = ['device_hash', 'blocked_device_hash'];
+
     protected $casts = [
         'attempt_number' => 'integer',
+        'device_blocks' => 'integer',
         'started_at' => 'datetime',
         'expires_at' => 'datetime',
         'submitted_at' => 'datetime',

@@ -211,3 +211,23 @@ it('rechecks assignment before consuming approval and does not need a tenant in 
     Filament::setTenant(null, isQuiet: true);
     $this->withSession(['student_sign_in_token' => $token])->postJson(route('student.sign-in.check'))->assertJson(['state' => 'expired']);
 });
+
+it('approves every waiting assigned student in one step', function () {
+    extract(assessmentSignInFixture('exam'));
+    $others = User::factory()->count(2)->create(['is_student' => true]);
+    foreach (collect([$student, ...$others]) as $person) {
+        $offering->students()->syncWithoutDetaching([$person->id]);
+        StudentSignIns::request($person);
+        session()->forget('student_sign_in_token');
+    }
+    // A second browser for the same ID is never ticked for the instructor.
+    StudentSignIns::request($others[1]);
+    session()->forget('student_sign_in_token');
+    $this->actingAs($instructor);
+    Livewire::test(AssessmentStudents::class, ['ownerRecord' => $quiz, 'pageClass' => EditQuiz::class])
+        ->callTableAction('approveAllWaiting')->assertHasNoTableActionErrors();
+    expect(StudentSignIns::pendingCount($student->id))->toBe(0)
+        ->and(StudentSignIns::pendingCount($others[0]->id))->toBe(0)
+        ->and(StudentSignIns::pendingCount($others[1]->id))->toBe(2)
+        ->and($quiz->attempts()->count())->toBe(0);
+});

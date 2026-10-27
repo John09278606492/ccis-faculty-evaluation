@@ -10,12 +10,14 @@ use App\Models\QuizQuestion;
 use App\Notifications\BellNotification;
 use App\Services\ClassroomUpdates;
 use App\Services\FinalizeAssessmentAttempt;
+use App\Support\SqliteWriter;
 use Filament\Notifications\Actions\Action as NotificationAction;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Support\Enums\MaxWidth;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cookie;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -233,6 +235,7 @@ class TakeQuiz extends Page
 
     protected function mountForStudent(Quiz $quiz): void
     {
+        $this->deviceHash();
         // Verify this student is actually registered for the course this quiz belongs to.
         if (! $quiz->courseOffering->students()->where('user_id', Auth::id())->exists()) {
             $this->denyAccess("You're signed in as {$this->studentDisplayName()}, but you're not registered for "
@@ -277,6 +280,9 @@ class TakeQuiz extends Page
             $this->attempt = $latestAttempt;
             $this->checkExpiry();
         }
+        if ($this->attempt?->status === 'in_progress' && ! $this->claimDevice()) {
+            return;
+        }
         if (! $this->attempt || $this->attempt->status !== 'in_progress') {
             if ($latestAttempt) {
                 $this->attempt = $latestAttempt;
@@ -310,6 +316,9 @@ class TakeQuiz extends Page
         }
         $this->attempt = $this->startNewAttempt();
         $this->readyToStart = false;
+        if (! $this->claimDevice()) {
+            return;
+        }
         $this->reviewMode = false;
         $this->answers = [];
         $this->loadAnswersIntoState();
@@ -347,8 +356,10 @@ class TakeQuiz extends Page
     {
         $this->previewMode = true;
         $this->answers = $quiz->questions->mapWithKeys(fn ($question) => [$question->id => null])->all();
-        $this->previewStartedAt = now()->toISOString();
-        $this->previewExpiresAt = optional($this->computeExpiresAt($quiz, now()))->toISOString();
+        // Wall-clock times in the app timezone: the attempt's datetime casts drop a
+        // UTC "Z", so an ISO string would read back hours off outside UTC.
+        $this->previewStartedAt = now()->toDateTimeString();
+        $this->previewExpiresAt = $this->computeExpiresAt($quiz, now())?->toDateTimeString();
         $this->previewMaxScore = $quiz->questions()->sum('points');
         // boot() only rebuilds $attempt from the preview* scalars above on requests
         // *after* this one (mount() runs after boot(), which is too early to see
@@ -366,6 +377,7 @@ class TakeQuiz extends Page
     protected function startNewAttempt(): QuizAttempt
     {
         return DB::transaction(function (): QuizAttempt {
+            SqliteWriter::reserve('quizzes', $this->quiz->id);
             $quiz = Quiz::query()->lockForUpdate()->findOrFail($this->quiz->id);
             $latestAttempt = QuizAttempt::query()
                 ->where('quiz_id', $quiz->id)
@@ -387,6 +399,7 @@ class TakeQuiz extends Page
                 'status' => 'in_progress',
                 'max_score' => $quiz->questions()->sum('points'),
                 'ip_address' => request()->ip(),
+                'device_hash' => $quiz->type === 'exam' ? $this->deviceHash() : null,
             ]);
             $attempt->answers()->createMany(
                 $quiz->questions()->get()->map(fn ($question) => [
@@ -552,6 +565,7 @@ class TakeQuiz extends Page
     protected function persistAnswer(QuizQuestion $question, array $attributes): bool
     {
         return DB::transaction(function () use ($question, $attributes) {
+            SqliteWriter::reserve('quiz_attempts', $this->attempt->id);
             $attempt = QuizAttempt::query()->lockForUpdate()->findOrFail($this->attempt->id);
             abort_unless($attempt->user_id === auth()->id() && $attempt->quiz_id === $this->quiz->id, 403);
             if ($attempt->status !== 'in_progress' || $attempt->isExpired()) {
@@ -589,6 +603,70 @@ class TakeQuiz extends Page
         }
         $this->finalizeAttempt();
         $this->confirmingSubmission = false;
+    }
+
+    public const DEVICE_COOKIE = 'ccis_exam_device';
+
+    /** This browser's exam device id (a long-lived random cookie), hashed. */
+    protected function deviceHash(): string
+    {
+        // The session keeps it too, for a request that arrives before the cookie is stored.
+        $token = request()->attributes->get(self::DEVICE_COOKIE) ?? request()->cookie(self::DEVICE_COOKIE) ?? session(self::DEVICE_COOKIE);
+        if (! is_string($token) || strlen($token) !== 40) {
+            $token = Str::random(40);
+        }
+        if (request()->cookie(self::DEVICE_COOKIE) !== $token) {
+            Cookie::queue(self::DEVICE_COOKIE, $token, 60 * 24 * 365);
+        }
+        session()->put(self::DEVICE_COOKIE, $token);
+        request()->attributes->set(self::DEVICE_COOKIE, $token);
+
+        return hash('sha256', $token);
+    }
+
+    /**
+     * Keeps an exam on the browser that started it. Another browser signing in
+     * with the same ID (a classmate given the PIN) is shown a notice instead,
+     * the instructor is alerted, and only "Allow new device" moves the exam.
+     */
+    protected function claimDevice(): bool
+    {
+        if ($this->previewMode || $this->quiz->type !== 'exam' || $this->attempt?->status !== 'in_progress') {
+            return true;
+        }
+        $device = $this->deviceHash();
+        $attempt = $this->attempt;
+        if ($attempt->device_hash === null) {
+            $attempt->update(['device_hash' => $device]);
+        }
+        if ($attempt->device_hash === $device) {
+            return true;
+        }
+        if ($attempt->blocked_device_hash !== $device) {
+            $attempt->update(['blocked_device_hash' => $device, 'device_blocks' => $attempt->device_blocks + 1]);
+            ClassroomUpdates::quiz($this->quiz->id, 'focus');
+            $this->alertInstructor(
+                'opened the exam on another device',
+                'the new device was blocked. If their computer really stopped working, use "Allow new device" in the Attempts tab.',
+                'heroicon-o-device-phone-mobile',
+            );
+        }
+        $this->attempt = null;
+        $this->answers = [];
+        $this->denyAccess('This '.$this->kindNoun().' is already open on another device, so it cannot be continued here. '
+            .'If your computer stopped working, ask your instructor to allow this device, then reload this page.');
+
+        return false;
+    }
+
+    /** Every later request: stop a browser the exam was moved away from. */
+    public function hydrate(): void
+    {
+        if ($this->previewMode || $this->reviewMode || ! $this->attempt?->exists || $this->attempt->status !== 'in_progress' || $this->quiz->type !== 'exam') {
+            return;
+        }
+        $owner = QuizAttempt::whereKey($this->attempt->id)->value('device_hash');
+        abort_if($owner !== null && $owner !== $this->deviceHash(), 409, 'This exam was moved to another device. Reload the page.');
     }
 
     /**

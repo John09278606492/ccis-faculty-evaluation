@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Notifications\BellNotification;
 use App\Services\ClassroomUpdates;
 use App\Services\StudentAcademicRecords;
+use App\Services\StudentSignIns;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -122,4 +123,15 @@ it('refreshes the academic context after the first period is configured without 
     $component = Livewire\Livewire::test(WorkspaceContext::class)->assertSet('semesterId', '');
     $period->update(['is_active' => true]);
     $component->call('$refresh')->assertSet('semesterId', (string) $period->id)->assertSee($period->name);
+});
+
+it('tells staff pages when a student starts waiting for sign-in approval', function () {
+    ['student' => $student] = evaluationFixture();
+    ClassroomUpdates::sendPanel();
+    Event::fake([PanelDataChanged::class]);
+
+    StudentSignIns::request($student);
+    ClassroomUpdates::sendPanel();
+
+    Event::assertDispatched(PanelDataChanged::class, fn (PanelDataChanged $event) => $event->kind === 'signins' && $event->staffOnly);
 });

@@ -114,6 +114,23 @@ class StudentsRelationManager extends RelationManager
                     ->toggle(),
             ], layout: FiltersLayout::AboveContent)
             ->headerActions([
+                // One click for a whole room, without selecting rows first.
+                Tables\Actions\Action::make('approveAllWaiting')->label('Approve waiting sign-ins')->icon('heroicon-o-check-badge')
+                    ->badge(fn () => count($this->waitingRequestOptions()) ?: null)
+                    ->visible(fn () => auth()->user()->can('update', $this->getQuiz()))
+                    ->modalDescription('Every assigned student waiting on the login page is listed with the code shown on their screen. All are ticked; untick any you do not recognise. A student with two waiting browsers is left unticked so you can pick the right one.')
+                    ->modalSubmitActionLabel('Approve ticked')
+                    ->form([
+                        Forms\Components\CheckboxList::make('request_ids')->label('Waiting browsers')->required()->bulkToggleable()
+                            ->options(fn () => $this->waitingRequestOptions())
+                            ->default(fn () => StudentSignIns::unambiguousRequests($this->waitingStudents()))
+                            ->helperText('Nobody listed? Ask the students to enter their ID on the login page, then open this again.'),
+                    ])
+                    ->action(function (array $data) {
+                        abort_unless(auth()->user()->can('update', $this->getQuiz()), 403);
+                        $count = StudentSignIns::approve($this->waitingStudents(), assessment: $this->getQuiz(), requestIds: $data['request_ids']);
+                        Notification::make()->title("{$count} waiting sign-in request(s) approved")->success()->send();
+                    }),
                 Tables\Actions\Action::make('assign_to_all')
                     ->label('Assign to All Students')
                     ->icon('heroicon-o-users')
@@ -199,6 +216,21 @@ class StudentsRelationManager extends RelationManager
     protected function getQuiz(): Quiz
     {
         return $this->getOwnerRecord();
+    }
+
+    /** Assigned students of this assessment who have a sign-in request waiting. */
+    protected function waitingStudents(): Collection
+    {
+        $waiting = DB::table('student_sign_in_requests')->whereNull('approved_at')->whereNull('consumed_at')
+            ->where('expires_at', '>', now())->pluck('user_id')->unique();
+
+        return $this->getQuiz()->courseOffering->students()->whereIn('users.id', $waiting)->where('users.is_student', true)->get()
+            ->filter(fn (User $student) => $this->getQuiz()->isAssignedTo($student->id))->values();
+    }
+
+    protected function waitingRequestOptions(): array
+    {
+        return StudentSignIns::requestOptions($this->waitingStudents());
     }
 
     /**

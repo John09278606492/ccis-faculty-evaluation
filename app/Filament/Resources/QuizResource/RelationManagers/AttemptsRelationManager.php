@@ -7,6 +7,7 @@ use App\Models\QuizAnswer;
 use App\Models\QuizAttempt;
 use App\Models\QuizQuestion;
 use App\Services\BackgroundTasks;
+use App\Support\SqliteWriter;
 use Carbon\CarbonInterval;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -144,6 +145,15 @@ class AttemptsRelationManager extends RelationManager
                             .': '.number_format($paste['chars']).' characters, '.$paste['lines'].' '.str('line')->plural($paste['lines']))
                         ->implode("\n") ?: null),
 
+                Tables\Columns\TextColumn::make('device_blocks')
+                    ->label('Other device')
+                    ->visible(fn () => $this->getOwnerRecord()->type === 'exam')
+                    ->sortable()
+                    ->badge()
+                    ->color(fn (int $state) => $state === 0 ? 'gray' : 'danger')
+                    ->formatStateUsing(fn (int $state) => $state === 0 ? 'None' : ($state === 1 ? 'Blocked once' : "Blocked {$state} times"))
+                    ->description(fn (QuizAttempt $record) => $record->status === 'in_progress' && $record->blocked_device_hash ? 'Waiting for your approval' : null),
+
                 Tables\Columns\TextColumn::make('started_at')
                     ->dateTime()
                     ->sortable(),
@@ -172,6 +182,41 @@ class AttemptsRelationManager extends RelationManager
                         && (auth()->user()?->can('update', $this->getOwnerRecord()) ?? false))
                     ->form(fn (QuizAttempt $record) => $this->buildGradingSchema($record))
                     ->action(fn (QuizAttempt $record, array $data) => $this->saveGrades($record, $data)),
+                Tables\Actions\Action::make('allowNewDevice')
+                    ->label('Allow new device')
+                    ->icon('heroicon-o-device-phone-mobile')
+                    ->color('warning')
+                    ->visible(fn (QuizAttempt $record) => $record->status === 'in_progress' && filled($record->blocked_device_hash)
+                        && (auth()->user()?->can('update', $this->getOwnerRecord()) ?? false))
+                    ->requiresConfirmation()
+                    ->modalDescription('Only do this when the student is in front of you and their first computer really stopped working. The exam moves to the new device and closes on the old one; everything already saved is kept.')
+                    ->action(function (QuizAttempt $record) {
+                        abort_unless(auth()->user()?->can('update', $this->getOwnerRecord()) && $record->quiz_id === $this->getOwnerRecord()->id, 403);
+                        $moved = QuizAttempt::whereKey($record->id)->where('status', 'in_progress')->whereNotNull('blocked_device_hash')
+                            ->update(['device_hash' => DB::raw('blocked_device_hash'), 'blocked_device_hash' => null]);
+                        Notification::make()->title($moved ? 'New device allowed' : 'Nothing to allow')
+                            ->body($moved ? 'Ask the student to reload the exam page on the new device.' : null)->success()->send();
+                    }),
+                // Only the student's latest attempt, so the next one takes its number again.
+                Tables\Actions\Action::make('resetAttempt')
+                    ->label('Reset attempt')
+                    ->icon('heroicon-o-arrow-path')
+                    ->color('danger')
+                    ->visible(fn (QuizAttempt $record) => (auth()->user()?->can('update', $this->getOwnerRecord()) ?? false)
+                        && ! QuizAttempt::where('quiz_id', $record->quiz_id)->where('user_id', $record->user_id)->where('attempt_number', '>', $record->attempt_number)->exists())
+                    ->requiresConfirmation()
+                    ->modalHeading(fn (QuizAttempt $record) => 'Reset '.($record->user?->name ?? 'this student')."'s attempt?")
+                    ->modalDescription('This deletes the attempt and every answer in it, so the student can start again from the beginning with the full time. Use it when a student was submitted by mistake. It cannot be undone.')
+                    ->modalSubmitActionLabel('Delete attempt and let them start again')
+                    ->action(function (QuizAttempt $record) {
+                        abort_unless(auth()->user()?->can('update', $this->getOwnerRecord()) && $record->quiz_id === $this->getOwnerRecord()->id, 403);
+                        DB::transaction(function () use ($record) {
+                            SqliteWriter::reserve('quiz_attempts', $record->id);
+                            $record->delete();
+                        });
+                        Notification::make()->title('Attempt reset')
+                            ->body('The student can sign in and start again. If the exam is open in their browser, ask them to reload it.')->success()->send();
+                    }),
             ])
             ->headerActions([
                 Tables\Actions\Action::make('autoCheck')
@@ -438,6 +483,7 @@ class AttemptsRelationManager extends RelationManager
     {
         abort_unless(auth()->user()->can('update', $this->getOwnerRecord()) && $record->quiz_id === $this->getOwnerRecord()->id && $record->status !== 'in_progress', 403);
         DB::transaction(function () use ($record, $data): void {
+            SqliteWriter::reserve('quiz_attempts', $record->id);
             foreach ($data['awards'] ?? [] as $answerId => $award) {
                 $answer = $record->answers()->whereKey($answerId)->whereHas('question', fn ($q) => $q->whereIn('type', QuizQuestion::MANUALLY_GRADED_TYPES))->firstOrFail();
                 if ($answer->database_name && ! $answer->hasVerifiedDatabaseSnapshot()) {

@@ -1,6 +1,7 @@
 <?php
 
 use App\Events\ClassroomChanged;
+use App\Events\PanelDataChanged;
 use App\Filament\Pages\ClassRecords;
 use App\Filament\Pages\MyQuizzes;
 use App\Filament\Pages\QuizBuilder;
@@ -19,9 +20,11 @@ use App\Services\ClassRecordSyncService;
 use App\Services\StudentDatabase\MySqlStudentDatabases;
 use App\Services\StudentDatabase\StudentDatabases;
 use App\Services\StudentDatabase\StudentDbServer;
+use App\Services\StudentDatabase\StudentProjectRunner;
 use App\Services\WorkbookPreviewService;
 use App\Support\CodeProject;
 use Filament\Facades\Filament;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Storage;
@@ -257,13 +260,29 @@ it('keeps instructor previews separate from saved student attempts across reques
     expect($quiz->attempts()->count())->toBe(0);
 });
 
+it('gives an instructor preview the full time outside UTC', function () {
+    extract(quizWorkflowFixture());
+    config(['app.timezone' => 'Asia/Manila']);
+    date_default_timezone_set('Asia/Manila');
+    try {
+        $this->actingAs($instructor);
+        $page = Livewire::test(TakeQuiz::class, ['quiz' => $quiz]);
+        expect(now()->diffInMinutes($page->get('attempt')->expires_at))->toBeGreaterThan(19)
+            ->and($page->set('answers.'.$question->id, 'echo')->get('attempt')->expires_at->isFuture())->toBeTrue();
+    } finally {
+        date_default_timezone_set('UTC');
+    }
+});
+
 it('saves answers before confirming submission without ending the attempt', function () {
     extract(quizWorkflowFixture());
     $this->actingAs($student);
     $page = Livewire::test(TakeQuiz::class, ['quiz' => $quiz])->call('beginAttempt')
         ->set('answers.'.$question->id, 'echo')->call('confirmSubmission')
         ->assertSet('confirmingSubmission', true)
-        ->assertDispatched('open-modal', id: 'confirm-assessment-submission');
+        ->assertDispatched('open-modal', id: 'confirm-assessment-submission')
+        ->assertSee('Review your answers')->assertSee('Answered')->assertSee('Continue to submit')
+        ->assertSee('This is final.')->assertSee('No, go back')->assertSee('Yes, submit');
     $attempt = $quiz->attempts()->first();
     expect($attempt->status)->toBe('in_progress')
         ->and($attempt->answers()->first()->answer_text)->toBe('echo');
@@ -567,6 +586,21 @@ it('pushes quiz changes only after commit and never broadcasts rolled-back chang
     DB::rollBack();
     Event::assertNotDispatched(ClassroomChanged::class);
     expect($quiz->refresh()->title)->toBe('Committed title');
+});
+
+it('tells staff about every attempt but each student only about their own', function () {
+    extract(quizWorkflowFixture());
+    Event::fake([ClassroomChanged::class, PanelDataChanged::class]);
+    $this->actingAs($student);
+    Livewire::test(TakeQuiz::class, ['quiz' => $quiz])->call('beginAttempt');
+
+    Event::assertDispatched(ClassroomChanged::class, fn ($event) => $event->kind === 'attempt' && $event->quizId === $quiz->id);
+    Event::assertDispatched(PanelDataChanged::class, fn ($event) => $event->kind === 'attempt'
+        && $event->broadcastOn()[0]->name === 'private-App.Models.User.'.$student->id);
+    // A class starting or submitting together would otherwise make every student's page call the server for each classmate.
+    $script = file_get_contents(resource_path('js/live-updates.js'));
+    expect($script)->toContain("if (!staff && ['focus', 'progress', 'attempt'].includes(event.kind)) return;")
+        ->toContain("event?.kind === 'attempt' && window.Livewire");
 });
 
 it('authorizes live channels by campus and environment without broadcasting private data', function () {
@@ -1075,4 +1109,46 @@ it('keeps automatic checking settings when a code question is edited in the buil
     Livewire::test(QuizBuilder::class, ['record' => $quiz->id])->call('selectQuestion', $code->id)
         ->set('selectedQuestionData.question_text', 'Print the grand total')->call('saveQuestionProperties')->assertHasNoErrors();
     expect($code->refresh()->autoChecks())->toBeTrue();
+});
+
+it('duplicates an assessment with its questions into another section', function () {
+    extract(quizWorkflowFixture());
+    $other = $offering->replicate()->fill(['section' => 'BSIT 3B']);
+    $other->save();
+    $instructor->givePermissionTo(Permission::findOrCreate('replicate_quiz', 'web'));
+    $this->actingAs($instructor);
+
+    Livewire::test(ListQuizzes::class)
+        ->callTableAction('replicate', $quiz, data: ['course_offering_id' => $other->id])
+        ->assertHasNoTableActionErrors();
+
+    $copy = Quiz::where('course_offering_id', $other->id)->sole();
+    expect($copy->title)->toBe('PHP Basics')->and($copy->is_published)->toBeFalse()
+        ->and($copy->questions()->pluck('question_text')->all())->toBe(['Name the output statement']);
+});
+
+it('runs only the owner\'s open project and points every mysqli connection at their own database', function () {
+    $fixture = quizWorkflowFixture();
+    fakeStudentDatabases();
+    [, $page, , $answer] = databaseQuestionAttempt($fixture);
+    $page->assertSee('Run my project');
+    $answer->update(['answer_text' => CodeProject::encode([['name' => 'index.php', 'content' => '<?php echo 1;'], ['name' => 'style.css', 'content' => 'b{}']])]);
+    $this->get(route('project-run', ['quizAnswer' => $answer]))->assertRedirect(route('project-run', ['quizAnswer' => $answer, 'path' => 'index.php']));
+    $this->get(route('project-run', ['quizAnswer' => $answer, 'path' => 'style.css']))->assertOk()->assertHeader('Content-Type', 'text/css; charset=utf-8');
+    $this->get(route('project-run', ['quizAnswer' => $answer, 'path' => '../.env']))->assertNotFound();
+    $classmate = User::factory()->create();
+    $fixture['offering']->students()->attach($classmate);
+    $this->actingAs($classmate)->get(route('project-run', ['quizAnswer' => $answer, 'path' => 'index.php']))->assertForbidden();
+    $this->actingAs($fixture['student']);
+    $page->set('answers.'.$fixture['question']->id, 'echo')->call('submit');
+    $this->get(route('project-run', ['quizAnswer' => $answer, 'path' => 'index.php']))->assertForbidden();
+
+    expect(StudentProjectRunner::redirectConnections('$a = new mysqli("localhost", "root", "", "x"); $b = mysqli_connect("localhost"); $c = new \mysqli(); $d->mysqli_connect(1);'))
+        ->toBe('$a = new \ExamMysqli("localhost", "root", "", "x"); $b = \exam_mysqli_connect("localhost"); $c = new \ExamMysqli(); $d->mysqli_connect(1);');
+});
+
+it('passes empty and spaced form fields to a student project as the browser sent them', function () {
+    $request = Request::create('/project-run/1/insert.php', 'POST', ['firstname' => ' Ana ', 'middlename' => null, 'tags' => ['a', null]]);
+
+    expect(StudentProjectRunner::formFields($request))->toBe(['firstname' => ' Ana ', 'middlename' => '', 'tags' => ['a', '']]);
 });
