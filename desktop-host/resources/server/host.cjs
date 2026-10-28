@@ -262,7 +262,7 @@ async function main() {
         }
     }
     // Live updates need a key and secret; new installs start with them empty.
-    artisan('classroom:live-keys');
+    artisan('classroom:live-keys', ...(managedBackend ? ['--env-file', path.join(process.env.CAMPUS_SHARED_ROOT,'.env')] : []));
     if (!managedBackend) launch(['artisan', 'reverb:start', '--host=127.0.0.1', `--port=${wsPort}`], project);
     // Runs scheduled work such as the daily backup while the server is open.
     if (!managedBackend) {

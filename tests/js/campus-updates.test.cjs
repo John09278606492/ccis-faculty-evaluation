@@ -73,6 +73,7 @@ test('an unhealthy activated release rolls back code while preserving the shared
     f.updater.healthCheck=async port=>port===f.old.port;
     await f.updater.monitor();await f.updater.monitor();
     assert.equal(f.gateway.active.id,A);assert.equal(f.updater.state.state,'rolled-back');
+    assert.equal((await(await fetch(f.url+'/answer',{method:'POST',headers:{'X-Campus-Release':B}})).json()).id,A);
     assert.equal(fs.readFileSync(path.join(f.root,'database/campus.sqlite'),'utf8'),'original student results');
 });
 

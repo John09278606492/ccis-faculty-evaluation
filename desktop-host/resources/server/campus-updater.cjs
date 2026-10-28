@@ -11,6 +11,11 @@ class CampusUpdater {
         this.stateFile=path.join(this.folder,'update.json');this.pointer=path.join(this.folder,'current.json');
         try{this.state=JSON.parse(fs.readFileSync(this.stateFile,'utf8'))}catch{this.state={}}
         this.state={...this.state,state:config.enabled?'watching':'disabled'};this.save();
+        gateway.on('backend-error',id=>{
+            if(id!==gateway.active?.id)return;
+            this.webErrors=(this.webErrors??[]).filter(time=>Date.now()-time<60000);this.webErrors.push(Date.now());
+            if(this.webErrors.length>=3&&Date.now()-(gateway.active.activatedAt??0)<900000)this.forceRollback=true;
+        });
     }
     save(values={}){this.state={...this.state,...values,current:this.gateway.active?.id,updatedAt:new Date().toISOString()};atomicJson(this.stateFile,this.state);}
     async inspect(backend){
@@ -68,6 +73,7 @@ class CampusUpdater {
             if(this.stopping)throw new Error('Update preparation stopped with the server.');
             atomicJson(this.pointer,{id:sha,project:path.relative(this.root,project)});
             this.gateway.register(candidate);this.gateway.activate(sha);this.background.resume(this.gateway.active);paused=false;
+            this.webErrors=[];this.forceRollback=false;this.healthFailures=0;
             this.lastGood=old;
             this.save({state:'current',pending:null,failed:null,lastUpdated:new Date().toISOString(),message:'The tested update is active. Existing pages and records were retained.'});
         }catch(error){
@@ -82,20 +88,20 @@ class CampusUpdater {
         if(this.busy||this.monitorBusy||this.stopping||!this.gateway.active)return;
         this.monitorBusy=true;
         try {
-        if(!await this.healthCheck(this.gateway.active.port)){
+        if(this.forceRollback||!await this.healthCheck(this.gateway.active.port)){
             this.healthFailures=(this.healthFailures??0)+1;
             if(this.healthFailures>=2&&this.lastGood&&await this.healthCheck(this.lastGood.port)){
-                const failed=this.gateway.active.id;this.gateway.activate(this.lastGood.id);
+                const failed=this.gateway.active.id;this.gateway.active.disabled=true;this.gateway.activate(this.lastGood.id);
                 atomicJson(this.pointer,{id:this.lastGood.id,project:path.relative(this.root,this.lastGood.project)||'.'});
                 this.save({state:'rolled-back',failed,pending:failed,message:'The new version stopped passing health checks. The previous code is serving users; the database was retained.'});
-                this.busy=true;try{await this.background.pause();this.background.resume(this.gateway.active);}finally{this.busy=false;}
-                this.healthFailures=0;
+                this.busy=true;try{await this.background.pause(950000,this.lastGood);this.background.resume(this.gateway.active);}finally{this.busy=false;}
+                this.healthFailures=0;this.forceRollback=false;this.webErrors=[];
             }
         }else this.healthFailures=0;
         for(const [id,backend] of this.gateway.backends){
             if(backend===this.lastGood && Date.now()-(this.gateway.active.activatedAt??Date.now())<900000)continue;
             const aged=backend!==this.gateway.active&&backend.retiredAt&&Date.now()-backend.retiredAt>86400000&&backend.inflight===0;
-            if(!this.gateway.inUse(backend)||aged){
+            if(!this.gateway.inUse(backend)||aged||(backend.disabled&&backend.inflight===0)){
                 this.gateway.backends.delete(id);await backend.stop().catch(()=>{});
                 if(this.lastGood?.id===id)this.lastGood=null;
             }

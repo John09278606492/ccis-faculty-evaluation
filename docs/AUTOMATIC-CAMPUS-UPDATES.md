@@ -60,9 +60,10 @@ Traversal, symbolic links, Windows alternate streams, duplicate names and oversi
 archives are rejected before extraction. Staging does not overwrite the live tree.
 
 `campus-release-policy.json` is an engineering contract, not a switch to bypass
-validation. Future contributors must keep old page submissions and queued payloads
-compatible, preserve shared-data behavior, and set `backwardCompatible` to false
-for a release that cannot safely coexist. Changing migrations automatically holds
+validation. Page submissions and queued payloads must remain compatible in both
+directions during rollback. Do not rename/remove public Livewire fields or request
+contracts in a rolling release. Set `backwardCompatible` to false for a release
+that cannot safely coexist. Changing migrations automatically holds
 the release regardless of that declaration. Do not claim compatibility for an
 arbitrary breaking change merely to make the updater install it.
 
@@ -96,3 +97,13 @@ Plan disk retention with IT; keep independent daily data backups on another driv
 References: [GitHub commit checks](https://docs.github.com/en/rest/commits/commits),
 [GitHub conditional requests](https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api),
 [Laravel deployment and long-running workers](https://laravel.com/docs/12.x/deployment).
+
+## Verification
+
+The full application run passed 715 tests before the final shared-environment
+regression test was added. JavaScript checks passed 33 tests. Two isolated Windows
+rehearsals switched the real application with all 58 and 57 concurrent requests
+returning HTTP 200. Old/new Livewire requests, existing login, a real live-update
+socket and hashes of results/student/supervisor assignments were retained. The
+second rehearsal also restored the saved active release after restarting the
+controller. These are deployment continuity checks, not a campus capacity benchmark.

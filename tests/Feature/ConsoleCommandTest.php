@@ -5,6 +5,21 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Spatie\Permission\Models\Role;
 
+it('uses the shared environment file after a release restart without replacing existing keys', function () {
+    $folder = storage_path('framework/testing/shared-live-keys-'.uniqid());
+    File::ensureDirectoryExists($folder);
+    $contents = "APP_KEY=keep-application-key\nEVALUATION_FINGERPRINT_KEY=keep-evaluation-key\nREVERB_APP_ID=keep-id\nREVERB_APP_KEY=keep-public-key\nREVERB_APP_SECRET=keep-private-secret\n";
+    file_put_contents($folder.'/.env', $contents);
+    $previous = $this->app->environmentPath();
+    try {
+        $this->app->useEnvironmentPath($folder);
+        $this->artisan('classroom:live-keys')->assertSuccessful();
+        expect(file_get_contents($folder.'/.env'))->toBe($contents);
+    } finally {
+        $this->app->useEnvironmentPath($previous);
+        File::deleteDirectory($folder);
+    }
+});
 /**
  * The commands the classroom server runs on its own.
  */

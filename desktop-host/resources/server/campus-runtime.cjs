@@ -101,9 +101,9 @@ class BackgroundRunner {
             this.lastMinute=minute;this.launch('schedule',[path.join(this.backend.project,'scripts/run-campus-schedule.php')]);
         }
     }
-    async pause(timeoutMs=950000){
+    async pause(timeoutMs=950000,signalBackend=this.backend){
         this.paused=true;
-        await command(this.php,['artisan','queue:restart'],this.backend.project,this.backend.env,{logFile:path.join(this.root,'storage/logs/campus-updater.log')});
+        await command(this.php,['artisan','queue:restart'],signalBackend.project,signalBackend.env,{logFile:path.join(this.root,'storage/logs/campus-updater.log')});
         const deadline=Date.now()+timeoutMs;
         while(this.children.size){if(Date.now()>deadline)throw new Error('Current background work is still finishing; the running version was kept.');await delay(250);}
     }

@@ -70,7 +70,7 @@ class CampusServer {
         this.reverbPort=await new Promise((resolve,reject)=>{const s=net.createServer();s.once('error',reject);s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>resolve(p));});});
         process.env.CAMPUS_REVERB_PORT=String(this.reverbPort);this.gateway.websocketPort=this.reverbPort;
         const reverbEnv=appEnv(this.root,initial.project,this.port,0,initial.id);
-        await command(this.php,['artisan','classroom:live-keys'],initial.project,reverbEnv);
+        await command(this.php,['artisan','classroom:live-keys','--env-file',path.join(this.root,'.env')],initial.project,reverbEnv);
         this.reverbProject=initial.project;this.reverbEnv=reverbEnv;this.launchReverb();
         const factory=options=>startBackend({root:this.root,php:this.php,publicPort:this.port,...options});
         const backend=await factory(initial);this.gateway.register(backend);this.gateway.activate(initial.id);
@@ -95,9 +95,9 @@ class CampusServer {
         if(this.stopping)return;this.stopping=true;clearInterval(this.watch);this.updater?.stop();
         this.status('stopping','Finishing current background work before shutdown…');
         while(this.updater?.busy)await delay(250);
-        await this.background.stop();
+        if(this.background.backend)await this.background.stop();
         for(const socket of this.gateway.connections)socket.destroy();
-        await new Promise(resolve=>this.gateway.server.close(resolve));
+        if(this.gateway.server.listening)await new Promise(resolve=>this.gateway.server.close(resolve));
         for(const backend of this.gateway.backends.values())await backend.stop();
         clearTimeout(this.reverbRetry);if(this.reverb?.exitCode===null)this.reverb.kill();
         if(this.sqlEnvironment){

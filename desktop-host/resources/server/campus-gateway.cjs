@@ -54,7 +54,7 @@ class CampusGateway extends EventEmitter {
         const url = new URL(req.url, 'http://localhost');
         const pin = req.headers['x-campus-release'] ?? url.searchParams.get('__campus_release');
         const documentNavigation = req.method === 'GET' && req.headers['sec-fetch-dest'] === 'document';
-        if (!documentNavigation && RELEASE.test(pin ?? '') && this.backends.has(pin)) return this.backends.get(pin);
+        if (!documentNavigation && RELEASE.test(pin ?? '') && this.backends.has(pin) && !this.backends.get(pin).disabled) return this.backends.get(pin);
         // Previously rendered hashed assets remain available after the pointer moves.
         if (req.method === 'GET' && /^\/build\/assets\//.test(url.pathname)) {
             let relative; try { relative=decodeURIComponent(url.pathname); } catch { return this.active; }

@@ -7,13 +7,13 @@ use Illuminate\Support\Str;
 
 class LiveKeysCommand extends Command
 {
-    protected $signature = 'classroom:live-keys {--env-file= : The .env file to update (defaults to the project .env)}';
+    protected $signature = 'classroom:live-keys {--env-file= : The .env file to update (defaults to the configured shared environment)}';
 
     protected $description = 'Fill in the live updates (Reverb) key and secret in .env when they are empty';
 
     public function handle(): int
     {
-        $path = $this->option('env-file') ?: base_path('.env');
+        $path = $this->option('env-file') ?: $this->laravel->environmentFilePath();
         if (! is_file($path)) {
             $this->error('No .env file found.');
 
