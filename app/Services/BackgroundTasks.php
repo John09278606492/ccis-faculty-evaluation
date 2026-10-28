@@ -22,7 +22,7 @@ use Throwable;
 
 class BackgroundTasks
 {
-    public const KINDS = ['student-review', 'student-import', 'course-review', 'course-import', 'offering-review', 'offering-import', 'evaluator-sync', 'sectioning-import', 'supervisor-bulk', 'supervisor-resolution', 'evaluation-prepare', 'evaluation-append', 'roster-review', 'roster-import', 'section-review', 'section-import', 'staff-export', 'faculty-export', 'department-export', 'evaluator-file', 'assessment-pins', 'assessment-export', 'workbook-upload'];
+    public const KINDS = ['student-review', 'student-import', 'course-review', 'course-import', 'offering-review', 'offering-import', 'evaluator-sync', 'sectioning-import', 'supervisor-bulk', 'supervisor-resolution', 'evaluation-prepare', 'evaluation-append', 'roster-review', 'roster-import', 'section-review', 'section-import', 'staff-export', 'faculty-export', 'department-export', 'class-followup-export', 'evaluator-file', 'assessment-pins', 'assessment-export', 'workbook-upload'];
 
     private function scope(User $actor, Campus $campus): string
     {
@@ -40,6 +40,7 @@ class BackgroundTasks
         match ($kind) {
             'student-review', 'student-import', 'course-review', 'course-import' => app(AcademicStudentImports::class)->authorize($actor, $campus),
             'staff-export' => abort_unless($actor->can('view_any_user'), 403),
+            'class-followup-export' => abort_unless($actor->can('view_any_course::offering'), 403),
             'faculty-export' => abort_unless($actor->can('page_EvaluationResults'), 403),
             'department-export' => abort_unless($actor->isSuperAdmin() || $actor->can('view_any_department'), 403),
             'workbook-upload' => abort_unless($actor->can('page_ClassRecords'), 403),

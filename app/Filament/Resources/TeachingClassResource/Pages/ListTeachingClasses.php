@@ -11,6 +11,7 @@ use App\Services\AcademicSections;
 use App\Services\AcademicStudents;
 use App\Services\BackgroundTasks;
 use App\Services\InstructorOfferingImports;
+use App\Services\TeachingRosterExports;
 use Filament\Actions\Action;
 use Filament\Actions\CreateAction;
 use Filament\Forms;
@@ -31,6 +32,16 @@ class ListTeachingClasses extends ListRecords
         $departments = fn () => app(AcademicStudents::class)->departments(auth()->user(), filament()->getTenant())->pluck('code', 'id');
 
         return [
+            Action::make('exportMissingRosters')->label('Export missing rosters')->icon('heroicon-o-arrow-down-tray')->color('gray')
+                ->visible(fn () => auth()->user()->can('view_any_course::offering'))
+                ->tooltip('Instructors whose active teaching classes need sections or student lists. Uses the current filters.')
+                ->action(function () {
+                    $ids = app(TeachingRosterExports::class)->query(auth()->user(), filament()->getTenant())
+                        ->whereIn('course_offerings.id', $this->getFilteredTableQuery()->reorder()->select('course_offerings.id')->toBase())
+                        ->pluck('course_offerings.id')->all();
+                    app(BackgroundTasks::class)->enqueue(auth()->user(), filament()->getTenant(), 'class-followup-export', 'Export instructors missing sections or student lists', ['ids' => $ids]);
+                    Notification::make()->success()->title('Roster follow-up export queued')->body('You can continue working. Download the CSV from the bell notification when it is ready.')->send();
+                }),
             Action::make('importOfferings')->label('Import Offering File')->icon('heroicon-o-document-arrow-up')->visible($allowed)
                 ->extraAttributes(['data-guide' => 'offering-upload'])
                 ->modalHeading('Import Instructor Offerings')->modalWidth('2xl')->modalSubmitActionLabel('Check File')

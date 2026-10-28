@@ -14,6 +14,7 @@ class BackgroundExports
     {
         return match ($task->kind) {
             'staff-export' => UserResource::getEloquentQuery(),
+            'class-followup-export' => app(TeachingRosterExports::class)->query($actor, $campus),
             'faculty-export' => User::query()->whereIn('id', app(ReportService::class)->offerings($task->payload['context'])->select('user_id')),
             'department-export' => app(AssignedDataAccess::class)->apply(Department::query(), $actor, $campus)->where('is_active', true),
             default => abort(403),
@@ -22,6 +23,9 @@ class BackgroundExports
 
     public function generate(BackgroundTask $task, User $actor, Campus $campus): array
     {
+        if ($task->kind === 'class-followup-export') {
+            return app(TeachingRosterExports::class)->generate($task, $actor, $campus);
+        }
         $tasks = app(BackgroundTasks::class);
         $ids = array_values(array_unique(array_map('intval', $task->payload['ids'])));
         $query = $this->query($task, $actor, $campus)->whereKey($ids);
