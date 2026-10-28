@@ -6,8 +6,8 @@
   "applicationDirectory": "evaluation-app",
   "publicDirectory": "public_html",
   "phpCli": "/opt/alt/php83/usr/bin/php",
-  "deployedRevision": "57e77e7",
+  "deployedRevision": "ee2925b",
   "sourceBranch": "claude/project-thread-zjbov2",
   "automaticGitDeploymentConfigured": false,
-  "lastPatch": "Bulk home department instructor assignment and department roster; live list/edit pickers and search verified 2026-10-28"
+  "lastPatch": "Background export of instructors missing sections or student rosters; live worker completed 33 instructors / 112 classes on 2026-10-28"
 }
