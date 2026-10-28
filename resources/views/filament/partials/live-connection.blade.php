@@ -1,5 +1,6 @@
 @if (auth()->check() && filament()->getTenant())
     <script type="application/json" id="classroom-live-config">{!! json_encode([
+        'transport' => config('classroom.live_transport', 'reverb'),
         'key' => config('broadcasting.connections.reverb.key'),
         'host' => config('classroom.websocket_host'),
         'port' => config('classroom.websocket_port'),
