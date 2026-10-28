@@ -24,7 +24,8 @@ def digest(path):
 
 def build(args):
     php_dir, node_dir = args.php_dir.resolve(), args.node_dir.resolve()
-    for required in [php_dir/'php.exe', node_dir/'node.exe', ROOT/'vendor/autoload.php']:
+    node_exe = node_dir/'node.exe' if (node_dir/'node.exe').is_file() else node_dir/'bin/node.exe'
+    for required in [php_dir/'php.exe', node_exe, ROOT/'vendor/autoload.php']:
         if not required.is_file():
             raise RuntimeError('Missing transfer prerequisite: '+str(required))
     if subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT).strip():
@@ -57,7 +58,7 @@ def build(args):
     shutil.copytree(php_dir, project/'runtime/php')
     (project/'runtime/php/conf.d').mkdir(exist_ok=True)
     (project/'runtime/node').mkdir(parents=True)
-    shutil.copy2(node_dir/'node.exe', project/'runtime/node/node.exe')
+    shutil.copy2(node_exe, project/'runtime/node/node.exe')
     for license_name in ['LICENSE', 'LICENSE.txt', 'LICENSE.md']:
         if (node_dir/license_name).exists():
             shutil.copy2(node_dir/license_name, project/'runtime/node'/license_name)
