@@ -2,7 +2,8 @@
     "private": true,
     "type": "module",
     "scripts": {
-        "build": "npm run build:code-editor && vite build",
+        "build": "npm run build:code-editor && npm run build:guides && vite build",
+        "build:guides": "node scripts/build-guided-tours.mjs",
         "dev": "vite",
         "build:code-editor": "node scripts/build-code-runner.mjs"
     },
@@ -39,6 +40,7 @@
         "vite": "^7.3.6"
     },
     "dependencies": {
+        "driver.js": "1.10.2",
         "laravel-echo": "^2.6.1",
         "pusher-js": "^8.6.0"
     }

@@ -1,5 +1,7 @@
 <div class="space-y-4 text-sm">
     <p><strong>Academic period:</strong> {{ $period }}</p>
+    @if($review['ignored_sheets'] ?? [])<p>Unrelated worksheets ignored: {{ implode(', ', $review['ignored_sheets']) }}.</p>@endif
+    @if($review['skipped_period_rows'] ?? 0)<p>{{ $review['skipped_period_rows'] }} rows outside the selected campus or academic period ignored.</p>@endif
     @foreach($review['sources'] ?? [] as $source)
         <p class="text-gray-600">{{ $source['format'] }} · {{ $source['sheet'] }} · headers on Excel row {{ $source['header_row'] }}@if(isset($source['campus'])) · {{ $source['campus'] }}@endif</p>
     @endforeach
@@ -25,7 +27,7 @@
     @endif
     @if(($review['subject_enrolments'] ?? 0) > 0)
         @include('filament.forms.imported-course-review')
-        <p>Program, reported year, units and subject enrolments will be saved for this period. Use <strong>Teaching Classes → Evaluators → Add from Master List Subjects</strong> to suggest students actually enrolled in that subject. Sections and instructors are not inferred from a campus report that does not contain them.</p>
+        <p>Subject enrolments will be saved. Next, create sections and upload their student lists.</p>
         @if($review['ambiguous_subject_codes'] ?? 0)<p class="text-warning-700">{{ $review['ambiguous_subject_codes'] }} subject codes have more than one description. Choose the correct description when adding evaluators. Existing subject catalogues are preserved.</p>@endif
     @endif
     @if($review['without_subjects'] ?? 0)<p>{{ $review['without_subjects'] }} rows have no subject enrolments. Their student records can still be imported; no subject-based evaluator suggestions will be made for them.</p>@endif
@@ -34,6 +36,6 @@
         <ul class="list-disc space-y-1 pl-5">@foreach(array_slice($review['errors'],0,50) as $error)<li>@if($error['sheet'] ?? null){{ $error['sheet'] }}, @endif Row {{ $error['row'] }}: {{ implode(' ', $error['messages']) }}</li>@endforeach</ul>
         @if($review['error_count'] > 50)<p>Showing the first 50 error rows. Download the CSV for the complete list.</p>@endif
     @else
-        <p class="text-success-700">Ready to import. Existing passwords, PINs, roles, evaluation responses and other academic periods are preserved. New students use ID-only evaluation entry; assessment login stays unavailable until a PIN is issued.</p>
+        <p class="text-success-700">Ready to import. Existing accounts and evaluation results are preserved.</p>
     @endif
 </div>

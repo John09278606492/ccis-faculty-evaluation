@@ -10,7 +10,9 @@ class ResolveEvaluationStudent
 {
     public function handle(Request $request, Closure $next)
     {
-        if (session('evaluation.expires_at', 0) > now()->timestamp) {
+        // An existing authenticated account takes precedence over an old
+        // ID-only session, especially when a supervisor opens Annex B.
+        if (! $request->user() && session('evaluation.expires_at', 0) > now()->timestamp) {
             $student = User::whereKey(session('evaluation.student_id'))->where('is_student', true)->first();
             if ($student) {
                 // Only this evaluation request sees the selected student. The authentication

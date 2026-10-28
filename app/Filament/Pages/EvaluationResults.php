@@ -33,13 +33,13 @@ class EvaluationResults extends Page implements HasTable
 
     protected static string $view = 'filament.pages.evaluation-results';
 
-    protected static ?string $navigationLabel = 'Faculty Results';
+    protected static ?string $navigationLabel = 'Results & Reports';
 
-    protected static ?string $title = 'Faculty Results';
+    protected static ?string $title = 'Results & Reports';
 
-    protected static ?int $navigationSort = 1;
+    protected static ?int $navigationSort = 5;
 
-    protected static ?string $navigationGroup = 'Evaluation Reports';
+    protected static ?string $navigationGroup = 'Faculty Evaluation';
 
     public static function canAccess(): bool
     {
@@ -96,10 +96,10 @@ class EvaluationResults extends Page implements HasTable
     {
         return $table->query(fn () => $this->getTableQuery())->columns([
             Tables\Columns\TextColumn::make('name')->label('Faculty')->searchable(['name', 'first_name', 'last_name'])->sortable(),
-            Tables\Columns\TextColumn::make('instructorDepartment.code')->label('Home Department')->badge()->default('—'),
+            Tables\Columns\TextColumn::make('instructorDepartment.code')->label('Home Department')->badge()->default('â€”'),
             Tables\Columns\TextColumn::make('courses_count')->label('Assignments')->state(fn ($record) => $this->facultySummary($record)['total_courses']),
             Tables\Columns\TextColumn::make('evaluations_count')->label('Responses')->state(fn ($record) => $this->facultySummary($record)['total_submissions'])
-                ->description(fn ($record) => $this->facultySummary($record)['complete_responses'].' complete · '.$this->facultySummary($record)['incomplete_responses'].' incomplete'),
+                ->description(fn ($record) => $this->facultySummary($record)['complete_responses'].' complete Â· '.$this->facultySummary($record)['incomplete_responses'].' incomplete'),
             Tables\Columns\TextColumn::make('set_rating')->label('SET / 5')->state(fn ($record) => $this->score($record, 'SET'))->numeric(2)->placeholder('Pending')
                 ->description(fn ($record) => isset($this->facultySummary($record)['instruments']['SET']['percentage']) ? number_format($this->facultySummary($record)['instruments']['SET']['percentage'], 2).' / 100' : null),
             Tables\Columns\TextColumn::make('sef_rating')->label('SEF / 5')->state(fn ($record) => $this->score($record, 'SEF'))->numeric(2)->placeholder('Pending supervisor evaluation')
@@ -124,7 +124,7 @@ class EvaluationResults extends Page implements HasTable
                 ->query(fn ($query) => $query),
         ], layout: FiltersLayout::AboveContent)->filtersFormColumns(['default' => 1, 'md' => 2, 'xl' => 4])
             ->actions([
-                Tables\Actions\Action::make('view_details')->label('View Reports')->icon('heroicon-o-document-chart-bar')->modalHeading(fn ($record) => 'Reports — '.$record->name)
+                Tables\Actions\Action::make('view_details')->label('View Reports')->icon('heroicon-o-document-chart-bar')->modalHeading(fn ($record) => 'Reports â€” '.$record->name)
                     ->modalWidth('7xl')->modalSubmitAction(false)->modalCancelActionLabel('Close')
                     ->modalContent(function ($record) {
                         $context = $this->reportContext();
@@ -137,8 +137,8 @@ class EvaluationResults extends Page implements HasTable
                             'reportOptions' => [
                                 'scores' => ['label' => 'Scores Report', 'url' => route('evaluation.tabular-report', [...$filters, 'kind' => 'scores', 'instrument' => $context['evaluation_type']])],
                                 'tally' => ['label' => 'Tally Report', 'url' => route('evaluation.tabular-report', [...$filters, 'kind' => 'tally', 'instrument' => $context['evaluation_type']])],
-                                'annex_c' => ['label' => 'Annex C — Faculty Evaluation Report', 'url' => route('evaluation.report', [...$filters, 'annex' => 'C'])],
-                                'annex_d' => ['label' => 'Annex D — Development Acknowledgement', 'url' => route('evaluation.report', [...$filters, 'annex' => 'D'])],
+                                'annex_c' => ['label' => 'Annex C â€” Faculty Evaluation Report', 'url' => route('evaluation.report', [...$filters, 'annex' => 'C'])],
+                                'annex_d' => ['label' => 'Annex D â€” Development Acknowledgement', 'url' => route('evaluation.report', [...$filters, 'annex' => 'D'])],
                             ],
                         ]);
                     }),
@@ -164,7 +164,7 @@ class EvaluationResults extends Page implements HasTable
             $score = app(EvaluationScoring::class)->assignment($co, $submissions);
             $comments = app(ReportService::class)->getAggregatedComments(collect([$co->id]));
             $scale = [['value' => 5, 'label' => 'Outstanding', 'color' => '#16a34a'], ['value' => 4, 'label' => 'Very Satisfactory', 'color' => '#2563eb'], ['value' => 3, 'label' => 'Satisfactory', 'color' => '#ca8a04'], ['value' => 2, 'label' => 'Fair', 'color' => '#ea580c'], ['value' => 1, 'label' => 'Poor', 'color' => '#dc2626']];
-            $results[] = ['course_code' => $co->course?->code ?? 'Faculty evaluation', 'course_name' => $co->course?->name ?? '', 'section' => $co->section ?: '—',
+            $results[] = ['course_code' => $co->course?->code ?? 'Faculty evaluation', 'course_name' => $co->course?->name ?? '', 'section' => $co->section ?: 'â€”',
                 'semester' => $co->semester?->name, 'school_year' => $co->semester?->schoolYear?->name, 'submission_count' => $score['count'],
                 'incomplete_count' => $score['incomplete_count'], 'overall_score' => $score['mean_5'], 'percentage' => $score['percentage'],
                 'raw_total' => $score['mean_total'], 'maximum' => $score['maximum'], 'overall_rating' => $score['mean_5'] !== null ? app(ReportService::class)->getRatingLabel($score['mean_5']) : 'Pending',

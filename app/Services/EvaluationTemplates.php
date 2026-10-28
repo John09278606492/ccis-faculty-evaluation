@@ -21,7 +21,7 @@ class EvaluationTemplates
             $form = Form::create([
                 'name' => self::NAMES[$annex], 'is_active' => false, 'requires_login' => true,
                 'description' => 'Read each benchmark statement carefully and rate the faculty using the scale below. Your feedback is strictly confidential.',
-                'evaluator_roles' => $annex === 'A' ? ['student'] : ['super_admin', 'admin', 'dean', 'chairperson', 'supervisor'],
+                'evaluator_roles' => $annex === 'A' ? ['student'] : [],
                 'rating_scale' => [
                     ['value' => 5, 'label' => 'Always manifested', 'description' => 'Evident in nearly all relevant situations (91-100% of instances).'],
                     ['value' => 4, 'label' => 'Often manifested', 'description' => 'Evident most of the time, with occasional lapses (61-90%).'],

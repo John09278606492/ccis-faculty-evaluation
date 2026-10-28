@@ -1,21 +1,23 @@
 <?php
 
 use App\Filament\Pages\FormBuilder;
+use App\Filament\Pages\QuizBuilder;
 use App\Filament\Resources\CourseOfferingResource\RelationManagers\StudentsRelationManager;
 use App\Filament\Resources\SectionResource\Pages\CreateSection;
 use App\Filament\Resources\SectionResource\Pages\EditSection;
 use App\Filament\Resources\TeachingClassResource\Pages\EditTeachingClass;
 use App\Models\AcademicSection;
 use App\Models\Campus;
+use App\Models\Quiz;
+use App\Models\StudentAcademicRecord;
 use App\Models\User;
 use App\Models\WorkspaceDraft;
 use App\Services\AcademicSections;
 use App\Services\EvaluationTemplates;
-use App\Services\WorkspaceDrafts;
 use Filament\Facades\Filament;
 use Livewire\Livewire;
-use Spatie\Permission\Models\Role;
 use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 
 beforeEach(function () {
     ['offering' => $this->offering, 'student' => $this->student] = evaluationFixture(false);
@@ -127,7 +129,7 @@ it('restores the exact criteria editor without saving its draft as a live questi
 
 it('keeps an unfinished evaluator selection on modal close and requires an explicit Save Evaluators', function () {
     $this->student->update(['student_department_id' => $this->section->department_id]);
-    \App\Models\StudentAcademicRecord::create(['user_id' => $this->student->id, 'semester_id' => $this->section->semester_id, 'program' => 'BSIT']);
+    StudentAcademicRecord::create(['user_id' => $this->student->id, 'semester_id' => $this->section->semester_id, 'program' => 'BSIT']);
     app(AcademicSections::class)->add($this->actor, $this->campus, $this->section, [$this->student->id]);
     $key = $this->section->department_id.'~'.$this->section->semester_id.'~'.rawurlencode($this->section->name);
     $params = ['ownerRecord' => $this->offering, 'pageClass' => EditTeachingClass::class];
@@ -160,12 +162,12 @@ it('preserves a criteria edit on an immediate switch and clears Create and creat
 
 it('recovers quiz question properties while retaining normal validation and explicit saving', function () {
     $this->actor->givePermissionTo(Permission::findOrCreate('update_quiz', 'web'));
-    $quiz = \App\Models\Quiz::create(['course_offering_id' => $this->offering->id, 'title' => 'Draft quiz', 'type' => 'quiz', 'is_published' => false]);
+    $quiz = Quiz::create(['course_offering_id' => $this->offering->id, 'title' => 'Draft quiz', 'type' => 'quiz', 'is_published' => false]);
     $question = $quiz->questions()->create(['type' => 'short_answer', 'question_text' => 'Original question', 'points' => 2, 'order' => 1, 'correct_answer' => ['answer']]);
-    $page = Livewire::test(\App\Filament\Pages\QuizBuilder::class, ['record' => $quiz->id])->call('selectQuestion', $question->id)->set('selectedQuestionData.question_text', 'Working question');
+    $page = Livewire::test(QuizBuilder::class, ['record' => $quiz->id])->call('selectQuestion', $question->id)->set('selectedQuestionData.question_text', 'Working question');
     $page->call('persistWorkspaceDraft', ['selectedQuestionId' => $question->id, 'selectedQuestionData' => $page->get('selectedQuestionData')]);
     expect($question->fresh()->question_text)->toBe('Original question');
-    Livewire::test(\App\Filament\Pages\QuizBuilder::class, ['record' => $quiz->id])->call('resumeWorkspaceDraft')->assertSet('selectedQuestionData.question_text', 'Working question')->call('saveQuestionProperties')->assertHasNoErrors();
+    Livewire::test(QuizBuilder::class, ['record' => $quiz->id])->call('resumeWorkspaceDraft')->assertSet('selectedQuestionData.question_text', 'Working question')->call('saveQuestionProperties')->assertHasNoErrors();
     expect($question->fresh()->question_text)->toBe('Working question')->and(WorkspaceDraft::sole()->payload)->toBe([]);
 });
 

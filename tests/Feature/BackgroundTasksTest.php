@@ -115,6 +115,14 @@ it('keeps the operations page private to its owner and selected campus', functio
     Livewire::test(BackgroundProcessing::class)->assertCanSeeTableRecords([$mine])->assertCanNotSeeTableRecords([$foreign]);
 });
 
+it('opens a notification review link at the selected private operation', function () {
+    $selected = ($this->review)();
+    $another = ($this->review)();
+    Livewire::withQueryParams(['tableSearch' => $selected->id])->test(BackgroundProcessing::class)
+        ->assertSet('tableSearch', $selected->id)
+        ->assertCanSeeTableRecords([$selected])->assertCanNotSeeTableRecords([$another]);
+});
+
 it('restores authentication tenant and scoping after each worker job', function () {
     $beforeActor = auth()->id();
     $beforeTenant = Filament::getTenant();

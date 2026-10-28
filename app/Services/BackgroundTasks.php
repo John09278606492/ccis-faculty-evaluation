@@ -22,7 +22,7 @@ use Throwable;
 
 class BackgroundTasks
 {
-    public const KINDS = ['student-review', 'student-import', 'course-review', 'course-import', 'roster-review', 'roster-import', 'section-review', 'section-import', 'staff-export', 'faculty-export', 'department-export', 'evaluator-file', 'assessment-pins', 'assessment-export', 'workbook-upload'];
+    public const KINDS = ['student-review', 'student-import', 'course-review', 'course-import', 'offering-review', 'offering-import', 'evaluator-sync', 'sectioning-import', 'supervisor-bulk', 'supervisor-resolution', 'evaluation-prepare', 'evaluation-append', 'roster-review', 'roster-import', 'section-review', 'section-import', 'staff-export', 'faculty-export', 'department-export', 'evaluator-file', 'assessment-pins', 'assessment-export', 'workbook-upload'];
 
     private function scope(User $actor, Campus $campus): string
     {
@@ -44,6 +44,11 @@ class BackgroundTasks
             'department-export' => abort_unless($actor->isSuperAdmin() || $actor->can('view_any_department'), 403),
             'workbook-upload' => abort_unless($actor->can('page_ClassRecords'), 403),
             'section-review', 'section-import' => app(AcademicSections::class)->authorize($actor, $campus, true, true),
+            'offering-review', 'offering-import' => app(InstructorOfferingImports::class)->authorize($actor, $campus),
+            'evaluator-sync' => abort_unless(app(AutomaticEvaluatorAssignments::class)->allowed($actor, $campus), 403),
+            'sectioning-import' => abort_unless(app(FacultySectioning::class)->allowed($actor, $campus), 403),
+            'supervisor-bulk', 'supervisor-resolution' => abort_unless(app(DepartmentSupervisorAssignments::class)->allowed($actor, $campus), 403),
+            'evaluation-prepare', 'evaluation-append' => abort_unless(app(EvaluationCycles::class)->allowed($actor, $campus), 403),
             'evaluator-file', 'roster-review', 'roster-import', 'assessment-pins', 'assessment-export' => null,
         };
         if (str_starts_with($kind, 'course-')) {
@@ -104,15 +109,15 @@ class BackgroundTasks
     public function confirm(BackgroundTask $review, User $actor, Campus $campus): BackgroundTask
     {
         $this->authorizeTask($review, $actor, $campus);
-        abort_unless($review->status === 'completed' && in_array($review->kind, ['student-review', 'course-review', 'roster-review', 'section-review'], true), 422);
+        abort_unless($review->status === 'completed' && in_array($review->kind, ['student-review', 'course-review', 'roster-review', 'section-review', 'offering-review'], true), 422);
         abort_unless($review->completed_at->gt(now()->subDays(7)), 410, 'This review expired. Upload and review the data again.');
         abort_if(($review->result['review']['error_count'] ?? 0) > 0, 422, 'Correct the validation errors and upload the file again. No rows have been imported.');
         $kind = match ($review->kind) {
-            'student-review' => 'student-import', 'roster-review' => 'roster-import', 'section-review' => 'section-import', default => 'course-import'
+            'student-review' => 'student-import', 'roster-review' => 'roster-import', 'section-review' => 'section-import', 'offering-review' => 'offering-import', default => 'course-import'
         };
 
         $task = $this->enqueue($actor, $campus, $kind, match ($kind) {
-            'student-import' => 'Import reviewed students', 'roster-import' => 'Assign reviewed section roster', 'section-import' => 'Add reviewed students to section', default => 'Create reviewed courses'
+            'student-import' => 'Import reviewed students', 'roster-import' => 'Assign reviewed section roster', 'section-import' => 'Add reviewed students to section', 'offering-import' => 'Import ready teaching classes', default => 'Create reviewed courses'
         },
             ['plan' => $review->payload['review_plan'], 'summary' => $review->result['review'], ...($kind === 'roster-import' ? ['offering_id' => $review->payload['offering_id']] : []), ...($kind === 'section-import' ? ['section_id' => $review->payload['section_id']] : [])], $review->id);
         $review->update(['result->confirmed_task_id' => $task->id]);
@@ -177,7 +182,8 @@ class BackgroundTasks
                 $this->authorizeTask($task, $actor, $campus);
                 $result = $this->perform($task, $actor, $campus);
                 $task->update(['status' => 'completed', 'result' => $result, 'completed_at' => now()]);
-                $this->notify($task, str_ends_with($task->kind, '-review') ? 'Background review ready' : 'Background processing completed', $result['message']);
+                $needsCorrection = ($result['validation_error_count'] ?? 0) > 0;
+                $this->notify($task, $needsCorrection ? 'Section list needs correction' : (str_ends_with($task->kind, '-review') ? 'Background review ready' : 'Background processing completed'), $result['message'], $needsCorrection);
             });
         } catch (Throwable $e) {
             $this->fail($id, $e);
@@ -194,6 +200,53 @@ class BackgroundTasks
     private function perform(BackgroundTask $task, User $actor, Campus $campus): array
     {
         $data = $task->payload;
+        if ($task->kind === 'evaluation-append') {
+            return app(EvaluationClassAdditions::class)->apply($actor, $campus, $data);
+        }
+        if ($task->kind === 'evaluation-prepare') {
+            return app(EvaluationDraftPreparation::class)->prepare($actor, $campus, (int) $data['semester_id'], $data['department_ids'] ?? []);
+        }
+        if ($task->kind === 'supervisor-resolution') {
+            return app(SupervisorAssignmentGaps::class)->apply($actor, $campus, $data);
+        }
+        if ($task->kind === 'supervisor-bulk') {
+            return app(DepartmentSupervisorAssignments::class)->apply($actor, $campus, $data);
+        }
+        if ($task->kind === 'sectioning-import') {
+            $result = isset($data['source']) ? app(FacultySectioning::class)->importFile($actor, $campus, $data, $data['source'])
+                : app(FacultySectioning::class)->assign($actor, $campus, $data, $data['student_ids'] ?? []);
+            if ($result['issues'] ?? []) {
+                $this->csv($task, 'section-assignment-validation.csv', function ($handle) use ($result) {
+                    $this->row($handle, ['Row', 'Student ID', 'Section', 'Validation']);
+                    foreach ($result['issues'] as $row) $this->row($handle, [$row['row'], $row['student_id'], $row['section'], implode(' ', $row['messages'])]);
+                });
+                $result['issues'] = array_slice($result['issues'], 0, 100);
+            }
+
+            return $result;
+        }
+        if ($task->kind === 'offering-review') {
+            $prepared = app(InstructorOfferingImports::class)->prepare($actor, $campus, $data, $data['source']);
+            $task->update(['payload' => [...$data, 'review_plan' => $prepared['plan']]]);
+            $review = $prepared['review'];
+            $this->csv($task, 'instructor-offerings-review.csv', function ($handle) use ($review) {
+                $this->row($handle, ['Source rows', 'Subject', 'Faculty', 'Source Faculty ID', 'Teaching department', 'Section', 'Saved students', 'Status', 'Notes']);
+                foreach ($review['details'] as $row) {
+                    $this->row($handle, [$row['rows'], $row['subject'], $row['faculty'], $row['source_id'], $row['department'], $row['section'], $row['students'], $row['status'], implode(' ', $row['messages'])]);
+                }
+                foreach ($review['unclassified_period_rows'] ?? [] as $row) {
+                    $this->row($handle, [($row['_sheet'] ?? '').':'.$row['_row'], $row['course_code'].' - '.$row['course_desc'], $row['last_name'].', '.$row['first_name'],
+                        $row['id'], '', $row['section'], 0, 'Excluded: period unreadable', 'Missing or invalid school year/semester. '.implode(' ', $row['_read_errors'] ?? [])]);
+                }
+            });
+            $review['unclassified_period_count'] = count($review['unclassified_period_rows'] ?? []);
+            unset($review['unclassified_period_rows']);
+            $review['details'] = array_slice($review['details'], 0, 100);
+            return ['review' => $review, 'message' => $review['ready_classes'].' classes ready; '.$review['blocked_classes'].' need attention. Review before importing.'];
+        }
+        if ($task->kind === 'offering-import') {
+            return app(InstructorOfferingImports::class)->commit($actor, $campus, $data['plan']);
+        }
         if (in_array($task->kind, ['roster-review', 'section-review'], true)) {
             $prepared = $task->kind === 'section-review'
                 ? app(SectionRosterImports::class)->prepare($actor, $campus, $data['section_id'], $data['source'])
@@ -228,8 +281,17 @@ class BackgroundTasks
         }
         if ($task->kind === 'student-import') {
             $count = app(AcademicStudentImports::class)->commitFrozen($actor, $campus, $data['plan']);
+            $matching = app(AutomaticEvaluatorAssignments::class)->synchronize($actor, $campus, (int) $data['plan']['semester_id']);
 
-            return ['row_count' => $count, 'message' => $count.' student rows imported. '.($data['summary']['new_departments'] ?? 0).' departments and '.($data['summary']['new_courses'] ?? 0).' courses added.'];
+            return ['row_count' => $count, 'automatic_evaluators' => $matching['assigned'], 'unresolved_evaluators' => $matching['unresolved'],
+                'message' => $count.' student rows imported. '.($data['summary']['new_departments'] ?? 0).' departments and '.($data['summary']['new_courses'] ?? 0).' courses added. '
+                    .$matching['assigned'].' evaluators matched automatically; '.$matching['unresolved'].' subject matches need a teacher/section choice.'];
+        }
+        if ($task->kind === 'evaluator-sync') {
+            $matching = app(AutomaticEvaluatorAssignments::class)->synchronize($actor, $campus, (int) $data['semester_id']);
+
+            return [...$matching, 'message' => $matching['assigned'].' evaluator assignments created automatically across '.$matching['classes'].' classes. '
+                .$matching['unresolved'].' enrolled subject matches need a teacher/section choice. Existing confirmed rosters and submitted evaluations are preserved.'];
         }
         if ($task->kind === 'course-review') {
             $review = app(ImportedCourseCatalogue::class)->previewStored($actor, $campus, $data['semester_id'], $data['department_codes']);

@@ -30,14 +30,21 @@ class EvaluationTally
             $complete = $score !== null && $fields->isNotEmpty() && ! $values->contains(null);
             $total = $complete ? $values->sum() : null;
             $rows[] = ['label' => $prefix === 'Supervisor' ? 'Supervisor' : $prefix.' '.($numbers[$submission->id] ?? $index + 1),
+                'section' => $prefix === 'Student' ? app(EvaluationSections::class)->label($submission, $assignment) : null,
                 'values' => $values->all(), 'total' => $total, 'average' => $total !== null ? $total / $fields->count() : null,
                 'percentage' => $complete ? $score['percentage'] : null];
         }
         $completeRows = collect($rows)->whereNotNull('total');
         $questionTotals = $fields->keys()->map(fn ($index) => $completeRows->isNotEmpty() ? $completeRows->sum(fn ($row) => $row['values'][$index]) : null)->all();
         $questionAverages = array_map(fn ($total) => $total !== null ? $total / $completeRows->count() : null, $questionTotals);
+        $sectionSummary = $prefix === 'Student' ? collect($rows)->groupBy('section')->map(function ($group, $section) {
+            $complete = $group->whereNotNull('total');
 
-        return ['questions' => $fields->map(fn ($field, $index) => ['number' => $index + 1, 'label' => $field->question_text])->all(), 'rows' => $rows, 'maximum' => $maximum, 'scale_maximum' => $scaleMaximum,
+            return ['section' => $section, 'complete' => $complete->count(), 'incomplete' => $group->count() - $complete->count(),
+                'average' => $complete->avg('average'), 'percentage' => $complete->avg('percentage')];
+        })->values()->all() : [];
+
+        return ['questions' => $fields->map(fn ($field, $index) => ['number' => $index + 1, 'label' => $field->question_text])->all(), 'rows' => $rows, 'show_sections' => $prefix === 'Student', 'section_summary' => $sectionSummary, 'maximum' => $maximum, 'scale_maximum' => $scaleMaximum,
             'summary' => ['complete' => $completeRows->count(), 'incomplete' => count($rows) - $completeRows->count(), 'question_totals' => $questionTotals,
                 'question_averages' => $questionAverages, 'grand_total' => $completeRows->isNotEmpty() ? $completeRows->sum('total') : null,
                 'mean_total' => $completeRows->avg('total'), 'mean_average' => $completeRows->avg('average'), 'mean_percentage' => $completeRows->avg('percentage')]];

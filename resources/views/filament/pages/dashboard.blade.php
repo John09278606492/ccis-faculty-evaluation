@@ -13,7 +13,9 @@
         {{ $this->filtersForm }}
     @endif
 
-    <div x-data="{
+    <details class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
+        <summary class="cursor-pointer text-sm font-semibold text-gray-700 dark:text-gray-300">More Statistics</summary>
+    <div class="mt-4" x-data="{
             draggedEl: null,
             placeholder: null,
             grid: null,
@@ -151,5 +153,6 @@
             @endforeach
         </div>
     </div>
+    </details>
 </x-filament-panels::page>
 

@@ -1,0 +1,16 @@
+.driver-popover.campus-guide-popover {
+    z-index: 1000000001; display: flex !important; flex-direction: column; box-sizing: border-box;
+    width: min(340px, calc(100vw - 24px)); min-width: 0; max-width: calc(100vw - 24px);
+    padding: 16px; border-radius: 12px; border: 1px solid #e6dff1;
+    border-top: 3px solid #31146e; color: #24183b; background: #fff;
+    font-family: inherit; box-shadow: 0 8px 32px #16092e33;
+}
+.campus-guide-popover .driver-popover-title { flex-shrink: 0; margin: 0; padding-right: 24px; font-size: 15px; line-height: 1.5; }
+.campus-guide-popover .driver-popover-description { min-height: 0; overflow: auto; overscroll-behavior: contain; font-size: 13px; line-height: 1.65; }
+.campus-guide-popover .driver-popover-footer { flex-shrink: 0; margin-top: 14px; }
+.campus-guide-popover button { min-height: 36px; border-radius: 7px; padding: 7px 13px; font-size: 13px; text-shadow: none; }
+.campus-guide-popover .driver-popover-next-btn { border-color: #31146e; background: #31146e; color: #fff; }
+.campus-guide-popover .driver-popover-prev-btn { border-color: #ddd4e9; background: #fff; color: #31146e; }
+.campus-guide-popover .driver-popover-close-btn { min-width: 32px; min-height: 32px; color: #61576f; padding: 0; }
+.campus-guide-popover button:focus-visible { outline: 3px solid #a98ad5; outline-offset: 2px; }
+@media print { .driver-popover, .driver-overlay, [data-guided-help] { display: none !important; } }

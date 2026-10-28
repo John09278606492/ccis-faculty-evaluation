@@ -3,12 +3,25 @@
 use App\Filament\Pages\SupervisorEvaluations;
 use App\Filament\Resources\CourseOfferingResource\RelationManagers\StudentsRelationManager;
 use App\Filament\Resources\TeachingClassResource\Pages\EditTeachingClass;
-use App\Models\{Campus, CourseOffering, Department, User, StudentAcademicRecord};
-use App\Services\{AcademicSections, AssignedDataAccess, EvaluationCycles, EvaluationTemplates, FacultySupervisorEvaluators, SupervisorEvaluationAssignments, WorkspaceSummary};
+use App\Models\CourseOffering;
+use App\Models\Department;
+use App\Models\StudentAcademicRecord;
+use App\Models\User;
+use App\Services\AcademicSections;
+use App\Services\AssignedDataAccess;
+use App\Services\EvaluationAccessService;
+use App\Services\EvaluationCycles;
+use App\Services\EvaluationTemplates;
+use App\Services\FacultySupervisorEvaluators;
+use App\Services\SupervisorEvaluationAssignments;
+use App\Services\WorkspaceSummary;
 use Filament\Facades\Filament;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
-use Spatie\Permission\Models\{Permission, Role};
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 function facultySupervisorFixture(): array
 {
@@ -37,6 +50,7 @@ function facultySupervisorFixture(): array
     $offering->update(['form_id' => $a->id]);
     $data = ['name' => 'Faculty-specific supervisors', 'department_id' => $department->id, 'semester_id' => $offering->semester_id,
         'student_form_id' => $a->id, 'supervisor_form_id' => $b->id, 'starts_at' => now()->subHour(), 'ends_at' => now()->addDays(2), 'assignment_ids' => [$offering->id]];
+
     return [...$fixture, ...compact('campus', 'department', 'host', 'owner', 'extra', 'head', 'a', 'b', 'data')];
 }
 
@@ -113,7 +127,7 @@ it('rejects other-campus staff, students, the evaluated faculty and unauthorized
     foreach ([$student->id, $foreign->id, $offering->user_id] as $invalid) {
         expect(fn () => $service->save($owner, $offering, [$invalid]))->toThrow(ValidationException::class);
     }
-    expect(fn () => $service->save($extra, $offering, [$extra->id]))->toThrow(\Symfony\Component\HttpKernel\Exception\HttpException::class);
+    expect(fn () => $service->save($extra, $offering, [$extra->id]))->toThrow(HttpException::class);
     expect($offering->supervisorEvaluators()->count())->toBe(0);
 });
 
@@ -236,4 +250,17 @@ it('denies unselected deans chairpersons and administrators even when another su
     $this->get(route('evaluate.course-offering', $task))->assertForbidden();
     expect($department->fresh()->supervisor_id)->toBe($head->id)
         ->and($task->formSubmissions()->count())->toBe(1);
+});
+
+it('does not let a dean or chairperson role answer a legacy supervisor evaluation without explicit selection', function () {
+    extract(facultySupervisorFixture());
+    $department->update(['chairperson_id' => $extra->id]);
+    $legacy = app(EvaluationTemplates::class)->create('A', $campus);
+    $legacy->update(['is_active' => true, 'evaluator_roles' => ['supervisor'], 'settings' => [...$legacy->settings, 'annex' => null, 'instrument' => 'SEF']]);
+    $offering->update(['form_id' => $legacy->id, 'evaluation_type' => 'SEF', 'is_active' => true]);
+    foreach ([$head, $extra, $owner] as $user) {
+        expect(fn () => app(EvaluationAccessService::class)->authorize($offering->fresh(), $user))
+            ->toThrow(AuthorizationException::class, 'supervisors explicitly selected');
+    }
+    expect(app(EvaluationTemplates::class)->create('B', $campus)->evaluator_roles)->toBe([]);
 });

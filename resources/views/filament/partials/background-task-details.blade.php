@@ -8,6 +8,8 @@
         @include('filament.forms.academic-student-import-review', ['review' => $task->result['review'], 'period' => \App\Services\AcademicPeriod::options(filament()->getTenant())[$task->result['review']['semester_id']] ?? ''])
     @elseif($task->kind === 'course-review' && isset($task->result['review']))
         @include('filament.forms.imported-course-review', ['review' => $task->result['review']])
+    @elseif($task->kind === 'offering-review' && isset($task->result['review']))
+        @include('filament.forms.instructor-offering-review', ['review' => $task->result['review']])
     @elseif(in_array($task->kind, ['roster-review', 'section-review'], true) && isset($task->result['review']))
         @include('filament.forms.teaching-class-roster-review', ['review' => $task->result['review']])
     @endif

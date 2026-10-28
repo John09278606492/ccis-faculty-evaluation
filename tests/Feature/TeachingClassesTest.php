@@ -12,6 +12,7 @@ use App\Models\SchoolYear;
 use App\Models\Semester;
 use App\Models\User;
 use App\Services\AssignedDataAccess;
+use App\Services\EvaluationTemplates;
 use App\Services\TeachingClasses;
 use Filament\Facades\Filament;
 use Illuminate\Validation\ValidationException;
@@ -99,7 +100,7 @@ it('clears unconfirmed evaluators when a draft class is changed to another facul
 });
 
 it('protects a faculty identity once an Annex B task has been prepared even before student responses', function () {
-    $form = app(\App\Services\EvaluationTemplates::class)->create('B', $this->campus);
+    $form = app(EvaluationTemplates::class)->create('B', $this->campus);
     $task = $this->offering->replicate();
     $task->fill(['course_id' => null, 'form_id' => $form->id, 'teaching_department_id' => $this->department->id]);
     $task->save();

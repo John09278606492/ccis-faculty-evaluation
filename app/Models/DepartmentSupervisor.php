@@ -2,8 +2,9 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Relations\Pivot;
+use App\Services\ClassroomUpdates;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\Pivot;
 use Illuminate\Validation\ValidationException;
 
 class DepartmentSupervisor extends Pivot
@@ -17,8 +18,8 @@ class DepartmentSupervisor extends Pivot
 
     protected static function booted(): void
     {
-        static::saved(fn () => \App\Services\ClassroomUpdates::panel('setup'));
-        static::deleted(fn () => \App\Services\ClassroomUpdates::panel('setup'));
+        static::saved(fn () => ClassroomUpdates::panel('setup'));
+        static::deleted(fn () => ClassroomUpdates::panel('setup'));
         static::saving(function (self $assignment) {
             $department = Department::withoutGlobalScope('assigned_data')->findOrFail($assignment->department_id);
             $valid = User::withoutGlobalScope('assigned_data')->whereKey($assignment->user_id)

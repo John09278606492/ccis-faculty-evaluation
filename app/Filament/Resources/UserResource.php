@@ -41,6 +41,10 @@ class UserResource extends Resource
 
     protected static ?string $navigationLabel = 'Staff Accounts';
 
+    protected static ?string $modelLabel = 'Staff Account';
+
+    protected static ?string $pluralModelLabel = 'Staff Accounts';
+
     protected static ?int $navigationSort = 1;
 
     protected static ?string $tenantOwnershipRelationshipName = 'campuses';
@@ -110,9 +114,13 @@ class UserResource extends Resource
                             ->maxLength(100),
                         TextInput::make('email')
                             ->email()
-                            ->required()
+                            ->required(fn (?User $record): bool => ! $record || filled($record->email))
+                            ->helperText(fn (?User $record): ?string => $record && blank($record->email) ? 'Add an email and home department, then issue a temporary password for staff sign-in.' : null)
                             ->maxLength(255)
                             ->unique(ignoreRecord: true),
+                        \Filament\Forms\Components\Placeholder::make('registrar_id')->label('Source Faculty ID')
+                            ->visible(fn (?User $record) => $record && \App\Models\FacultySourceLink::where('campus_id', filament()->getTenant()->id)->where('user_id', $record->id)->exists())
+                            ->content(fn (?User $record) => \App\Models\FacultySourceLink::where('campus_id', filament()->getTenant()->id)->where('user_id', $record?->id)->pluck('external_id')->join(', ')),
                         TextInput::make('password')
                             ->password()
                             ->required(fn (string $operation): bool => $operation === 'create')
@@ -183,7 +191,7 @@ class UserResource extends Resource
                                 }
                             }),
                         Select::make('instructor_department_id')
-                            ->label('Department')
+                            ->label('Home Department')
                             ->options(function () {
                                 $campusId = filament()->getTenant()?->id;
 
@@ -193,13 +201,12 @@ class UserResource extends Resource
                             })
                             ->searchable()
                             ->preload()
-                            ->required(fn (callable $get) => $get('is_instructor'))
+                            ->required(fn (callable $get) => $get('is_instructor') && filled($get('email')))
                             ->visible(fn (callable $get) => $get('is_instructor')),
                         TextInput::make('employee_id')
-                            ->label('Employee ID')
+                            ->label('Employee ID (optional)')
                             ->maxLength(50)
                             ->unique(table: 'users', column: 'employee_id', ignoreRecord: true)
-                            ->required(fn (callable $get) => $get('is_instructor'))
                             ->visible(fn (callable $get) => $get('is_instructor')),
                         TextInput::make('position')
                             ->label('Position')
@@ -279,53 +286,48 @@ class UserResource extends Resource
                     ->relationship('roles', 'name')
                     ->multiple()
                     ->preload(),
-                TernaryFilter::make('is_student')
-                    ->label('Student Account')
-                    ->trueLabel('Students Only')
-                    ->falseLabel('Non-Students Only'),
                 TernaryFilter::make('is_instructor')
                     ->label('Instructor Account')
                     ->trueLabel('Instructors Only')
                     ->falseLabel('Non-Instructors Only'),
+                SelectFilter::make('profile_setup')->label('Sign-in Details')->options(['missing' => 'Needs Email', 'ready' => 'Email Set'])
+                    ->query(fn ($query, array $data) => $query->when(($data['value'] ?? null) === 'missing', fn ($q) => $q->whereNull('email'))
+                        ->when(($data['value'] ?? null) === 'ready', fn ($q) => $q->whereNotNull('email'))),
             ], layout: FiltersLayout::AboveContent)
             ->actions([
-                Action::make('issueTemporaryPassword')->label('Issue Temporary Password')->icon('heroicon-o-key')
-                    ->visible(fn (User $record) => ! $record->isStudent() && ! $record->isSuperAdmin() && static::canEdit($record))
-                    ->requiresConfirmation()->modalDescription('Issue a unique temporary password. Give it privately to this staff member. They must change it at first sign-in.')
-                    ->action(function (User $record) {
-                        abort_unless(static::canEdit($record), 403);
-                        $password = Str::password(18);
-                        $record->update(['password' => $password, 'must_change_password' => true]);
-                        Notification::make()->title('Temporary password: '.$password)->body('For '.$record->name.'. Copy it now; it will not be displayed again.')->success()->persistent()->send();
-                    }),
-                Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make(),
-                Action::make('newPin')
-                    ->label('New PIN')
-                    ->icon('heroicon-o-key')
-                    ->visible(fn (User $record) => $record->is_student && auth()->user()?->can('update', $record))
-                    ->requiresConfirmation()
-                    ->modalDescription(fn (User $record) => "Give {$record->full_name} a new sign-in PIN? Their old PIN stops working.")
-                    ->action(function (User $record) {
-                        $pin = StudentPins::issue(collect([$record]))->first()['pin'];
+                Tables\Actions\ActionGroup::make([
+                    Tables\Actions\ViewAction::make(),
+                    Action::make('issueTemporaryPassword')->label('Issue Temporary Password')->icon('heroicon-o-key')
+                        ->visible(fn (User $record) => ! $record->isStudent() && ! $record->isSuperAdmin() && static::canEdit($record))
+                        ->requiresConfirmation()->modalDescription('Issue a unique temporary password. Give it privately to this staff member. They must change it at first sign-in.')
+                        ->action(function (User $record) {
+                            abort_unless(static::canEdit($record), 403);
+                            $password = Str::password(18);
+                            $record->update(['password' => $password, 'must_change_password' => true]);
+                            Notification::make()->title('Temporary password: '.$password)->body('For '.$record->name.'. Copy it now; it will not be displayed again.')->success()->persistent()->send();
+                        }),
+                    Action::make('newPin')
+                        ->label('New PIN')
+                        ->icon('heroicon-o-key')
+                        ->visible(fn (User $record) => $record->is_student && auth()->user()?->can('update', $record))
+                        ->requiresConfirmation()
+                        ->modalDescription(fn (User $record) => "Give {$record->full_name} a new sign-in PIN? Their old PIN stops working.")
+                        ->action(function (User $record) {
+                            $pin = StudentPins::issue(collect([$record]))->first()['pin'];
 
-                        Notification::make()
-                            ->title("New PIN for {$record->full_name}: {$pin}")
-                            ->body('Write it down now. It will not be shown again.')
-                            ->success()
-                            ->persistent()
-                            ->send();
-                    }),
-                // Impersonate::make(),
-                Tables\Actions\DeleteAction::make()
-                    // Prevent deletion of super_admin accounts
-                    ->hidden(fn ($record) => static::isSuperAdmin($record)),
-            ])
-            ->headerActions([
-                Action::make('export')->label('Export CSV')->icon('heroicon-o-arrow-down-tray')
-                    ->action(fn ($livewire) => app(BackgroundTasks::class)->enqueue(auth()->user(), filament()->getTenant(), 'staff-export', 'Export filtered staff accounts',
-                        ['ids' => $livewire->getFilteredTableQuery()->pluck('users.id')->all()])),
-
+                            Notification::make()
+                                ->title("New PIN for {$record->full_name}: {$pin}")
+                                ->body('Write it down now. It will not be shown again.')
+                                ->success()
+                                ->persistent()
+                                ->send();
+                        }),
+                    // Impersonate::make(),
+                    Tables\Actions\DeleteAction::make()
+                        // Prevent deletion of super_admin accounts
+                        ->hidden(fn ($record) => static::isSuperAdmin($record)),
+                ])->tooltip('More actions'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([

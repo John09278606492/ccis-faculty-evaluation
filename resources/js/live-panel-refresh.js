@@ -31,9 +31,12 @@ export class PanelRefreshQueue {
         this.inFlight = new Set();
         this.last = 0;
         this.timeout = null;
+        this.paused = false;
+        this.generation = 0;
     }
 
     mark({ skipPushHandlers = false, kind = null } = {}) {
+        if (this.paused) return;
         for (const component of this.components()) {
             if (skipPushHandlers && (component.effects?.listeners || []).includes('classroom-push')) continue;
             const kinds = component.el?.getAttribute?.('data-live-kinds');
@@ -49,7 +52,8 @@ export class PanelRefreshQueue {
     }
 
     async flush() {
-        if (!this.visible()) return;
+        if (this.paused || !this.visible()) return;
+        const generation = this.generation;
         const current = new Map(this.components().map(component => [component.id, component]));
         const work = [];
         for (const id of [...this.pending]) {
@@ -60,17 +64,29 @@ export class PanelRefreshQueue {
             this.inFlight.add(id);
             work.push(Promise.resolve().then(() => component.el.getAttribute?.('data-live-refresh-method') === 'refreshDisplayedRecord'
                 ? component.$wire.refreshDisplayedRecord() : component.$wire.$refresh()).then(() => this.refreshed(component))
-                .catch(() => { this.pending.add(id); })
+                .catch(() => {
+                    if (generation === this.generation && component.el.isConnected) this.pending.add(id);
+                })
                 .finally(() => this.inFlight.delete(id)));
         }
         if (work.length) this.last = this.now();
         await Promise.all(work);
-        if (this.pending.size) this.schedule(work.length ? 5000 : 1000);
+        if (generation === this.generation && this.pending.size) this.schedule(work.length ? 5000 : 1000);
     }
 
     reset() {
+        this.generation++;
         if (this.timeout !== null) this.cancel(this.timeout);
         this.timeout = null;
         this.pending.clear();
+    }
+
+    pause() {
+        this.paused = true;
+        this.reset();
+    }
+
+    resume() {
+        this.paused = false;
     }
 }

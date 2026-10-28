@@ -122,3 +122,32 @@ test('a temporary request failure retries the retained update', async () => {
     assert.equal(calls, 2);
     assert.equal(f.queue.pending.size, 0);
 });
+
+test('navigation pauses background refreshes until the new page is ready', async () => {
+    const f = fixture();
+    f.queue.mark();
+    f.queue.pause();
+    f.queue.mark();
+    await f.queue.flush();
+    assert.equal(f.calls(), 0);
+    assert.equal(f.queue.pending.size, 0);
+    f.queue.resume();
+    f.queue.mark();
+    await f.queue.flush();
+    assert.equal(f.calls(), 1);
+});
+
+test('a failed refresh from a previous page cannot schedule retries after navigation', async () => {
+    const f = fixture();
+    let reject;
+    f.component.$wire.$refresh = () => new Promise((_, fail) => { reject = fail; });
+    f.queue.mark();
+    const request = f.queue.flush();
+    await Promise.resolve();
+    f.queue.pause();
+    f.queue.resume();
+    reject(new Error('Old page disconnected'));
+    await request;
+    assert.equal(f.queue.pending.size, 0);
+    assert.equal(f.queue.inFlight.size, 0);
+});

@@ -34,7 +34,7 @@ class SupervisorEvaluationAssignments
         }
         $source->loadMissing('course', 'evaluationForm', 'evaluationCycle', 'semester.schoolYear.campus');
         if (! $source->course_id || ! $source->is_active || ! $source->evaluationForm?->is_active || $source->evaluationForm->isSupervisorInstrument()
-            || ! app(FacultySupervisorEvaluators::class)->candidates($source)->whereKey($source->supervisorEvaluators()->pluck('users.id'))->exists()
+            || ! app(FacultySupervisorEvaluators::class)->candidates($source)->whereKey($source->supervisorEvaluators()->withoutGlobalScope('assigned_data')->pluck('users.id'))->exists()
             || ($source->evaluation_cycle_id && $source->evaluationCycle?->status !== 'published')) {
             return;
         }

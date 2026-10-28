@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\CourseOfferingResource\RelationManagers;
 
+use App\Filament\Concerns\HasEvaluatorSelectionDraft;
+use App\Filament\Concerns\MatchesEnrolledEvaluators;
 use App\Filament\Resources\SectionResource;
 use App\Filament\Resources\TeachingClassResource\Pages\EditTeachingClass;
 use App\Models\User;
@@ -17,13 +19,16 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class StudentsRelationManager extends RelationManager
 {
-    use \App\Filament\Concerns\HasEvaluatorSelectionDraft;
+    use HasEvaluatorSelectionDraft;
+    use MatchesEnrolledEvaluators;
 
     protected static string $view = 'filament.resources.evaluator-list';
+
     protected static string $relationship = 'students';
 
     protected static ?string $title = 'Evaluators';
@@ -90,24 +95,39 @@ class StudentsRelationManager extends RelationManager
     public function table(Table $table): Table
     {
         return $table
-            ->description('Assign the sections taught by this faculty member for this subject and academic period. Upload student lists in Academic Management → Sections; use individual exceptions for irregular students.')
+            ->description('Match enrolled students or choose saved sections. Assign student sections before final reporting.')
             ->emptyStateHeading('No evaluators assigned yet')
             ->emptyStateDescription(fn () => $this->getOwnerRecord()->evaluationForm?->isSupervisorInstrument()
                 ? 'Supervisor evaluators are explicitly selected on the faculty teaching class.'
-                : 'Upload students to a section, then use Assign Evaluators by Section.')
+                : 'Use Match Enrolled Students, or upload a section list and choose Assign Sections.')
             ->modifyQueryUsing(fn ($query) => $query->with(['studentDepartment', 'studentSectionMemberships' => fn ($q) => $q->where('semester_id', $this->getOwnerRecord()->semester_id)]))
             ->columns([
                 Tables\Columns\TextColumn::make('student_id')->label('ID')->sortable()->searchable(),
                 Tables\Columns\TextColumn::make('name')->label('Name')->sortable()->searchable(),
-                Tables\Columns\TextColumn::make('email')->label('Email')->sortable()->searchable()->toggleable(),
+                Tables\Columns\TextColumn::make('email')->label('Email')->sortable()->searchable()->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\TextColumn::make('studentDepartment.code')->label('Department')->badge(),
-                Tables\Columns\TextColumn::make('period_sections')->label('Sections (this period)')->state(fn (User $record) => $record->studentSectionMemberships->pluck('section')->all())->badge(),
-                Tables\Columns\TextColumn::make('pivot.enrolled_at')->label('Enrolled At')->dateTime()->sortable(),
+                Tables\Columns\TextColumn::make('period_sections')->label('Sections')->state(fn (User $record) => $record->studentSectionMemberships->pluck('section')->all())->badge(),
+                Tables\Columns\TextColumn::make('report_section')->label('Report Section')->state(fn (User $record) => app(\App\Services\EvaluationSections::class)->forStudent($this->getOwnerRecord(), $record) ?: 'Section pending')->badge(),
+                Tables\Columns\TextColumn::make('pivot.enrolled_at')->label('Enrolled At')->dateTime()->sortable()->toggleable(isToggledHiddenByDefault: true),
             ])->filters([])->headerActions([
+                $this->matchEnrolledAction(),
                 $this->sectionAction(),
+                Tables\Actions\Action::make('setSupervisors')->label('Supervisors')->icon('heroicon-o-user-group')->color('gray')
+                    ->visible(fn () => $this->canAttach() && ! $this->getOwnerRecord()->evaluationForm?->isSupervisorInstrument())
+                    ->modalHeading('Select Supervisor Evaluators')->modalSubmitActionLabel('Save Supervisors')
+                    ->fillForm(fn () => ['supervisor_ids' => $this->getOwnerRecord()->supervisorEvaluators()->pluck('users.id')->all()])
+                    ->form([
+                        Forms\Components\Select::make('supervisor_ids')->label('Supervisors')->multiple()->searchable()->preload()
+                            ->options(fn () => app(FacultySupervisorEvaluators::class)->candidates($this->getOwnerRecord())->pluck('name', 'id'))
+                            ->helperText('Choose who will answer Annex B. Student sections can be completed separately.'),
+                    ])->action(function (array $data) {
+                        app(FacultySupervisorEvaluators::class)->save(auth()->user(), $this->getOwnerRecord(), $data['supervisor_ids'] ?? []);
+                        Notification::make()->success()->title('Supervisor evaluators saved')->send();
+                    }),
                 ...(is_a($this->getPageClass(), EditTeachingClass::class, true) ? [] : [Tables\Actions\ActionGroup::make([
                     $this->masterListAction(),
                     Tables\Actions\AttachAction::make()
+                        ->databaseTransaction()->after(fn () => $this->stopFollowingSectionUploads())
                         ->before(fn (array $data) => $this->authorizeRosterChange((array) ($data['recordId'] ?? [])))
                         ->preloadRecordSelect()->recordSelectOptionsQuery(function () {
                             $campusId = filament()->getTenant()?->id;
@@ -136,25 +156,38 @@ class StudentsRelationManager extends RelationManager
                                     $attachData[$studentId] = ['enrolled_at' => Carbon::now()];
                                 }
                                 $courseOffering->students()->syncWithoutDetaching($attachData);
+                                $this->stopFollowingSectionUploads();
                             });
                             $count = count($studentIds);
                             Notification::make()->title("Successfully added {$count} ".($count === 1 ? 'evaluator' : 'evaluators'))->success()->send();
                         }),
                 ])->label('Other assignment options')->icon('heroicon-o-ellipsis-horizontal')->button()->color('gray')]),
             ])->actions([
-                Tables\Actions\DetachAction::make()->before(fn (User $record) => $this->authorizeRosterChange([$record->id], true)),
+                Tables\Actions\DetachAction::make()->databaseTransaction()->before(fn (User $record) => $this->authorizeRosterChange([$record->id], true))
+                    ->after(fn () => $this->stopFollowingSectionUploads()),
             ])->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DetachBulkAction::make()->before(fn ($records) => $this->authorizeRosterChange($records->modelKeys(), true)),
+                    $this->reportSectionAction(),
+                    Tables\Actions\DetachBulkAction::make()->databaseTransaction()->before(fn ($records) => $this->authorizeRosterChange($records->modelKeys(), true))
+                        ->after(fn () => $this->stopFollowingSectionUploads()),
                 ]),
             ]);
     }
 
+    private function stopFollowingSectionUploads(): void
+    {
+        $class = $this->getOwnerRecord()->fresh();
+        if (! empty($class->evaluator_selection['auto_section_roster']) || ! empty($class->evaluator_selection['auto_enrolment'])) {
+            $class->update(['evaluator_selection' => [...$class->evaluator_selection, 'auto_section_roster' => false, 'auto_enrolment' => false]]);
+        }
+    }
+
     private function sectionAction(): Tables\Actions\Action
     {
-        return Tables\Actions\Action::make('assignSections')->label('Assign Evaluators by Section')->icon('heroicon-o-rectangle-stack')
+        return Tables\Actions\Action::make('assignSections')->label('Assign Sections')->icon('heroicon-o-rectangle-stack')->color('gray')
+            ->extraAttributes(['data-guide' => 'assign-sections-action'])
             ->visible(fn () => $this->canAttach() && ! $this->getOwnerRecord()->evaluationForm?->isSupervisorInstrument())
-            ->modalHeading('Assign Evaluators by Section')->modalSubmitActionLabel('Save Evaluators')
+            ->modalHeading('Assign Sections')->modalSubmitActionLabel('Save Evaluators')
             ->fillForm(function () {
                 $saved = $this->getOwnerRecord()->evaluator_selection ?? [];
                 $trusted = ($saved['source'] ?? null) === 'sections_v1';
@@ -166,14 +199,16 @@ class StudentsRelationManager extends RelationManager
                     'supervisor_ids' => $this->getOwnerRecord()->supervisorEvaluators()->pluck('users.id')->all()];
             })
             ->steps([
-                Forms\Components\Wizard\Step::make('Select sections')->schema([
+                Forms\Components\Wizard\Step::make('Choose Evaluators')->schema([
+                    Forms\Components\Placeholder::make('evaluatorTour')->hiddenLabel()->content(fn () => view('components.guided-help', ['context' => 'assign-evaluators', 'compact' => true])),
                     Forms\Components\Placeholder::make('classContext')->label('Teaching class')->content(function () {
                         $class = $this->getOwnerRecord();
                         $class->loadMissing('course', 'instructor', 'semester.schoolYear');
 
                         return $class->course?->code.' — '.$class->course?->name.' · '.$class->instructor?->name.' · '.$class->semester?->name.' / '.$class->semester?->schoolYear?->name;
                     }),
-                    Forms\Components\Select::make('sections')->label('Sections taught by this faculty member')->multiple()->searchable()->required()->live()
+                    Forms\Components\Select::make('sections')->label('Sections')->multiple()->searchable()->required()->live()
+                        ->extraFieldWrapperAttributes(['data-guide' => 'evaluator-sections'])
                         ->options(fn () => app(AcademicStudents::class)->sectionOptions(auth()->user(), $this->getOwnerRecord()->campus, $this->getOwnerRecord()->semester_id, true))
                         ->afterStateUpdated(function (Forms\Set $set) {
                             $set('use_exceptions', false);
@@ -187,16 +222,16 @@ class StudentsRelationManager extends RelationManager
                                 $fail($e->validator->errors()->first());
                             }
                         }])
-                        ->helperText('Only the listed students in these sections will be assigned. Upload and confirm a section’s student list first.'),
-                    Forms\Components\Placeholder::make('sectionStudents')->label('Section student lists')->content(function (Forms\Get $get) {
+                        ->helperText('Choose the sections that attend this class.'),
+                    Forms\Components\Placeholder::make('sectionStudents')->label('Selected Students')->content(function (Forms\Get $get) {
                         $stats = app(AcademicStudents::class)->sectionStats(auth()->user(), $this->getOwnerRecord()->campus, $this->getOwnerRecord()->semester_id);
                         $chosen = collect($get('sections') ?? [])->map(fn ($key) => $stats[$key] ?? null)->filter();
 
-                        return $chosen->isEmpty() ? 'Choose sections above. Empty sections must have their student lists uploaded and confirmed before they can be assigned.'
+                        return $chosen->isEmpty() ? 'Choose a section. Its student list must be uploaded and confirmed first.'
                             : $chosen->map(fn ($s) => $s['name'].': '.$s['students'].' students'.($s['students'] === 0 ? ' — upload and confirm its list first' : ''))->join(' · ');
                     }),
                     Forms\Components\Actions::make([
-                        Forms\Components\Actions\Action::make('manageSectionStudents')->label('Upload / Manage Section Students')->icon('heroicon-o-arrow-up-tray')
+                        Forms\Components\Actions\Action::make('manageSectionStudents')->label('Manage Sections')->color('gray')->icon('heroicon-o-arrow-up-tray')
                             ->visible(fn () => SectionResource::canViewAny())
                             ->url(function (Forms\Get $get) {
                                 $stats = app(AcademicStudents::class)->sectionStats(auth()->user(), $this->getOwnerRecord()->campus, $this->getOwnerRecord()->semester_id);
@@ -205,28 +240,30 @@ class StudentsRelationManager extends RelationManager
                                 return isset($stats[$key]) ? SectionResource::getUrl('view', ['record' => $stats[$key]['id'], 'activeRelationManager' => '0']) : SectionResource::getUrl();
                             }),
                     ]),
-                    Forms\Components\Toggle::make('use_exceptions')->label('Add or exclude individual students (optional)')->live()->default(false)
+                    Forms\Components\Toggle::make('use_exceptions')->label('Add or exclude students')->live()->default(false)
+                        ->extraFieldWrapperAttributes(['data-guide' => 'evaluator-exceptions'])
                         ->afterStateUpdated(function (Forms\Set $set) {
                             $set('include', []);
                             $set('exclude', []);
                         }),
-                    Forms\Components\Section::make('Individual exceptions')->description('Search for a specific student by ID or name. No students are selected automatically.')->visible(fn (Forms\Get $get) => (bool) $get('use_exceptions'))->schema([
-                        Forms\Components\Select::make('include')->label('Additional students outside the selected sections')->multiple()->searchable()
+                    Forms\Components\Section::make('Individual Students')->visible(fn (Forms\Get $get) => (bool) $get('use_exceptions'))->schema([
+                        Forms\Components\Select::make('include')->label('Add Students')->multiple()->searchable()
                             ->getSearchResultsUsing(fn (string $search) => $this->exceptionOptions($search))
                             ->getOptionLabelsUsing(fn (array $values) => $this->exceptionLabels($values)),
-                        Forms\Components\Select::make('exclude')->label('Exclude these students')->multiple()->searchable()
+                        Forms\Components\Select::make('exclude')->label('Exclude Students')->multiple()->searchable()
                             ->getSearchResultsUsing(fn (string $search) => $this->exceptionOptions($search))
                             ->getOptionLabelsUsing(fn (array $values) => $this->exceptionLabels($values))
-                            ->helperText('Exclusions win over sections and additional students. The next step shows additions and removals. Submitted evaluations are preserved.'),
+                            ->helperText('Excluded students will not be assigned. Previous responses are kept.'),
                     ]),
-                    Forms\Components\Section::make('Supervisor evaluators')->description('Choose who will complete Annex B for this faculty. Deans and chairpersons must also be selected explicitly.')->schema([
-                        Forms\Components\Select::make('supervisor_ids')->label('Supervisor evaluators')->multiple()->searchable()->preload()
+                    Forms\Components\Section::make('Supervisors')->schema([
+                        Forms\Components\Select::make('supervisor_ids')->label('Supervisors')->multiple()->searchable()->preload()
+                            ->extraFieldWrapperAttributes(['data-guide' => 'evaluator-supervisors'])
                             ->options(fn () => app(FacultySupervisorEvaluators::class)->candidates($this->getOwnerRecord())->pluck('name', 'id'))
-                            ->nestedRecursiveRules([fn () => \Illuminate\Validation\Rule::in(app(FacultySupervisorEvaluators::class)->candidates($this->getOwnerRecord())->pluck('id')->all())])
-                            ->helperText('Select same-campus staff for this faculty and evaluation setup. At least one supervisor is required before opening the evaluation. You can save an unfinished selection as a draft.'),
+                            ->nestedRecursiveRules([fn () => Rule::in(app(FacultySupervisorEvaluators::class)->candidates($this->getOwnerRecord())->pluck('id')->all())])
+                            ->helperText('Choose who will answer Annex B. At least one is needed before opening.'),
                     ]),
                 ]),
-                Forms\Components\Wizard\Step::make('Review changes')->schema([
+                Forms\Components\Wizard\Step::make('Review')->schema([
                     Forms\Components\Placeholder::make('preview')->label('Unique evaluators')->content(function (Forms\Get $get) {
                         try {
                             $p = app(AcademicStudents::class)->sectionAssignmentPreview(auth()->user(), $this->getOwnerRecord(), $get('sections') ?? [], $get('use_exceptions') ? ($get('include') ?? []) : [], $get('use_exceptions') ? ($get('exclude') ?? []) : []);
@@ -241,8 +278,19 @@ class StudentsRelationManager extends RelationManager
             ])->action(function (array $data) {
                 try {
                     $count = DB::transaction(function () use ($data) {
-                        $count = app(AcademicStudents::class)->assignSections(auth()->user(), $this->getOwnerRecord()->fresh(), $data['sections'] ?? [], ! empty($data['use_exceptions']) ? ($data['include'] ?? []) : [], ! empty($data['use_exceptions']) ? ($data['exclude'] ?? []) : []);
+                        $class = $this->getOwnerRecord()->fresh();
+                        $selection = $class->evaluator_selection ?? [];
+                        $include = ! empty($data['use_exceptions']) ? ($data['include'] ?? []) : [];
+                        $exclude = ! empty($data['use_exceptions']) ? ($data['exclude'] ?? []) : [];
+                        $followSections = ! empty($selection['auto_section_roster']) && ! $include && ! $exclude
+                            && array_values($selection['sections'] ?? []) === array_values($data['sections'] ?? []);
+                        $count = app(AcademicStudents::class)->assignSections(auth()->user(), $class, $data['sections'] ?? [], $include, $exclude);
+                        if ($followSections) {
+                            $class->refresh();
+                            $class->update(['evaluator_selection' => [...$class->evaluator_selection, 'auto_section_roster' => true]]);
+                        }
                         app(FacultySupervisorEvaluators::class)->save(auth()->user(), $this->getOwnerRecord(), $data['supervisor_ids'] ?? []);
+
                         return $count;
                     });
                 } catch (ValidationException $e) {

@@ -3,7 +3,7 @@
 ## On the server computer
 
 1. Keep `database/campus.sqlite` on the server's local disk. Application data uses SQLite; a main MySQL service is no longer required. This remains the only computer that needs the project, PHP and Node.js. SQL coding assessments use their separate student MySQL service.
-2. Double-click **Start-Campus.cmd**. It starts the web-only gateway on TCP 8020, prints the server's current LAN addresses and opens the browser automatically. Start-Local.cmd remains available for local development on 8010.
+2. Double-click **Start-Campus.cmd**. It starts the web-only gateway on TCP 8020, prints the server's current LAN addresses and opens the browser at localhost automatically. The server computer keeps using localhost when Wi-Fi changes. Start-Local.cmd remains available for local development on 8010.
 3. Once, right-click **Enable-Campus-Access.cmd → Run as administrator** to allow TCP 8020 from the local subnet. Only the Node gateway program and this web port are allowed. Firewall settings are not disabled.
 4. Give students one of the printed LAN links. They need a browser and network connectivity to the server. They do not install the project, Laragon or a database.
 5. Use **Stop-Campus.cmd** for clean shutdown. Closing the launcher window leaves services running. A pre-existing student MySQL server is reused after credential verification and is not stopped by the campus launcher.
@@ -16,7 +16,7 @@ The campus gateway is a Windows LAN launcher with up to 16 PHP workers. The [SQL
 
 Student devices can keep DHCP/dynamic addresses. The **server** should have a DHCP reservation (or an IT-assigned static address outside conflicting leases). Ask campus IT to create an internal DNS record such as `evaluation.school.edu.ph` pointing at that server. All campus DNS clients can then keep using the same name. No hosts-file edits are needed on every student laptop.
 
-The launcher discovers current adapter addresses each time it runs; it never hardcodes a particular laptop IP. If the server's DHCP lease changes, its numeric link changes. Detecting the new address does not automatically update campus DNS or DHCP reservations. An existing browser session may need a reload after a server address change.
+The launcher discovers current adapter addresses each time it runs, and the running gateway updates its status links within five seconds of an address change. It never hardcodes a particular laptop IP. If the server's DHCP lease changes, users on other devices must open the new numeric link; reloading the old address cannot reach the server. Detection does not update campus DNS or DHCP reservations.
 
 ## Across buildings / VLANs
 
@@ -57,3 +57,34 @@ References: [Laravel Reverb deployment](https://laravel.com/docs/12.x/reverb), [
 - Stop/restart succeeded, releasing the gateway/workers and leaving the pre-existing development web server and student MySQL process intact.
 - Related tests: 22 passed; after adding credential-verification tests the student database suite passed 10 tests / 42 assertions.
 - The current shell has no administrator token, so the firewall rule has **not** been installed. Run the administrator step above before testing from another device. No remote-device or inter-VLAN access has been verified.
+
+## Connection recovery
+
+Repeated `ws://` failures together with `livewire/update` connection timeouts can
+mean the browser is still using the server's previous IP. Check the current link
+in the launcher or `storage/app/campus-server.json`. Use localhost only on the
+server computer. HTTP campus connections use the plain WebSocket transport;
+HTTPS deployments use the same transport with TLS enabled.
+
+Background refreshes pause while navigating. During a live-connection outage, a
+bounded health check runs before fallback refreshes so unreachable addresses do
+not accumulate component refresh requests. Saved work remains in the database.
+
+## Local verification — 27 October 2026
+
+The pasted console logs referred to `172.16.98.136`, while the active Wi-Fi address
+was `172.16.96.100`. HTTP and WebSocket handshakes succeeded at the current address.
+After a managed restart, the status file reported the current sharing link and
+healthy services. The unrelated assessment server on port 8100 was left running.
+
+With the existing data (8 offerings, 20 sections, 2,337 user records and 484 roster
+memberships), a browser check measured main-page navigation at 376–1,021 ms after
+initial load. Opening the largest class editor (235 students) took 1,514 ms; leaving
+it took 486 ms. There were no failed requests or browser/socket errors in that run.
+These are same-computer checks through the LAN address, not a campus load test.
+
+A simulated unavailable health endpoint produced zero fallback component refreshes
+and a connection-loss message; restoring connectivity returned the live indicator
+to connected. Related validation: 43 PHP tests / 246 assertions and 15 JavaScript
+tests passed. Receipts are in `storage/app/maintenance/navigation-network-after.json`
+and `connection-recovery-receipt.json`; test logs are in `storage/logs/`.

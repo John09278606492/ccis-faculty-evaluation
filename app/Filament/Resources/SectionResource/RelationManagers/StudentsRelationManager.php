@@ -32,40 +32,44 @@ class StudentsRelationManager extends RelationManager
 
     public function table(Table $table): Table
     {
-        return $table->description('Upload this section’s student list, review it in Background Processing, then Confirm Section Students. The saved list can then be assigned to a faculty member in Teaching Classes.')
+        return $table->description('Upload this sectionâ€™s list using IDs from Students.')
             ->emptyStateHeading('No students in this section yet')
-            ->emptyStateDescription('Creating a section does not add students. Download the sample CSV, upload your list, then confirm its background review.')->columns([
+            ->emptyStateDescription('Upload a student list or add students individually.')->columns([
                 Tables\Columns\TextColumn::make('student_id')->label('ID No.')->searchable()->sortable(),
                 Tables\Columns\TextColumn::make('name')->label('Student')->searchable()->sortable(),
                 Tables\Columns\TextColumn::make('studentDepartment.code')->label('Department')->badge(),
             ])->headerActions([
-                Tables\Actions\Action::make('exampleCsv')->label('Download Student List CSV')->icon('heroicon-o-arrow-down-tray')
-                    ->url(fn () => route('sections.template', $this->getOwnerRecord()))->extraAttributes(['download' => 'section-students.csv']),
-                Tables\Actions\Action::make('uploadStudents')->label('Upload Section Students')->icon('heroicon-o-document-arrow-up')
+                Tables\Actions\Action::make('uploadStudents')->label('Upload Students')->icon('heroicon-o-document-arrow-up')
+                    ->extraAttributes(['data-guide' => 'section-upload-action'])
                     ->visible(fn () => $this->canManage() && auth()->user()->can('import_academic_students') && $this->getOwnerRecord()->is_active)
-                    ->modalSubmitActionLabel('Start Background Review')->form([
-                        Forms\Components\Placeholder::make('guide')->label('Student list')->content(fn () => 'Section: '.$this->getOwnerRecord()->name.'. Use ID No., Lastname, Firstname, Middlename. Sex is optional; you may omit the column or leave it blank. A section heading above those columns is accepted. If the file contains a section heading/column, it must match this section. Validation checks the existing masterlist; no student accounts are created.'),
-                        Forms\Components\FileUpload::make('file')->label('CSV or Excel student list')->disk('local')->storeFiles(false)->maxSize(5120)->required()
+                    ->modalSubmitActionLabel('Check File')->form([
+                        Forms\Components\Placeholder::make('uploadTour')->hiddenLabel()->content(fn () => view('components.guided-help', ['context' => 'section-upload', 'compact' => true])),
+                        Forms\Components\Placeholder::make('guide')->label('Student list')->extraAttributes(['data-guide' => 'section-upload-instructions'])->content(fn () => 'Section: '.$this->getOwnerRecord()->name.'. IDs must already exist in Students. Names and sex are optional; supplied values must match.'),
+                        Forms\Components\FileUpload::make('file')->label('Student File')->disk('local')->storeFiles(false)->maxSize(5120)->required()
+                            ->extraFieldWrapperAttributes(['data-guide' => 'section-file'])
                             ->acceptedFileTypes(['text/csv', 'text/plain', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'])
-                            ->helperText('Continue working after upload. Open the notification to review and confirm adding the matched students to this section.'),
+                            ->helperText('CSV or Excel, up to 5 MB. Review the matched students before confirming.'),
                     ])->action(function (array $data) {
                         $file = is_array($data['file']) ? reset($data['file']) : $data['file'];
                         app(BackgroundTasks::class)->upload(auth()->user(), filament()->getTenant(), $file, 'section-review', 'Review students for '.$this->getOwnerRecord()->name, ['section_id' => $this->getOwnerRecord()->id]);
-                        Notification::make()->success()->title('Section student review queued')->body('Review the notification when ready, then confirm. No teaching-class evaluator lists are changed.')->send();
+                        Notification::make()->success()->title('Section student review queued')->body('We will notify you when the file is ready to review.')->send();
                     }),
-                Tables\Actions\Action::make('reviewUploads')->label('Review / Confirm Uploads')->icon('heroicon-o-check-circle')->color('gray')
+                Tables\Actions\Action::make('exampleCsv')->label('CSV Template')->color('gray')->icon('heroicon-o-arrow-down-tray')
+                    ->url(fn () => route('sections.template', $this->getOwnerRecord()))->extraAttributes(['download' => 'section-students.csv', 'data-guide' => 'section-template']),
+                Tables\Actions\Action::make('reviewUploads')->label('Review Uploads')->icon('heroicon-o-check-circle')->color('gray')
+                    ->extraAttributes(['data-guide' => 'section-review-action'])
                     ->visible(fn () => $this->canManage() && auth()->user()->can('import_academic_students'))
                     ->url(fn () => BackgroundProcessing::getUrl()),
-                Tables\Actions\Action::make('addStudents')->label('Add Individual Students')->icon('heroicon-o-user-plus')
+                Tables\Actions\ActionGroup::make([Tables\Actions\Action::make('addStudents')->label('Add Students')->color('gray')->icon('heroicon-o-user-plus')
                     ->visible(fn () => $this->canManage() && $this->getOwnerRecord()->is_active)->form([
-                        Forms\Components\Select::make('ids')->label('Existing masterlist students')->multiple()->required()->searchable()
+                        Forms\Components\Select::make('ids')->label('Students')->multiple()->required()->searchable()
                             ->getSearchResultsUsing(fn (string $search) => app(AcademicSections::class)->eligible(auth()->user(), filament()->getTenant(), $this->getOwnerRecord())
-                                ->where(fn ($q) => $q->where('student_id', 'like', '%'.$search.'%')->orWhere('name', 'like', '%'.$search.'%'))->limit(50)->get()->mapWithKeys(fn ($s) => [$s->id => $s->student_id.' · '.$s->name]))
-                            ->getOptionLabelsUsing(fn (array $values) => app(AcademicSections::class)->eligible(auth()->user(), filament()->getTenant(), $this->getOwnerRecord())->whereKey($values)->get()->mapWithKeys(fn ($s) => [$s->id => $s->student_id.' · '.$s->name])),
+                                ->where(fn ($q) => $q->where('student_id', 'like', '%'.$search.'%')->orWhere('name', 'like', '%'.$search.'%'))->limit(50)->get()->mapWithKeys(fn ($s) => [$s->id => $s->student_id.' Â· '.$s->name]))
+                            ->getOptionLabelsUsing(fn (array $values) => app(AcademicSections::class)->eligible(auth()->user(), filament()->getTenant(), $this->getOwnerRecord())->whereKey($values)->get()->mapWithKeys(fn ($s) => [$s->id => $s->student_id.' Â· '.$s->name])),
                     ])->action(function (array $data) {
                         $count = app(AcademicSections::class)->add(auth()->user(), filament()->getTenant(), $this->getOwnerRecord(), $data['ids']);
                         Notification::make()->success()->title($count.' students added to section')->send();
-                    }),
+                    })])->label('More')->icon('heroicon-o-ellipsis-horizontal')->button()->color('gray'),
             ])->actions([
                 Tables\Actions\Action::make('remove')->label('Remove from Section')->icon('heroicon-o-user-minus')->color('danger')->requiresConfirmation()
                     ->modalDescription('Remove only this section membership. Existing teaching-class assignments and submitted evaluations are preserved.')

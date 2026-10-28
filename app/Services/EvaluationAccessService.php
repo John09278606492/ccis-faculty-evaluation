@@ -61,6 +61,11 @@ class EvaluationAccessService
             return $form;
         }
 
+        // A role such as dean or chairperson never confers supervisor evaluator authority.
+        if ($courseOffering->evaluation_type_code === 'SEF') {
+            throw new AuthorizationException('Supervisor evaluations require an Annex B instrument and supervisors explicitly selected for this faculty.');
+        }
+
         if (! $user) {
             if ($form->requires_login) {
                 throw new AuthorizationException('You must log in to access this evaluation form.');
@@ -79,6 +84,10 @@ class EvaluationAccessService
 
         if ($user->isStudent() && ! $courseOffering->students()->whereKey($user->getKey())->exists()) {
             throw new AuthorizationException('You are not enrolled in this course offering.');
+        }
+        if ($user->isStudent() && app(EvaluationSections::class)->requiresSection($courseOffering)
+            && ! app(EvaluationSections::class)->forStudent($courseOffering, $user, true)) {
+            throw new AuthorizationException('This subject has multiple instructors. Your section must be assigned before evaluating. Please contact your department coordinator.');
         }
 
         $allowedRoles = $form->evaluator_roles ?? [];

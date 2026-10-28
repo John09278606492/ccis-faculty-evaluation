@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Models\Campus;
-use App\Models\CourseOffering;
 use App\Models\Department;
 use App\Models\User;
 

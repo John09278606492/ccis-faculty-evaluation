@@ -9,6 +9,7 @@ use PhpOffice\PhpSpreadsheet\Cell\Cell;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Reader\IReadFilter;
 use PhpOffice\PhpSpreadsheet\Reader\Xlsx;
 
 /** Reads the campus report directly; never evaluates spreadsheet formulas. */
@@ -55,17 +56,52 @@ class CampusMasterListReader
         if (method_exists($reader, 'setReadEmptyCells')) {
             $reader->setReadEmptyCells(false);
         }
-        $info = $reader->listWorksheetInfo($path);
-        if (count($info) > 10 || collect($info)->contains(fn ($s) => $s['totalRows'] > 5050 || $s['totalColumns'] > 256)) {
-            throw ValidationException::withMessages(['file' => 'Use up to 5,000 student rows, 256 columns and 10 worksheets per upload.']);
+        // Discover relevant tables before loading their data. Extra office sheets
+        // and unused columns must not consume import memory or require cleanup.
+        $reader->setReadFilter($this->readFilter());
+        $probe = $reader->load($path);
+        $tables = $ignored = [];
+        try {
+            foreach ($probe->getWorksheetIterator() as $sheet) {
+                $end = min(512, Coordinate::columnIndexFromString($sheet->getHighestDataColumn()));
+                for ($line = 1; $line <= min(50, $sheet->getHighestDataRow()); $line++) {
+                    $labels = [];
+                    for ($col = 1; $col <= $end; $col++) {
+                        $labels[$col] = $this->header($sheet->getCell([$col, $line])->getValue());
+                    }
+                    if ($layout = $this->layout($labels)) {
+                        [$columns, $blocks] = $layout;
+                        $needed = array_values($columns);
+                        foreach ($blocks as $start) {
+                            $needed = [...$needed, ...range($start, $start + 4)];
+                        }
+                        $tables[$sheet->getTitle()] = ['header' => $line, 'columns' => $needed];
+                        break;
+                    }
+                }
+                if (! isset($tables[$sheet->getTitle()])) {
+                    $ignored[] = $sheet->getTitle();
+                }
+            }
+        } finally {
+            $probe->disconnectWorksheets();
         }
+        if (! $tables) {
+            throw ValidationException::withMessages(['file' => 'No supported student list found. Upload the original campus report or example CSV.']);
+        }
+        if (count($tables) > 10) {
+            throw ValidationException::withMessages(['file' => 'Use up to 10 student worksheets per upload. Unrelated sheets do not count.']);
+        }
+        $reader->setLoadSheetsOnly(array_keys($tables));
+        $reader->setReadFilter($this->readFilter($tables));
         $book = $reader->load($path);
         $rows = $sources = [];
+        $ignoredSheets = $ignored;
         try {
             foreach ($book->getWorksheetIterator() as $sheet) {
                 // Dimension lookups scan the cell collection; never repeat them per cell/row.
                 $lastRow = $sheet->getHighestDataRow();
-                $lastColumn = Coordinate::columnIndexFromString($sheet->getHighestDataColumn());
+                $lastColumn = min(512, Coordinate::columnIndexFromString($sheet->getHighestDataColumn()));
                 $headerRow = null;
                 $columns = [];
                 $blocks = [];
@@ -74,35 +110,15 @@ class CampusMasterListReader
                     for ($col = 1; $col <= $lastColumn; $col++) {
                         $labels[$col] = $this->header($sheet->getCell([$col, $line])->getValue());
                     }
-                    $mapped = [];
-                    foreach (self::ALIASES as $key => $aliases) {
-                        $matches = array_keys(array_intersect($labels, $aliases));
-                        if (count($matches) > 1) {
-                            continue;
-                        }
-                        if ($matches) {
-                            $mapped[$key] = $matches[0];
-                        }
-                    }
-                    if (array_diff(['student_id', 'first_name', 'last_name', 'department_code'], array_keys($mapped))) {
+                    if (! ($layout = $this->layout($labels))) {
                         continue;
                     }
                     $headerRow = $line;
-                    $columns = $mapped;
-                    foreach ($labels as $col => $label) {
-                        if ($label === 'subjectcode') {
-                            if (array_slice(array_values($labels), $col - 1, 5) !== ['subjectcode', 'description', 'lec', 'lab', 'units']) {
-                                throw ValidationException::withMessages(['file' => 'Each Subject Code must be followed by Description, Lec, Lab and Units.']);
-                            }
-                            $blocks[] = $col;
-                        }
-                    }
+                    [$columns, $blocks] = $layout;
                     break;
                 }
                 if (! $headerRow) {
-                    if ($lastRow > 7) {
-                        throw ValidationException::withMessages(['file' => 'No student headers found in worksheet '.$sheet->getTitle().'. Upload the campus student-list report or the example CSV.']);
-                    }
+                    $ignoredSheets[] = $sheet->getTitle();
 
                     continue;
                 }
@@ -155,10 +171,55 @@ class CampusMasterListReader
                 throw ValidationException::withMessages(['file' => 'No supported student list found. Upload the campus report or example CSV.']);
             }
 
-            return ['rows' => $rows, 'sources' => $sources];
+            return ['rows' => $rows, 'sources' => $sources, 'ignored_sheets' => $ignoredSheets];
         } finally {
             $book->disconnectWorksheets();
         }
+    }
+
+    private function layout(array $labels): ?array
+    {
+        $mapped = [];
+        foreach (self::ALIASES as $key => $aliases) {
+            $matches = array_keys(array_intersect($labels, $aliases));
+            if (count($matches) === 1) {
+                $mapped[$key] = $matches[0];
+            }
+        }
+        if (array_diff(['student_id', 'first_name', 'last_name', 'department_code'], array_keys($mapped))) {
+            return null;
+        }
+        $blocks = [];
+        foreach ($labels as $col => $label) {
+            if ($label !== 'subjectcode') {
+                continue;
+            }
+            if (array_slice(array_values($labels), $col - 1, 5) !== ['subjectcode', 'description', 'lec', 'lab', 'units']) {
+                throw ValidationException::withMessages(['file' => 'Each Subject Code must be followed by Description, Lec, Lab and Units.']);
+            }
+            $blocks[] = $col;
+        }
+
+        return [$mapped, $blocks];
+    }
+
+    private function readFilter(array $tables = []): IReadFilter
+    {
+        return new class($tables) implements IReadFilter
+        {
+            public function __construct(private array $tables) {}
+
+            public function readCell($columnAddress, $row, $worksheetName = ''): bool
+            {
+                $col = Coordinate::columnIndexFromString($columnAddress);
+                if (! $this->tables) {
+                    return $row <= 50 && $col <= 512;
+                }
+                $table = $this->tables[$worksheetName] ?? ($worksheetName === '' && count($this->tables) === 1 ? array_values($this->tables)[0] : null);
+
+                return $table && ($row <= $table['header'] ? $col <= 512 : in_array($col, $table['columns'], true));
+            }
+        };
     }
 
     private function value(?Cell $cell, array &$errors, string $field): string
@@ -183,6 +244,37 @@ class CampusMasterListReader
         }
 
         return preg_replace('/\s+/u', ' ', trim((string) $raw));
+    }
+
+    public function selectPeriod(Campus $campus, array $parsed, int $fallback): array
+    {
+        $sources = $parsed['sources'];
+        $normalize = fn ($v) => preg_replace('/[^\pL\pN]/u', '', mb_strtolower(preg_replace('/\bcampus\b/iu', '', $v)));
+        $local = array_values(array_filter($sources, fn ($s) => ! isset($s['campus']) || $normalize($s['campus']) === $normalize($campus->name)));
+        // A completely foreign file remains a validation error, not an empty success.
+        if ($local) {
+            $sources = $local;
+        }
+        $periods = collect($sources)->filter(fn ($s) => isset($s['school_year']))->map(fn ($s) => $s['school_year'].'|'.$s['semester_number'])->unique();
+        if ($periods->count() > 1) {
+            $period = Semester::with('schoolYear')->findOrFail(AcademicPeriod::validate($campus, $fallback));
+            $name = mb_strtolower($period->name);
+            $number = preg_match('/\b(first|1st|1)\b/', $name) ? '1' : (preg_match('/\b(second|2nd|2)\b/', $name) ? '2' : (str_contains($name, 'summer') ? 'summer' : (preg_match('/\b(third|3rd|3)\b/', $name) ? '3' : '')));
+            $year = preg_replace('/\s/', '', $period->schoolYear->name);
+            $sources = array_values(array_filter($sources, fn ($s) => ($s['school_year'] ?? null) === $year && ($s['semester_number'] ?? null) === $number));
+            if (! $sources) {
+                throw ValidationException::withMessages(['semester_id' => 'No student worksheets match the selected academic period. Choose a period present in this workbook.']);
+            }
+        }
+        $selected = array_column($sources, 'sheet');
+        $skipped = array_values(array_diff(array_column($parsed['sources'], 'sheet'), $selected));
+        $all = count($parsed['rows']);
+        $parsed['rows'] = array_values(array_filter($parsed['rows'], fn ($r) => in_array($r['_source_sheet'], $selected, true)));
+        $parsed['sources'] = $sources;
+        $parsed['ignored_sheets'] = array_values(array_unique(array_merge($parsed['ignored_sheets'] ?? [], $skipped)));
+        $parsed['skipped_period_rows'] = $all - count($parsed['rows']);
+
+        return $parsed;
     }
 
     public function period(Campus $campus, array $sources, int $fallback): int

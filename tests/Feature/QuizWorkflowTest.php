@@ -1,6 +1,7 @@
 <?php
 
 use App\Events\ClassroomChanged;
+use App\Events\PanelDataChanged;
 use App\Filament\Pages\ClassRecords;
 use App\Filament\Pages\MyQuizzes;
 use App\Filament\Pages\QuizBuilder;
@@ -567,6 +568,21 @@ it('pushes quiz changes only after commit and never broadcasts rolled-back chang
     DB::rollBack();
     Event::assertNotDispatched(ClassroomChanged::class);
     expect($quiz->refresh()->title)->toBe('Committed title');
+});
+
+it('tells staff about every attempt but each student only about their own', function () {
+    extract(quizWorkflowFixture());
+    Event::fake([ClassroomChanged::class, PanelDataChanged::class]);
+    $this->actingAs($student);
+    Livewire::test(TakeQuiz::class, ['quiz' => $quiz])->call('beginAttempt');
+
+    Event::assertDispatched(ClassroomChanged::class, fn ($event) => $event->kind === 'attempt' && $event->quizId === $quiz->id);
+    Event::assertDispatched(PanelDataChanged::class, fn ($event) => $event->kind === 'attempt'
+        && $event->broadcastOn()[0]->name === 'private-App.Models.User.'.$student->id);
+    // A class starting or submitting together would otherwise make every student's page call the server for each classmate.
+    $script = file_get_contents(resource_path('js/live-updates.js'));
+    expect($script)->toContain("if (!staff && ['focus', 'progress', 'attempt'].includes(event.kind)) return;")
+        ->toContain("event?.kind === 'attempt' && window.Livewire");
 });
 
 it('authorizes live channels by campus and environment without broadcasting private data', function () {

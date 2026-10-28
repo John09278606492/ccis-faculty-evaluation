@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Campus;
 use App\Models\User;
 use App\Models\WorkspaceDraft;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -17,6 +18,7 @@ class WorkspaceDrafts
             if (! array_is_list($value)) {
                 ksort($value);
             }
+
             return array_map(fn ($item) => is_array($item) ? $sort($item) : $item, $value);
         };
 
@@ -44,7 +46,7 @@ class WorkspaceDrafts
             }
             try {
                 return WorkspaceDraft::create(['user_id' => $user->id, 'campus_id' => $campus->id, 'context' => hash('sha256', $context), ...$values]);
-            } catch (\Illuminate\Database\UniqueConstraintViolationException) {
+            } catch (UniqueConstraintViolationException) {
                 $this->conflict();
             }
         }

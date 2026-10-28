@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Faculty Evaluation Summary — {{ $offering->evaluatee->name }}</title>
+<x-bisu-favicon />
 @include('reports.report-styles')</head><body>
 @include('reports.report-toolbar')
 <main class="sheet">

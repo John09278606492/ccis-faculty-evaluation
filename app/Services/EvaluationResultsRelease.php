@@ -23,8 +23,9 @@ class EvaluationResultsRelease
         $offering->loadMissing(['evaluationForm', 'semester']);
         $form = $offering->evaluationForm;
         $offering->loadMissing('evaluationCycle');
-        if ($offering->evaluationCycle && (in_array($offering->evaluationCycle->status, ['closed', 'archived'], true) || $offering->evaluationCycle->ends_at?->isPast())) {
-            return true;
+        if ($offering->evaluationCycle) {
+            return in_array($offering->evaluationCycle->status, ['closed', 'archived'], true)
+                || (bool) $offering->evaluationCycle->ends_at?->isPast();
         }
 
         return ! $offering->is_active

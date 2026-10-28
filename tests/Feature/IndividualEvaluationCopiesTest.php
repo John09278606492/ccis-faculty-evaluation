@@ -38,6 +38,15 @@ it('prints only the selected responses and hides identity by default', function 
     expect($this->first->toArray())->not->toHaveKey('evaluator_identity');
 });
 
+it('rejects student-role accounts with an inconsistent staff profile even when they retain report permissions', function () {
+    $service = app(EvaluationCopies::class);
+    $url = $service->previewUrl($this->staff, $this->campus, [$this->first->id]);
+    $this->staff->assignRole('student');
+    expect($this->staff->is_student)->toBeFalse()->and($this->staff->isStudent())->toBeTrue();
+    expect(fn () => $service->previewUrl($this->staff, $this->campus, [$this->first->id]))->toThrow(HttpException::class);
+    $this->get($url)->assertForbidden();
+});
+
 it('pairs distinct student responses without duplicating an odd selection and preserves the Annex B layout', function () {
     $third = $this->second->replicate();
     $third->data = [...$third->data, '_overall_comment' => 'Third student comment preserved.'];

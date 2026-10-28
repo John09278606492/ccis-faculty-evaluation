@@ -31,7 +31,7 @@ class StudentEvaluationProgress extends Page implements HasTable
 
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-check';
 
-    protected static ?string $title = 'Monitor Student Progress';
+    protected static ?string $title = 'Student Progress';
 
     public static function canAccess(): bool
     {

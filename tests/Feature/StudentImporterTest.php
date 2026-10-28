@@ -102,6 +102,26 @@ it('accepts the usual spellings of an employee id column', function () {
     }
 });
 
+it('rejects an incorrectly mapped employee column during an actual import', function () {
+    $map = ['first_name' => 'first_name', 'last_name' => 'last_name', 'email' => 'email', 'employee_id' => 'Student ID'];
+    $importer = instructorImporter([], $map);
+    $before = User::count();
+
+    expect(fn () => $importer(['first_name' => 'Maria', 'last_name' => 'Cruz', 'email' => 'new.staff@example.test', 'Student ID' => 'E-IMPORT']))
+        ->toThrow(ValidationException::class);
+    expect(User::count())->toBe($before);
+});
+
+it('downloads the staff CSV template directly from Staff Accounts', function () {
+    $this->importActor->givePermissionTo(Permission::findOrCreate('view_any_user', 'web'));
+    Filament::setTenant($this->importOffering->campus, isQuiet: true);
+    $this->actingAs($this->importActor);
+
+    Livewire\Livewire::test(App\Filament\Resources\UserResource\Pages\ListUsers::class)
+        ->callAction('staffTemplate')
+        ->assertFileDownloaded('instructors-template.csv');
+});
+
 it('does not update an existing student when the id belongs to someone else', function () {
     $offering = $this->importOffering;
     User::factory()->create(['student_id' => '2026-0001', 'email' => 'first@example.test']);

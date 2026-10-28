@@ -12,7 +12,7 @@ class EvaluationCycle extends Model
 
     protected $attributes = ['status' => 'draft'];
 
-    protected $casts = ['starts_at' => 'datetime', 'ends_at' => 'datetime', 'published_at' => 'datetime', 'closed_at' => 'datetime', 'archived_at' => 'datetime'];
+    protected $casts = ['starts_at' => 'datetime', 'ends_at' => 'datetime', 'published_at' => 'datetime', 'closed_at' => 'datetime', 'archived_at' => 'datetime', 'class_selection' => 'array'];
 
     public function campus(): BelongsTo
     {

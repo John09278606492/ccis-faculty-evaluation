@@ -21,7 +21,7 @@ class EvaluationCopies
 
     public function allowed(User $user, Campus $campus): bool
     {
-        return ! $user->is_student && $user->canAccessTenant($campus) && ($user->can('page_EvaluationResults') || $user->can('view_form'));
+        return ! $user->isStudent() && $user->canAccessTenant($campus) && ($user->can('page_EvaluationResults') || $user->can('view_form'));
     }
 
     public function previewUrl(User $user, Campus $campus, array $ids): string

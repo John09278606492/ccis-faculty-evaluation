@@ -41,7 +41,7 @@ class AcademicStudentImports
             $sources = $previous['context']['sources'] ?? [];
             $semesterId = app(CampusMasterListReader::class)->period($campus, $sources, $semesterId);
 
-            return $this->review($actor, $campus, $previous['rows'], $semesterId, ['sources' => $sources, 'department_codes' => $departmentCodes]);
+            return $this->review($actor, $campus, $previous['rows'], $semesterId, [...$previous['context'], 'sources' => $sources, 'department_codes' => $departmentCodes]);
         }
         if ($file instanceof UploadedFile) {
             $path = $file->getRealPath();
@@ -54,9 +54,11 @@ class AcademicStudentImports
         }
         try {
             $parsed = app(CampusMasterListReader::class)->read($path);
+            $parsed = app(CampusMasterListReader::class)->selectPeriod($campus, $parsed, $semesterId);
             $semesterId = app(CampusMasterListReader::class)->period($campus, $parsed['sources'], $semesterId);
 
-            return $this->review($actor, $campus, $parsed['rows'], $semesterId, ['sources' => $parsed['sources'], 'department_codes' => $departmentCodes]);
+            return $this->review($actor, $campus, $parsed['rows'], $semesterId, ['sources' => $parsed['sources'], 'ignored_sheets' => $parsed['ignored_sheets'] ?? [],
+                'skipped_period_rows' => $parsed['skipped_period_rows'] ?? 0, 'department_codes' => $departmentCodes]);
         } catch (ValidationException|HttpException $e) {
             throw $e;
         } catch (\Throwable $e) {
@@ -77,7 +79,8 @@ class AcademicStudentImports
         $semesterId = AcademicPeriod::validate($campus, $semesterId);
         $selected = $this->selectedRows($actor, $campus, $rows, $context);
         $analysis = [...$this->analyze($actor, $campus, $selected, $semesterId), 'sources' => $context['sources'] ?? [],
-            'semester_id' => $semesterId, 'skipped_department_rows' => count($rows) - count($selected)];
+            'semester_id' => $semesterId, 'ignored_sheets' => $context['ignored_sheets'] ?? [], 'skipped_period_rows' => $context['skipped_period_rows'] ?? 0,
+            'skipped_department_rows' => count($rows) - count($selected)];
         $token = (string) Str::uuid();
         Cache::put('academic-student-import:'.$token, [
             'actor_id' => $actor->id, 'campus_id' => $campus->id, 'semester_id' => $semesterId,

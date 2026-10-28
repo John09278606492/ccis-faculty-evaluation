@@ -7,6 +7,7 @@ use App\Models\QuizAnswer;
 use App\Models\QuizAttempt;
 use App\Models\QuizQuestion;
 use App\Services\BackgroundTasks;
+use App\Support\SqliteWriter;
 use Carbon\CarbonInterval;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -438,6 +439,7 @@ class AttemptsRelationManager extends RelationManager
     {
         abort_unless(auth()->user()->can('update', $this->getOwnerRecord()) && $record->quiz_id === $this->getOwnerRecord()->id && $record->status !== 'in_progress', 403);
         DB::transaction(function () use ($record, $data): void {
+            SqliteWriter::reserve('quiz_attempts', $record->id);
             foreach ($data['awards'] ?? [] as $answerId => $award) {
                 $answer = $record->answers()->whereKey($answerId)->whereHas('question', fn ($q) => $q->whereIn('type', QuizQuestion::MANUALLY_GRADED_TYPES))->firstOrFail();
                 if ($answer->database_name && ! $answer->hasVerifiedDatabaseSnapshot()) {

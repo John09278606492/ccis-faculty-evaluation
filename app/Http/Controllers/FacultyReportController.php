@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Services\AssignedDataAccess;
 use App\Services\EvaluationResultsRelease;
 use App\Services\EvaluationScoring;
+use App\Services\FacultySupervisorEvaluators;
 use App\Services\ReportService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -47,6 +48,7 @@ class FacultyReportController extends Controller
             $offerings = $offerings->filter(fn ($co) => EvaluationResultsRelease::isReleased($co));
         }
         $rows = collect();
+        $setRows = collect();
         foreach ($offerings as $assignment) {
             $form = $assignment->evaluationForm;
             if (! $form) {
@@ -58,6 +60,18 @@ class FacultyReportController extends Controller
                 'comments' => array_merge($comments['overall_comments'], ...array_values($comments['field_comments'])), 'count' => $score['count'],
                 'mean_total' => $score['mean_total'], 'mean_5' => $score['mean_5'], 'maximum' => $score['maximum'], 'percentage' => $score['percentage'],
                 'items' => $score['fields']->map(fn ($field) => ['label' => $field['label'], 'section' => $field['section'], 'mean' => $field['native_avg']])]);
+            if ($score['instrument'] === 'SET') {
+                $submissions = $assignment->formSubmissions->where('form_id', $assignment->form_id);
+                $groups = $submissions->groupBy(fn ($submission) => app(\App\Services\EvaluationSections::class)->label($submission, $assignment));
+                if ($groups->isEmpty()) {
+                    $groups = collect([$assignment->evaluation_section_label => collect()]);
+                }
+                foreach ($groups as $section => $responses) {
+                    $sectionScore = app(EvaluationScoring::class)->assignment($assignment, $responses);
+                    $setRows->push(['assignment' => $assignment, 'form' => $form, 'section' => $section,
+                        'count' => $sectionScore['count'], 'percentage' => $sectionScore['percentage']]);
+                }
+            }
         }
         $instruments = app(EvaluationScoring::class)->instruments($rows);
         $ratings = collect(['SET', 'SEF'])->mapWithKeys(fn ($instrument) => [$instrument => $instruments[$instrument]['percentage'] ?? null]);
@@ -72,7 +86,7 @@ class FacultyReportController extends Controller
         $departmentIds = $offerings->map(fn ($assignment) => $assignment->teaching_department_id ?? $assignment->course?->department_id ?? $offering->evaluatee->instructor_department_id)->filter()->unique();
         $heads = Department::where('campus_id', $scope['campus_id'])->whereIn('id', $departmentIds)->with(['supervisor', 'chairperson'])->get();
         $additionalSupervisors = $offerings->flatMap(fn ($assignment) => $assignment->course_id
-            ? $assignment->supervisorEvaluators : app(\App\Services\FacultySupervisorEvaluators::class)->forTask($assignment)->get())->unique('id');
+            ? $assignment->supervisorEvaluators : app(FacultySupervisorEvaluators::class)->forTask($assignment)->get())->unique('id');
         $staff = $staff->merge($additionalSupervisors)->unique('id')->sortBy('name')->values();
         $details = $stored ? json_decode($stored->details, true) : [];
         $primary = $heads->firstWhere('id', $offering->teaching_department_id ?? $offering->course?->department_id) ?? $heads->first();
@@ -84,7 +98,7 @@ class FacultyReportController extends Controller
             }
         }
 
-        return response()->view($annex === 'C' ? 'reports.faculty-individual' : 'reports.faculty-summary', ['annex' => $annex, 'offering' => $offering, 'rows' => $rows, 'ratings' => $ratings, 'periods' => $periods, 'details' => $details, 'staff' => $staff, 'heads' => $heads, 'additionalSupervisors' => $additionalSupervisors, 'canEdit' => $canEdit])
+        return response()->view($annex === 'C' ? 'reports.faculty-individual' : 'reports.faculty-summary', ['annex' => $annex, 'offering' => $offering, 'rows' => $rows, 'setRows' => $setRows, 'ratings' => $ratings, 'periods' => $periods, 'details' => $details, 'staff' => $staff, 'heads' => $heads, 'additionalSupervisors' => $additionalSupervisors, 'canEdit' => $canEdit])
             ->header('Cache-Control', 'private, no-store, max-age=0');
     }
 

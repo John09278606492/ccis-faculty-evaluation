@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Livewire\DatabaseNotifications;
+use App\Livewire\GuidedTours;
 use App\Livewire\PanelChrome;
 use App\Livewire\WorkspaceContext;
 use App\Models\AcademicSection;
@@ -48,11 +49,13 @@ use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Jeffgreco13\FilamentBreezy\Livewire\PersonalInfo;
 use Jeffgreco13\FilamentBreezy\Livewire\TwoFactorAuthentication;
 use Jeffgreco13\FilamentBreezy\Livewire\UpdatePassword;
 use Livewire\Livewire;
+use Livewire\Mechanisms\FrontendAssets\FrontendAssets;
 use SocialiteProviders\Google\Provider;
 use SocialiteProviders\Manager\SocialiteWasCalled;
 use Spatie\Permission\Models\Permission;
@@ -75,6 +78,11 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // Local and campus servers share this checkout's route cache but use
+        // different debug settings. Keep the script URL stable in both modes.
+        Livewire::setScriptRoute(fn ($handle) => Route::get('/livewire/livewire.js', $handle)->name('livewire.script'));
+        Route::get('/livewire/livewire.min.js', [FrontendAssets::class, 'returnJavaScriptAsFile'])->name('livewire.script.min');
+        Livewire::component('campus-guided-tours', GuidedTours::class);
         RateLimiter::for('evaluation-identify', function (Request $request) {
             $identifier = mb_strtolower(trim((string) $request->input('student_id', '')));
 
@@ -130,7 +138,12 @@ class AppServiceProvider extends ServiceProvider
 
         foreach (['saved', 'deleted'] as $action) {
             Event::listen('eloquent.'.$action.': '.Quiz::class, fn ($quiz) => ClassroomUpdates::course($quiz->course_offering_id, 'quiz', $quiz->id));
-            Event::listen('eloquent.'.$action.': '.QuizAttempt::class, fn ($attempt) => ClassroomUpdates::quiz($attempt->quiz_id, 'attempt'));
+            // Staff see every attempt; a student hears only of their own, privately, so a class
+            // starting or submitting together does not make every classmate's page call back.
+            Event::listen('eloquent.'.$action.': '.QuizAttempt::class, function ($attempt) {
+                ClassroomUpdates::quiz($attempt->quiz_id, 'attempt');
+                ClassroomUpdates::viewer($attempt->user_id, 'attempt');
+            });
             Event::listen('eloquent.'.$action.': '.QuizQuestion::class, fn ($question) => ClassroomUpdates::quiz($question->quiz_id, 'question'));
             Event::listen('eloquent.'.$action.': '.ClassRecordSheet::class, fn ($sheet) => ClassroomUpdates::course($sheet->course_offering_id, 'workbook'));
         }

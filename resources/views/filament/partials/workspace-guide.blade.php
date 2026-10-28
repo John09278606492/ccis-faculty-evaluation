@@ -20,7 +20,6 @@
 @if(count($links))
 <x-filament::section>
     <x-slot name="heading">{{ $student ? 'My tasks' : 'My assigned work' }}</x-slot>
-    <x-slot name="description">Your work follows your assigned campus, departments and permissions.</x-slot>
     <div class="grid gap-4 md:grid-cols-2">
         @foreach($links as $link)
             <a href="{{ $link['url'] }}" wire:navigate class="workspace-shortcut">

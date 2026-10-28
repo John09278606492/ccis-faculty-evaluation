@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Concerns\HasBuilderWorkspaceDraft;
 use App\Models\Form;
 use App\Models\FormField;
 use Filament\Actions\Action;
@@ -14,7 +15,8 @@ use Livewire\Attributes\Locked;
 
 class FormBuilder extends Page
 {
-    use \App\Filament\Concerns\HasBuilderWorkspaceDraft;
+    use HasBuilderWorkspaceDraft;
+
     protected static string $view = 'filament.pages.form-builder';
 
     protected static bool $shouldRegisterNavigation = false;

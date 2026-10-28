@@ -15,7 +15,7 @@ $supervisor = $form->isSupervisorInstrument();
 @if($supervisor)<p><b>Academic Rank:</b> {{ $form->settings['academic_rank'] ?? '—' }}</p>@endif
 <p><b>College/Department:</b> {{ $assignment->teachingDepartment?->name ?? $assignment->course?->department?->name ?? $assignment->evaluatee?->instructorDepartment?->name ?? '—' }}</p>
 <p><b>Course Code/Title:</b> {{ $assignment->course?->code ?? 'Faculty evaluation' }} / {{ $assignment->course?->name ?? '—' }}</p>
-<p><b>Program Level / Section:</b> {{ $form->settings['program_level'] ?? '' }} {{ $assignment->section }}</p>
+<p><b>Program Level / Section:</b> {{ $form->settings['program_level'] ?? '' }} {{ $supervisor ? $assignment->section : app(\App\Services\EvaluationSections::class)->label($submission, $assignment) }}</p>
 <p><b>Semester or Term/Academic Year:</b> {{ $assignment->semester->name }} / {{ $assignment->semester->schoolYear->name }}</p></div>
 <h2>B. Rating Scale</h2><table class="scale"><colgroup><col class="scale-number"><col class="scale-label"><col></colgroup><thead><tr><th>Scale</th><th>Qualitative Description</th><th>Operational Definition{{ $supervisor ? ' and Scale' : '' }}</th></tr></thead><tbody>@foreach($scale as $option)<tr><td>{{ $option['value'] }}</td><td>{{ $option['label'] }}</td><td>{{ $option['description'] ?? '' }}</td></tr>@endforeach</tbody></table>
 <p class="instruction"><b>C. Instruction:</b> Read the benchmark statements carefully. Rate the faculty using the above-listed rating scale. The circled values below reproduce the submitted ratings.@if($supervisor) The Suggested Means of Verification guide the supervisor's assessment.@endif</p>

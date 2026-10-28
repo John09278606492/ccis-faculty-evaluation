@@ -10,6 +10,7 @@ use App\Models\QuizQuestion;
 use App\Notifications\BellNotification;
 use App\Services\ClassroomUpdates;
 use App\Services\FinalizeAssessmentAttempt;
+use App\Support\SqliteWriter;
 use Filament\Notifications\Actions\Action as NotificationAction;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
@@ -366,6 +367,7 @@ class TakeQuiz extends Page
     protected function startNewAttempt(): QuizAttempt
     {
         return DB::transaction(function (): QuizAttempt {
+            SqliteWriter::reserve('quizzes', $this->quiz->id);
             $quiz = Quiz::query()->lockForUpdate()->findOrFail($this->quiz->id);
             $latestAttempt = QuizAttempt::query()
                 ->where('quiz_id', $quiz->id)
@@ -552,6 +554,7 @@ class TakeQuiz extends Page
     protected function persistAnswer(QuizQuestion $question, array $attributes): bool
     {
         return DB::transaction(function () use ($question, $attributes) {
+            SqliteWriter::reserve('quiz_attempts', $this->attempt->id);
             $attempt = QuizAttempt::query()->lockForUpdate()->findOrFail($this->attempt->id);
             abort_unless($attempt->user_id === auth()->id() && $attempt->quiz_id === $this->quiz->id, 403);
             if ($attempt->status !== 'in_progress' || $attempt->isExpired()) {

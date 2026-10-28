@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\FormResource\Pages;
 
+use App\Filament\Concerns\ShowsEvaluationWorkflow;
 use App\Filament\Resources\FormResource;
 use App\Models\Form;
 use App\Services\EvaluationTemplates;
@@ -12,19 +13,20 @@ use Filament\Resources\Pages\ListRecords;
 
 class ListForms extends ListRecords
 {
-    use \App\Filament\Concerns\ShowsEvaluationWorkflow;
+    use ShowsEvaluationWorkflow;
 
     protected static string $view = 'filament.resources.workflow-list';
 
     public function getTitle(): string
     {
-        return 'Evaluation Forms';
+        return 'Form Templates';
     }
 
     public function getSubheading(): ?string
     {
-        return 'Annex A is for students; Annex B is for supervisors. Use an Annex template or duplicate an existing form to edit it. Select the completed forms in Evaluation Setup.';
+        return 'Use Annex A for students and Annex B for supervisors. Duplicate a template to customize it.';
     }
+
     protected static string $resource = FormResource::class;
 
     protected function getHeaderActions(): array

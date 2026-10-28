@@ -254,7 +254,9 @@ class AcademicStudents
                 $roster[$id] = [];
             }
             $offering->students()->sync($roster);
-            $offering->update(['evaluator_selection' => ['sections' => $groups, 'include' => $include, 'exclude' => $exclude, 'mode' => $mode, 'count' => $preview['total'], 'saved_at' => now()->toIso8601String()]]);
+            $reportSections = array_intersect_key($offering->evaluator_selection['report_sections'] ?? [], array_flip($preview['ids']));
+            $offering->update(['evaluator_selection' => ['sections' => $groups, 'include' => $include, 'exclude' => $exclude, 'mode' => $mode,
+                'report_sections' => $reportSections, 'auto_enrolment' => false, 'count' => $preview['total'], 'saved_at' => now()->toIso8601String()]]);
         });
 
         return $preview['selected'];

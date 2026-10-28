@@ -2,9 +2,9 @@
 
 namespace App\Filament\Resources\QuizResource\Pages;
 
+use App\Filament\Pages\DraftCreateRecord as CreateRecord;
 use App\Filament\Pages\QuizBuilder;
 use App\Filament\Resources\QuizResource;
-use App\Filament\Pages\DraftCreateRecord as CreateRecord;
 
 class CreateQuiz extends CreateRecord
 {

@@ -1,6 +1,7 @@
 <?php
 
 use App\Filament\Resources\EvaluationCycleResource;
+use App\Filament\Resources\EvaluationCycleResource\Pages\EditEvaluationCycle;
 use App\Models\Campus;
 use App\Models\CourseOffering;
 use App\Models\Department;
@@ -11,6 +12,7 @@ use App\Services\EvaluationTemplates;
 use App\Services\SupervisorEvaluationAssignments;
 use Filament\Facades\Filament;
 use Illuminate\Validation\ValidationException;
+use Livewire\Livewire;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -71,13 +73,27 @@ it('runs draft readiness publish close and archive with explicit Annex B tasks',
     expect($cycle->assignments()->count())->toBe(2);
 });
 
+it('requires sectioning before publishing a subject with multiple instructors', function () {
+    extract(cycleFixture());
+    $other = $offering->replicate();
+    $other->user_id = User::factory()->create(['is_instructor' => true])->id;
+    $other->section = 'B';
+    $other->save();
+    $service = app(EvaluationCycles::class);
+    $cycle = $service->save($head, $campus, $data);
+    expect(implode(' ', $service->readiness($cycle)['errors']))->toContain('require sectioning');
+    expect(fn () => $service->publish($head, $cycle))->toThrow(ValidationException::class);
+    $offering->update(['evaluator_selection' => ['report_sections' => [$student->id => 'A']]]);
+    expect($service->readiness($cycle->fresh())['errors'])->toBe([]);
+});
+
 it('saves the current setup before reviewing and waits for explicit confirmation before opening', function () {
     extract(cycleFixture());
     $cycle = app(EvaluationCycles::class)->save($head, $campus, $data);
     Filament::setCurrentPanel(Filament::getPanel('admin'));
     Filament::setTenant($campus, isQuiet: true);
     $this->actingAs($head);
-    $page = \Livewire\Livewire::test(\App\Filament\Resources\EvaluationCycleResource\Pages\EditEvaluationCycle::class, ['record' => $cycle->id])
+    $page = Livewire::test(EditEvaluationCycle::class, ['record' => $cycle->id])
         ->fillForm(['name' => 'Reviewed current edits'])->mountAction('review')->assertHasNoErrors();
     expect($cycle->fresh()->name)->toBe('Reviewed current edits')->and($cycle->fresh()->status)->toBe('draft')
         ->and($cycle->assignments()->where('evaluation_type', 'SEF')->count())->toBe(0);
@@ -98,6 +114,47 @@ it('requires readiness and correct lifecycle transitions before publication', fu
     $service->publish($head, $cycle);
     expect(fn () => $service->publish($head, $cycle->fresh()))->toThrow(HttpException::class);
     expect(fn () => $service->save($head, $campus, $data, $cycle->fresh()))->toThrow(HttpException::class);
+});
+
+it('opens without dates and accepts responses until manually closed', function () {
+    extract(cycleFixture());
+    $service = app(EvaluationCycles::class);
+    $cycle = $service->save($head, $campus, [...$data, 'starts_at' => null, 'ends_at' => null]);
+    $this->actingAs($head);
+    Filament::setCurrentPanel(Filament::getPanel('admin'));
+    Filament::setTenant($campus, isQuiet: true);
+    $page = Livewire::test(EditEvaluationCycle::class, ['record' => $cycle->id])->mountAction('review')->assertHasNoErrors()->assertSee('When you select Close Evaluation');
+    $page->callMountedAction()->assertHasNoErrors();
+    expect($cycle->fresh()->status)->toBe('published')->and($cycle->fresh()->ends_at)->toBeNull();
+    $this->travel(30)->days();
+    expect($offering->fresh()->isEvaluationAvailable())->toBeTrue();
+    $this->actingAs($student)->get(route('evaluate.course-offering', $offering))->assertOk();
+    $service->close($head, $cycle->fresh());
+    expect($offering->fresh()->isEvaluationAvailable())->toBeFalse();
+    $this->get(route('evaluate.course-offering', $offering))->assertForbidden();
+});
+
+it('supports an opening date without a closing date and a closing date without an opening date', function () {
+    extract(cycleFixture());
+    $service = app(EvaluationCycles::class);
+    $cycle = $service->save($head, $campus, [...$data, 'starts_at' => now()->addDay(), 'ends_at' => null]);
+    $service->publish($head, $cycle);
+    expect($offering->fresh()->isEvaluationAvailable())->toBeFalse();
+    $this->travel(2)->days();
+    expect($offering->fresh()->isEvaluationAvailable())->toBeTrue();
+    $other = $offering->fresh()->replicate();
+    $other->fill(['evaluation_cycle_id' => null, 'section' => 'Closing only']);$other->save();
+    $other->students()->attach($student);$other->supervisorEvaluators()->attach($head);
+    $closing = $service->save($head, $campus, [...$data, 'starts_at' => null, 'ends_at' => now()->addDay(), 'assignment_ids' => [$other->id]]);
+    $service->publish($head, $closing);
+    expect($other->fresh()->isEvaluationAvailable())->toBeTrue();
+    $this->travel(2)->days();
+    expect($other->fresh()->isEvaluationAvailable())->toBeFalse();
+});
+
+it('rejects a closing date before the supplied opening date', function () {
+    extract(cycleFixture());
+    expect(fn () => app(EvaluationCycles::class)->save($head, $campus, [...$data, 'starts_at' => now()->addDay(), 'ends_at' => now()]))->toThrow(ValidationException::class);
 });
 
 it('scopes cycle management to an assigned department and campus even with management permissions', function () {

@@ -4,6 +4,7 @@ namespace App\Filament\Imports;
 
 use App\Models\Department;
 use App\Models\User;
+use App\Services\AssignedDataAccess;
 use App\Services\ScopedAccountImport;
 use App\Services\UserAccessAdministration;
 use Filament\Actions\Imports\ImportColumn;
@@ -11,7 +12,7 @@ use Filament\Actions\Imports\Importer;
 use Filament\Actions\Imports\Models\Import;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
-use Illuminate\Support\HtmlString;
+use Illuminate\Validation\ValidationException;
 
 class InstructorImporter extends Importer
 {
@@ -55,7 +56,7 @@ class InstructorImporter extends Importer
                 ->guess(['email', 'email_address', 'e-mail'])
                 ->example('maria.garcia@school.edu'),
             ImportColumn::make('employee_id')
-                ->label('Employee ID (Must map to "employee_id" column)')
+                ->label('Employee ID')
                 ->requiredMapping()
                 ->rules(['required', 'max:50'])
                 ->guess(['employee_id', 'employeeid', 'employee id', 'emp_id', 'empid', 'staff_id', 'staffid'])
@@ -75,44 +76,27 @@ class InstructorImporter extends Importer
     public static function getOptionsFormComponents(): array
     {
         return [
-            Placeholder::make('file_notice')
-                ->label('📋 Required Excel Columns')
-                ->content(fn () => new HtmlString(
-                    '<div class="text-sm space-y-1">
-                        <p class="font-bold text-danger-600">⚠️ Your Excel file MUST have these EXACT column headers:</p>
-                        <ul class="list-disc list-inside text-gray-600">
-                            <li><strong>first_name</strong></li>
-                            <li>middle_name (optional)</li>
-                            <li><strong>last_name</strong></li>
-                            <li><strong>email</strong></li>
-                            <li><strong>employee_id</strong> ← REQUIRED FOR INSTRUCTOR IMPORT</li>
-                            <li>position (optional)</li>
-                            <li>phone (optional)</li>
-                        </ul>
-                        <p class="text-danger-600 font-semibold mt-2">❌ If your file has "student_id" instead of "employee_id", you MUST use STUDENT import!</p>
-                    </div>'
-                ))
+            Placeholder::make('file_notice')->hiddenLabel()
+                ->content('CSV required: first_name, last_name, email and employee_id. Other columns are optional. Save Excel files as CSV before uploading.')
                 ->columnSpanFull(),
             Select::make('department_id')
                 ->label('Department')
                 ->options(function () {
-                    $campusId = filament()->getTenant()?->id;
-
-                    return Department::where('campus_id', $campusId)
+                    return app(AssignedDataAccess::class)->apply(Department::query(), auth()->user(), filament()->getTenant())
                         ->where('is_active', true)
                         ->pluck('name', 'id');
                 })
                 ->required()
                 ->searchable()
-                ->helperText('All imported instructors will be assigned to this department'),
+                ->helperText('Applies to every row in this file.'),
             Select::make('role_ids')
                 ->visible(fn () => auth()->user()?->isSuperAdmin() || auth()->user()?->can('assign_user_roles'))
-                ->label('Assign Roles')
+                ->label('Roles')
                 ->multiple()
                 ->options(function () {
                     return static::getAvailableRoles();
                 })
-                ->helperText('Select roles to assign to all imported instructors'),
+                ->helperText('Leave empty for the Instructor role.'),
         ];
     }
 
@@ -125,7 +109,7 @@ class InstructorImporter extends Importer
         $actor = auth()->user();
         $campus = filament()->getTenant();
 
-        return $actor && $campus ? app(UserAccessAdministration::class)->grantableRoles($actor, $campus)->pluck('name', 'id')->all() : [];
+        return $actor && $campus ? app(UserAccessAdministration::class)->grantableRoles($actor, $campus)->where('name', '!=', 'student')->pluck('name', 'id')->all() : [];
     }
 
     /**
@@ -161,6 +145,14 @@ class InstructorImporter extends Importer
         }
 
         return $rules;
+    }
+
+    protected function beforeValidate(): void
+    {
+        $mapped = $this->columnMap['employee_id'] ?? null;
+        if ($mapped && ! in_array(strtolower(trim($mapped)), static::$validEmployeeIdColumns, true)) {
+            throw ValidationException::withMessages(['employee_id' => 'Map Employee ID to an employee_id or staff_id column. Student ID files belong in Students.']);
+        }
     }
 
     public function resolveRecord(): ?User

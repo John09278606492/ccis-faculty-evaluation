@@ -2,7 +2,7 @@
 
 Roles decide actions. Campus membership and department assignments decide records. User-management permissions never imply campus-wide authority.
 
-`User Management > Access & Assignments` requires `manage_access_assignments`. Campus-wide data access is an explicit `user_campus_access` record; department access includes instructor home department, configured supervisor/chairperson departments, and explicit `user_department_access` records. Campus data scope does not grant write permissions. Removing a profile department cannot grant campus access. Self-elevation and cross-campus assignments are blocked; changes are recorded in `access_audit_events`.
+`Administration > Access & Assignments` requires `manage_access_assignments`. Campus-wide data access is an explicit `user_campus_access` record; department access includes instructor home department, configured supervisor/chairperson departments, and explicit `user_department_access` records. Campus data scope does not grant write permissions. Removing a profile department cannot grant campus access. Self-elevation and cross-campus assignments are blocked; changes are recorded in `access_audit_events`.
 
 Role delegation requires `assign_user_roles`. Non-super-admin users cannot change their own roles, grant permissions they do not possess, modify super administrators, or remove global/other-campus roles. Higher-authority staff accounts cannot be edited or have passwords reset by lower-authority account managers. Student accounts accept student-safe roles only; incompatible legacy student/staff accounts are blocked from the panel until corrected.
 

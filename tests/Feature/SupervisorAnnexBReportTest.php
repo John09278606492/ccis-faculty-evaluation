@@ -1,8 +1,10 @@
 <?php
 
+use App\Models\CourseOffering;
 use App\Models\FormSubmission;
 use App\Models\User;
 use App\Services\EvaluationTemplates;
+use App\Services\SupervisorEvaluationAssignments;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
@@ -17,8 +19,8 @@ it('keeps SEF pending until the supervisor submits Annex B and then reports that
     $supervisor->assignRole(Role::findOrCreate('supervisor', 'web'));
     $source->course->department->update(['supervisor_id' => $supervisor->id]);
     $source->supervisorEvaluators()->attach($supervisor);
-    app(\App\Services\SupervisorEvaluationAssignments::class)->prepareSource($source);
-    $offering = \App\Models\CourseOffering::where('evaluation_type', 'SEF')->sole();
+    app(SupervisorEvaluationAssignments::class)->prepareSource($source);
+    $offering = CourseOffering::where('evaluation_type', 'SEF')->sole();
     $supervisor->givePermissionTo(Permission::findOrCreate('page_EvaluationResults', 'web'));
     $this->actingAs($supervisor)->get(route('evaluation.report', $offering))->assertOk()->assertSee('Pending supervisor evaluation');
     $this->actingAs($student)->get(route('evaluate.course-offering', $offering))->assertForbidden();

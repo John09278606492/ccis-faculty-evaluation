@@ -20,9 +20,9 @@ class SectionStudentTemplateController extends Controller
             fwrite($out, "\xEF\xBB\xBF");
             $csv = app(BackgroundTasks::class);
             $csv->row($out, [$section->name]);
-            $csv->row($out, ['ID No.', 'Lastname', 'Firstname', 'Middlename']);
-            $csv->row($out, ['SAMPLE-REPLACE-001', 'DELA CRUZ', 'JUAN', 'SANTOS']);
-            $csv->row($out, ['SAMPLE-REPLACE-002', 'REYES', 'MARIA', '']);
+            $csv->row($out, ['ID No.']);
+            $csv->row($out, ['SAMPLE-REPLACE-001']);
+            $csv->row($out, ['SAMPLE-REPLACE-002']);
             fclose($out);
         }, (Str::slug($section->name) ?: 'section').'-student-list.csv', ['Content-Type' => 'text/csv; charset=UTF-8', 'Cache-Control' => 'private, no-store']);
     }

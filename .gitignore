@@ -40,3 +40,6 @@ rr
 /work/
 
 /output/
+
+# Private campus import/reconciliation reports belong with local data, not source releases.
+/docs/reviews/

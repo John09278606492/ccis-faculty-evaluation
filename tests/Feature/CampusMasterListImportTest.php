@@ -21,6 +21,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Spatie\Permission\Models\Permission;
@@ -86,6 +87,46 @@ it('reads the original report layout and preserves zero-padded IDs without inven
     expect(auth()->getProvider()->validateCredentials($student, ['password' => 'password123']))->toBeFalse();
     $pin = StudentPins::issue(collect([$student]))->sole()['pin'];
     expect(Hash::check($pin, $student->fresh()->password))->toBeTrue();
+});
+
+it('reads needed student columns and ignores unrelated worksheets and unused formula columns', function () {
+    $file = ($this->report)([$this->row]);
+    $book = IOFactory::load($file->getRealPath());
+    try {
+        $sheet = $book->getActiveSheet();
+        $sheet->setCellValue('U8', 'Unused office notes');
+        $sheet->setCellValue('U9', '=1/0');
+        $notes = $book->createSheet()->setTitle('Unrelated office summary');
+        for ($i = 1; $i <= 15; $i++) {
+            $notes->setCellValue('A'.$i, 'Unrelated information');
+        }
+        (new Xlsx($book))->save($file->getRealPath());
+    } finally {
+        $book->disconnectWorksheets();
+    }
+    $review = $this->imports->reviewUpload($this->actor, $this->campus, $file, $this->offering->semester_id);
+    expect($review['new_students'])->toBe(1)->and($review['error_count'])->toBe(0)
+        ->and($review['subject_enrolments'])->toBe(2)->and($review['ignored_sheets'])->toBe(['Unrelated office summary']);
+});
+
+it('selects the configured period from a workbook containing multiple student reports', function () {
+    $file = ($this->report)([$this->row]);
+    $book = IOFactory::load($file->getRealPath());
+    try {
+        $second = clone $book->getActiveSheet();
+        $second->setTitle('Second semester');
+        $second->setCellValue('A6', 'Semester: 2 School Year: 2026-2027');
+        $second->setCellValue('B9', 125);
+        $book->addSheet($second);
+        (new Xlsx($book))->save($file->getRealPath());
+    } finally {
+        $book->disconnectWorksheets();
+    }
+    $review = $this->imports->reviewUpload($this->actor, $this->campus, $file, $this->offering->semester_id);
+    expect($review['new_students'])->toBe(1)->and($review['semester_id'])->toBe($this->offering->semester_id)
+        ->and($review['skipped_period_rows'])->toBe(1)->and($review['ignored_sheets'])->toContain('Second semester');
+    $this->imports->commit($this->actor, $this->campus, $review['token'], $this->offering->semester_id);
+    expect(User::where('student_id', '000123')->exists())->toBeTrue()->and(User::where('student_id', '000125')->exists())->toBeFalse();
 });
 
 it('automatically selects the report period and rejects foreign-campus or unavailable-period reports', function () {

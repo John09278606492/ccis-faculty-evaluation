@@ -82,6 +82,8 @@ class BalilihanEvaluationSeeder extends Seeder
                         $this->response($assignment, $forms['SET'], $student, $department, $index, $studentIndex + $courseIndex, '[SAMPLE] '.$code.': clear lessons and constructive feedback.');
                     }
                     if ($courseIndex === 1) {
+                        // Leadership is not an evaluator by itself; the sample selects its supervisor explicitly.
+                        $assignment->supervisorEvaluators()->syncWithoutDetaching([$head->id]);
                         $supervisorAssignment = CourseOffering::firstOrCreate(['semester_id' => $semester->id, 'course_id' => $course->id, 'user_id' => $faculty->id, 'section' => $code.' SEF'], ['form_id' => $forms['SEF']->id, 'evaluation_type' => 'SEF', 'is_active' => true]);
                     }
                 }
@@ -91,7 +93,7 @@ class BalilihanEvaluationSeeder extends Seeder
                     'created_at' => now(), 'updated_at' => now(),
                 ]);
             }
-            $this->command?->info("Balilihan Campus ({$campus->id}): CCJ, CTAS, CCIS; 30 sample students, 3 faculty, 3 heads, 9 assignments, 48 sample SET responses. Supervisor Annex B evaluations start pending.");
+            $this->command?->info("Balilihan Campus ({$campus->id}): CCJ, CTAS, CCIS; 30 sample students, 3 faculty, 3 heads, 9 assignments, 48 sample SET responses. Each sample head is explicitly selected as the Annex B evaluator; supervisor evaluations start pending.");
         });
     }
 

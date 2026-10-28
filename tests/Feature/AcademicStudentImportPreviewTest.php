@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Services\AcademicStudentImports;
 use App\Services\AcademicStudents;
 use Filament\Facades\Filament;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
@@ -90,7 +91,7 @@ it('deduplicates irregular memberships and validates repeated-ID conflicts durin
 it('retains parsed rows after temporary upload deletion and requires the review before UI commit', function () {
     Storage::fake('local');
     Storage::disk('local')->put('academic-imports/review.csv', "student_id,first_name,last_name,department_code,sections\nPREVIEW-001,Maria,Cruz,{$this->rows[0]['department_code']},BSIT 3A|BSIT 2B\n");
-    Livewire::test(ListAcademicStudents::class)->callAction('importStudents', data: ['semester_id' => $this->semester, 'file' => \Illuminate\Http\UploadedFile::fake()->createWithContent('students.csv', Storage::disk('local')->get('academic-imports/review.csv'))])->assertHasNoActionErrors();
+    Livewire::test(ListAcademicStudents::class)->callAction('importStudents', data: ['semester_id' => $this->semester, 'file' => UploadedFile::fake()->createWithContent('students.csv', Storage::disk('local')->get('academic-imports/review.csv'))])->assertHasNoActionErrors();
     $review = finishBackgroundReview();
     expect($review->payload['review_plan']['rows'])->not->toBeEmpty();
     Storage::disk('local')->assertMissing($review->payload['source']);

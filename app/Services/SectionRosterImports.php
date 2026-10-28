@@ -27,7 +27,7 @@ class SectionRosterImports
     {
         $section = $this->section($actor, $campus, $id);
         $reader = app(TeachingClassRosterImports::class);
-        $rows = $reader->read($source, $section->name);
+        $rows = $reader->read($source, $section->name, true);
         $analysis = $reader->analyzeRows($actor, $campus, $section->semester_id, $rows, $section->department_id, $section->name);
 
         return ['review' => [...$analysis['review'], 'target' => 'section', 'class_label' => $section->name,
@@ -54,8 +54,9 @@ class SectionRosterImports
             }
             $ids = array_keys($analysis['matches']);
             $added = app(AcademicSections::class)->add($actor, $campus, $section, $ids);
+            $synced = app(InstructorOfferingImports::class)->syncSection($actor, $campus, $section);
 
-            return ['row_count' => count($ids), 'added' => $added, 'message' => $added.' students added to '.$section->name.'; '.(count($ids) - $added).' already belong to this section. Other section memberships and existing teaching-class evaluator lists were preserved. Select this saved section when assigning a Teaching Class.'];
+            return ['row_count' => count($ids), 'added' => $added, 'synced_classes' => $synced, 'message' => $added.' students added to '.$section->name.'; '.(count($ids) - $added).' already belong to this section. '.$synced.' imported draft class rosters updated. Prepared evaluations and customized evaluator lists were preserved.'];
         });
     }
 }

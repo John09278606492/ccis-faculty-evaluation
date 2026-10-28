@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Concerns\HasBuilderWorkspaceDraft;
 use App\Models\Quiz;
 use App\Models\QuizQuestion;
 use App\Support\CodeProject;
@@ -11,7 +12,8 @@ use Livewire\Attributes\Locked;
 
 class QuizBuilder extends Page
 {
-    use \App\Filament\Concerns\HasBuilderWorkspaceDraft;
+    use HasBuilderWorkspaceDraft;
+
     protected static string $view = 'filament.pages.quiz-builder';
 
     protected static bool $shouldRegisterNavigation = false;

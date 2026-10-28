@@ -1,10 +1,9 @@
-<div data-workspace-draft wire:key="workspace-draft-{{ $this->getId() }}" class="rounded-xl border border-primary-200 bg-primary-50 p-4 text-sm text-gray-900 dark:border-primary-800 dark:bg-gray-900 dark:text-gray-100" x-data="{ draftReady: false }">
+<div data-workspace-draft wire:key="workspace-draft-{{ $this->getId() }}" class="text-xs text-gray-600 dark:text-gray-400" x-data="{ draftReady: false }">
     <div class="flex flex-wrap items-center justify-between gap-3">
         <div aria-live="polite">
-            <strong>{{ $this->workspaceDraftHeading() }}</strong>
-            <span x-show="$wire.workspaceDraftAvailable"> — You have unfinished changes here.</span>
-            <span x-show="! $wire.workspaceDraftAvailable" data-draft-status wire:ignore>Changes are kept here as you work.</span>
-            <p class="mt-1 text-xs text-gray-600 dark:text-gray-400">Private to your account in this campus. A draft does not submit or publish anything. Kept for 30 days; uploaded files must be selected again.</p>
+            <span x-show="$wire.workspaceDraftAvailable">Unfinished draft available.</span>
+            <span x-show="! $wire.workspaceDraftAvailable" data-draft-status wire:ignore>Drafts save automatically.</span>
+            <p x-show="$wire.workspaceDraftAvailable" class="mt-1">Saved for 30 days. Select uploaded files again when resuming.</p>
         </div>
         <div class="flex gap-3">
             <x-filament::button size="sm" x-on:click="$wire.__instance.workspaceDraft?.resume()" wire:target="resumeWorkspaceDraft" wire:loading.attr="disabled" x-bind:disabled="! draftReady" x-show="$wire.workspaceDraftAvailable">Resume draft</x-filament::button>

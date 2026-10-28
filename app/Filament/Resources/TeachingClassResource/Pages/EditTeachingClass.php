@@ -2,9 +2,9 @@
 
 namespace App\Filament\Resources\TeachingClassResource\Pages;
 
+use App\Filament\Pages\DraftEditRecord as EditRecord;
 use App\Filament\Resources\TeachingClassResource;
 use App\Services\TeachingClasses;
-use App\Filament\Pages\DraftEditRecord as EditRecord;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\ValidationException;
 
@@ -33,6 +33,6 @@ class EditTeachingClass extends EditRecord
 
     public function getSubheading(): ?string
     {
-        return 'Upload student lists under Academic Management → Sections. Here, use Evaluators → Assign Evaluators by Section for this faculty member and academic period.';
+        return 'Match enrolled students or choose saved sections, then select supervisor evaluators.';
     }
 }

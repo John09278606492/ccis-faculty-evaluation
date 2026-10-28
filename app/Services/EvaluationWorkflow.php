@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Filament\Pages\BackgroundProcessing;
 use App\Filament\Pages\EvaluationResults;
 use App\Filament\Pages\StudentEvaluationProgress;
 use App\Filament\Resources\AcademicStudentResource;
@@ -16,28 +15,41 @@ class EvaluationWorkflow
 {
     public function steps(): array
     {
-        if (! auth()->user() || auth()->user()->isStudent() || ! filament()->getTenant() || ! auth()->user()->canAccessTenant(filament()->getTenant())) return [];
+        if (! auth()->user() || auth()->user()->isStudent() || ! filament()->getTenant() || ! auth()->user()->canAccessTenant(filament()->getTenant())) {
+            return [];
+        }
         $steps = [];
-        $records = [];
-        if (AcademicStudentResource::canViewAny()) $records[] = ['label' => 'Student Master List', 'url' => AcademicStudentResource::getUrl()];
-        if (SectionResource::canViewAny()) $records[] = ['label' => 'Sections', 'url' => SectionResource::getUrl()];
-        if ($records) {
-            if (BackgroundProcessing::canAccess()) $records[] = ['label' => 'Review / Confirm Uploads', 'url' => BackgroundProcessing::getUrl()];
-            $steps[] = ['number' => 1, 'title' => 'Students & sections', 'description' => 'Import the campus master list and confirm it. Then upload each section’s students.', 'links' => $records];
+        if (AcademicStudentResource::canViewAny()) {
+            $steps[] = ['number' => 1, 'title' => 'Students', 'description' => 'Upload and confirm the campus student list.',
+                'links' => [['label' => 'Students', 'url' => AcademicStudentResource::getUrl()]]];
+        }
+        if (SectionResource::canViewAny()) {
+            $steps[] = ['number' => 2, 'title' => 'Sections', 'description' => 'Prepare section lists now, or assign sections after matching enrolled students.',
+                'links' => [['label' => 'Sections', 'url' => SectionResource::getUrl()]]];
         }
         if (TeachingClassResource::canViewAny()) {
-            $steps[] = ['number' => 2, 'title' => 'Teaching classes', 'description' => 'Choose the faculty and subject. Assign the saved sections and any individual exceptions.',
+            $steps[] = ['number' => 3, 'title' => 'Teaching Classes', 'description' => 'Match enrolled students or use section lists, then select supervisors.',
                 'links' => [['label' => 'Teaching Classes', 'url' => TeachingClassResource::getUrl()]]];
         }
         $setup = EvaluationCycleResource::canViewAny();
-        $links = $setup ? [['label' => 'Evaluation Setup', 'url' => EvaluationCycleResource::getUrl()]] : [];
-        if (FormResource::canViewAny()) $links[] = ['label' => 'Evaluation Forms', 'url' => FormResource::getUrl()];
-        if ($links) $steps[] = ['number' => 3, 'title' => $setup ? 'Open evaluations' : 'Evaluation forms',
-            'description' => $setup ? 'Choose Annex A/B, dates and prepared classes. Review the setup, then open the evaluation.' : 'Prepare Annex A/B forms for the staff who manage the evaluation schedule.', 'links' => $links];
+        $links = $setup ? [['label' => 'Evaluations', 'url' => EvaluationCycleResource::getUrl()]] : [];
+        if (FormResource::canViewAny()) {
+            $links[] = ['label' => 'Form Templates', 'url' => FormResource::getUrl()];
+        }
+        if ($links) {
+            $steps[] = ['number' => 4, 'title' => $setup ? 'Evaluations' : 'Form Templates',
+                'description' => $setup ? 'Prepare department drafts, include ready classes and review before opening. Dates are optional.' : 'Prepare the student and supervisor forms.', 'links' => $links];
+        }
         $reports = [];
-        if (StudentEvaluationProgress::canAccess()) $reports[] = ['label' => 'Monitor Student Progress', 'url' => StudentEvaluationProgress::getUrl()];
-        if (EvaluationResults::canAccess()) $reports[] = ['label' => 'Faculty Results', 'url' => EvaluationResults::getUrl()];
-        if ($reports) $steps[] = ['number' => 4, 'title' => 'Monitor & print', 'description' => 'Follow up by section or student. Review SET/SEF and preview or print reports.', 'links' => $reports];
+        if (EvaluationResults::canAccess()) {
+            $reports[] = ['label' => 'Results & Reports', 'url' => EvaluationResults::getUrl()];
+        }
+        if (StudentEvaluationProgress::canAccess()) {
+            $reports[] = ['label' => 'Student Progress', 'url' => StudentEvaluationProgress::getUrl()];
+        }
+        if ($reports) {
+            $steps[] = ['number' => 5, 'title' => 'Results', 'description' => 'Check completion and print reports.', 'links' => $reports];
+        }
 
         return $steps;
     }
@@ -45,9 +57,10 @@ class EvaluationWorkflow
     public function resourceStep(string $resource): ?int
     {
         return match ($resource) {
-            AcademicStudentResource::class, SectionResource::class => 1,
-            TeachingClassResource::class => 2,
-            EvaluationCycleResource::class, FormResource::class => 3,
+            AcademicStudentResource::class => 1,
+            SectionResource::class => 2,
+            TeachingClassResource::class => 3,
+            EvaluationCycleResource::class, FormResource::class => 4,
             default => null,
         };
     }

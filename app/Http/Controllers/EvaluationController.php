@@ -115,7 +115,7 @@ class EvaluationController extends Controller
                 }
                 $lockedForm = Form::query()->lockForUpdate()->findOrFail($form->id);
 
-                $currentAssignment = $courseOffering->fresh();
+                $currentAssignment = CourseOffering::query()->lockForUpdate()->findOrFail($courseOffering->id);
                 $this->access->authorize($currentAssignment, $request->user());
                 if (! $currentAssignment->isEvaluationAvailable()) {
                     throw new AuthorizationException('This evaluation form is no longer available.');
@@ -127,7 +127,10 @@ class EvaluationController extends Controller
                     'submission_fingerprint' => $fingerprint,
                     'user_id' => null,
                     'evaluator_identity' => $request->user() ? ['name' => $request->user()->name, 'student_id' => $request->user()->student_id] : null,
-                    'data' => $fieldData,
+                    'data' => $request->user()?->isStudent() ? [...$fieldData, '_evaluation_context' => [
+                        'section' => app(\App\Services\EvaluationSections::class)->forStudent($currentAssignment, $request->user()),
+                        'recorded_at' => now()->toIso8601String(),
+                    ]] : $fieldData,
                     'ip_address' => null,
                     'user_agent' => null,
                     'submitted_at' => now(),

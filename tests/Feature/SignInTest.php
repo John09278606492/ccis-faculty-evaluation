@@ -85,6 +85,15 @@ it('allows a waiting student to continue after a PIN is issued and reset the sel
     expect(auth()->check())->toBeFalse();
 });
 
+it('does not treat a student role as staff when the profile flag is inconsistent', function () {
+    ['student' => $student] = evaluationFixture();
+    $student->update(['is_student' => false, 'password' => Hash::make('Student-Profile-Check!2026')]);
+    Livewire::test(Login::class)->call('toggleStaffLogin')
+        ->set('data.login', $student->email)->set('data.password', 'Student-Profile-Check!2026')
+        ->call('authenticate')->assertHasErrors('data.login');
+    expect(auth()->check())->toBeFalse();
+});
+
 it('keeps PIN controls out of the evaluation class list', function () {
     ['student' => $student, 'offering' => $offering] = evaluationFixture();
     $student->update(['student_id' => '2026-0001']);
@@ -151,12 +160,13 @@ it('keeps evaluation PIN controls absent for administrative roles', function (st
 
 it('keeps staff password authentication available', function () {
     evaluationFixture();
+    $this->withSession(['evaluation.student_id' => 123, 'evaluation.expires_at' => now()->addMinutes(30)->timestamp]);
     $admin = User::factory()->create(['is_student' => false, 'password' => Hash::make('Staff-Secret!2026')]);
     $admin->assignRole('super_admin');
     Livewire::test(Login::class)->call('toggleStaffLogin')
         ->set('data.login', $admin->email)->set('data.password', 'Staff-Secret!2026')
         ->call('authenticate')->assertHasNoErrors();
-    expect(auth()->id())->toBe($admin->id);
+    expect(auth()->id())->toBe($admin->id)->and(session()->has('evaluation'))->toBeFalse();
 });
 
 it('rechecks PIN assignment before authenticating a selected student', function () {

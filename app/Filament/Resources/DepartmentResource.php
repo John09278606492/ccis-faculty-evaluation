@@ -20,7 +20,7 @@ class DepartmentResource extends Resource
 
     protected static ?string $navigationGroup = 'Academic Management';
 
-    protected static ?int $navigationSort = 1;
+    protected static ?int $navigationSort = 2;
 
     public static function form(Form $form): Form
     {
@@ -45,11 +45,21 @@ class DepartmentResource extends Resource
                             ->default(true),
                     ])->columns(2),
                 Forms\Components\Section::make('Department Leadership')
-                    ->description('Set the department leadership for access and report signatories. Annex B evaluators are selected separately for each faculty under Teaching Classes; leadership does not automatically assign evaluations.')
-                    ->schema(array_map(fn ($field) => Forms\Components\Select::make($field)
+                    ->description('Use the department supervisor to fill missing Annex B assignments in bulk. Individual Teaching Class supervisor selections are kept and can still be edited.')
+                    ->schema([...array_map(fn ($field) => Forms\Components\Select::make($field)
                         ->label($field === 'supervisor_id' ? 'Dean / Department Head' : 'Chairperson')
                         ->options(fn () => User::where('is_student', false)->whereHas('roles')->whereHas('campuses', fn ($q) => $q->where('campuses.id', filament()->getTenant()?->id))->orderBy('name')->pluck('name', 'id'))
-                        ->searchable()->preload()->placeholder('Not assigned'), ['supervisor_id', 'chairperson_id']))->columns(2),
+                        ->searchable()->preload()->placeholder('Not assigned')->live()
+                        ->afterStateUpdated(function (Forms\Set $set, $state) use ($field) {
+                            if ($field === 'supervisor_id') $set('fill_missing_supervisors', filled($state));
+                        }), ['supervisor_id', 'chairperson_id']),
+                        Forms\Components\Toggle::make('fill_missing_supervisors')->label('Fill missing class supervisors when saving')->default(false)->live()
+                            ->visible(fn (Forms\Get $get) => filled($get('supervisor_id')) && app(\App\Services\DepartmentSupervisorAssignments::class)->allowed(auth()->user(), filament()->getTenant()))
+                            ->helperText('Adds the selected Dean / Department Head only where no supervisor is assigned. Existing selections and additional supervisors are preserved.'),
+                        Forms\Components\Select::make('supervisor_academic_period')->label('Academic period for bulk assignment')
+                            ->options(fn () => \App\Services\AcademicPeriod::options(filament()->getTenant()))->default(fn () => \App\Services\AcademicPeriod::current(filament()->getTenant()))
+                            ->visible(fn (Forms\Get $get) => (bool) $get('fill_missing_supervisors'))->required(fn (Forms\Get $get) => (bool) $get('fill_missing_supervisors')),
+                    ])->columns(2),
             ]);
     }
 

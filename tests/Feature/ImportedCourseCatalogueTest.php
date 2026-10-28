@@ -1,5 +1,6 @@
 <?php
 
+use App\Filament\Pages\BackgroundProcessing;
 use App\Filament\Resources\AcademicStudentResource\Pages\ListAcademicStudents;
 use App\Filament\Resources\CourseResource\Pages\CreateCourse;
 use App\Models\Campus;
@@ -134,7 +135,7 @@ it('synchronizes already imported subjects through the review wizard without rep
     Livewire::test(ListAcademicStudents::class)->callAction('syncImportedCourses', data: ['semester_id' => $this->offering->semester_id, 'department_codes' => [$this->department->code]])->assertHasNoActionErrors();
     expect(Course::count())->toBe(1);
     $reviewTask = finishBackgroundReview();
-    Livewire::test(\App\Filament\Pages\BackgroundProcessing::class)->mountTableAction('view', $reviewTask)->assertSee('New Subject');
+    Livewire::test(BackgroundProcessing::class)->mountTableAction('view', $reviewTask)->assertSee('New Subject');
     confirmBackgroundReview($reviewTask);
     expect(Course::count())->toBe(2)->and($this->offering->students()->pluck('users.id')->all())->toBe($originalRoster)
         ->and($response->fresh()->data)->toBe(['teaching_quality' => 5]);

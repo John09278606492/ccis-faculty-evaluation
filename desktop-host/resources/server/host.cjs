@@ -7,6 +7,7 @@ const path = require('node:path');
 const zlib = require('node:zlib');
 const { spawn, spawnSync } = require('node:child_process');
 const { RestartPolicy } = require('./restart-policy.cjs');
+const { campusLinks } = require('./network-links.cjs');
 const [project, php, rawPort, statusFile] = process.argv.slice(2);
 const port = Number(rawPort);
 const wsPort = port + 7;
@@ -24,6 +25,8 @@ const serviceStates = new Map();
 const restartTimers = new Set();
 let stopping = false;
 let gateway;
+let lastNetworkLinks = '';
+let lastStatus;
 // Never pass the desktop application's SQLite, encryption key, or NativePHP API
 // credentials into the shared Laravel application.
 const env = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
@@ -66,16 +69,23 @@ function artisan(...args) {
     return spawnSync(php, ['-d', 'opcache.enable_cli=0', 'artisan', ...args], { cwd: project, env, windowsHide: true, timeout: 60000, stdio: 'ignore' });
 }
 function status(state, message) {
-    const links = Object.entries(os.networkInterfaces()).flatMap(([name, addresses]) =>
-        addresses.filter(a => a.family === 'IPv4' && !a.internal && !a.address.startsWith('169.254.'))
-            .map(a => ({ name, url: `http://${a.address}:${port}` })))
-        .sort((a, b) => Number(/wi-fi|wireless/i.test(b.name)) - Number(/wi-fi|wireless/i.test(a.name)));
+    const links = campusLinks(os.networkInterfaces(), port);
+    lastNetworkLinks = JSON.stringify(links);
+    lastStatus = { state, message };
     fs.writeFileSync(statusFile + '.tmp', JSON.stringify({ state, message, health: [...serviceStates.values()].some(service => service.state !== 'running') ? 'degraded' : 'healthy', services: [...serviceStates.values()], links, port, pid: process.pid, updatedAt: new Date().toISOString() }));
     fs.renameSync(statusFile + '.tmp', statusFile);
 }
+const networkMonitor = setInterval(() => {
+    if (!stopping && gateway?.listening && lastStatus
+        && JSON.stringify(campusLinks(os.networkInterfaces(), port)) !== lastNetworkLinks) {
+        status(lastStatus.state, lastStatus.message);
+    }
+}, 5000);
+networkMonitor.unref();
 function stop(message, failed = false) {
     if (stopping) return;
     stopping = true;
+    clearInterval(networkMonitor);
     status(failed ? 'error' : 'stopping', message);
     gateway?.close();
     for (const timer of restartTimers) clearTimeout(timer);

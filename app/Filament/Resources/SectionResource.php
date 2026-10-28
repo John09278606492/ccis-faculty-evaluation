@@ -37,7 +37,7 @@ class SectionResource extends Resource
 
     protected static ?string $recordTitleAttribute = 'name';
 
-    protected static ?int $navigationSort = 6;
+    protected static ?int $navigationSort = 5;
 
     public static function canViewAny(): bool
     {
@@ -80,18 +80,18 @@ class SectionResource extends Resource
     public static function form(Form $form): Form
     {
         return $form->schema([
-            Forms\Components\Section::make('Section')->description('Create the section, then upload its student list in the Students tab. Reuse the saved section in Teaching Classes.')->schema([
+            Forms\Components\Section::make('Section Details')->schema([
                 Forms\Components\Select::make('semester_id')->label('Academic Period')->required()->options(fn () => AcademicPeriod::options(filament()->getTenant()))->default(fn () => AcademicPeriod::current(filament()->getTenant())),
                 Forms\Components\Select::make('department_id')->label('Department')->required()->searchable()->options(fn () => app(AcademicStudents::class)->departments(auth()->user(), filament()->getTenant())->pluck('name', 'id')),
-                Forms\Components\TextInput::make('name')->label('Section name')->placeholder('BSIT 3A')->required()->maxLength(50)->helperText('Include the program, year and section in this name. No separate year-level field is needed.'),
-                Forms\Components\Toggle::make('is_active')->label('Active')->default(true)->helperText('Inactive sections keep their students and history, but cannot be selected for new class assignments.'),
+                Forms\Components\TextInput::make('name')->label('Section name')->placeholder('BSIT 3A')->required()->maxLength(50),
+                Forms\Components\Toggle::make('is_active')->label('Active')->default(true)->helperText('Inactive sections cannot be assigned to new classes.'),
             ])->columns(2),
         ]);
     }
 
     public static function table(Table $table): Table
     {
-        return $table->description('Upload students once per section. Teaching Classes select these saved sections and individual exceptions.')->columns([
+        return $table->columns([
             Tables\Columns\TextColumn::make('name')->label('Section')->searchable()->sortable(),
             Tables\Columns\TextColumn::make('department.code')->label('Department')->badge(),
             Tables\Columns\TextColumn::make('semester.name')->label('Academic Period')->description(fn ($record) => $record->semester->schoolYear->name),
@@ -103,7 +103,7 @@ class SectionResource extends Resource
             Tables\Filters\SelectFilter::make('department_id')->label('Department')->options(fn () => app(AcademicStudents::class)->departments(auth()->user(), filament()->getTenant())->pluck('name', 'id')),
             Tables\Filters\SelectFilter::make('is_active')->label('Status')->options(['1' => 'Active', '0' => 'Inactive'])->default('1'),
         ], layout: FiltersLayout::AboveContent)->filtersFormColumns(3)->actions([
-            Tables\Actions\ViewAction::make()->label('Upload / Manage Students')->icon('heroicon-o-user-group')
+            Tables\Actions\ViewAction::make()->label('Students')->icon('heroicon-o-user-group')
                 ->url(fn (AcademicSection $record) => static::getUrl('view', ['record' => $record, 'activeRelationManager' => '0'])),
             Tables\Actions\EditAction::make(),
         ])->defaultSort('name');

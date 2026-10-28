@@ -20,6 +20,8 @@ class Login extends BaseLogin
 {
     protected static string $view = 'filament.pages.login';
 
+    protected static string $layout = 'filament.layouts.bisu-login';
+
     /**
      * Students select their ID before entering an issued PIN. Staff use a password.
      */
@@ -96,7 +98,7 @@ class Login extends BaseLogin
             ->first();
 
         // Student accounts must complete the ID/PIN flow even when staff mode is selected.
-        if ($this->showPasswordField && $user?->is_student) {
+        if ($this->showPasswordField && $user?->isStudent()) {
             $this->throwFailureValidationException();
         }
 
@@ -127,6 +129,9 @@ class Login extends BaseLogin
         }
 
         session()->regenerate();
+        if ($this->showPasswordField) {
+            session()->forget('evaluation');
+        }
         StudentSignIns::cancel();
 
         return app(LoginResponse::class);

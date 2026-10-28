@@ -5,7 +5,8 @@ try {
     if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
         throw 'Windows requires administrator rights to add this scoped firewall rule. Right-click Enable-Campus-Access.cmd and choose Run as administrator.'
     }
-    $nodeExe = (Get-Command node -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+    $portableNode = Join-Path (Split-Path $PSScriptRoot -Parent) 'runtime/node/node.exe'
+    $nodeExe = if (Test-Path -LiteralPath $portableNode) { $portableNode } else { (Get-Command node -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source }
     $statusFile = Join-Path (Split-Path $PSScriptRoot -Parent) 'storage/app/campus-server.json'
     if (Test-Path -LiteralPath $statusFile) {
         $state = Get-Content -LiteralPath $statusFile -Raw | ConvertFrom-Json

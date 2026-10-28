@@ -32,7 +32,7 @@ export function mountWorkspaceDraft(wire, component, config, initialState) {
     let last = JSON.stringify(initialState ?? collect());
     const status = message => {
         const el = component.el.querySelector('[data-draft-status]');
-        if (el) el.textContent = ` — ${message}`;
+        if (el) el.textContent = message;
     };
     const active = () => !config.action || wire.mountedTableActions?.at(-1) === config.action;
     const dirty = () => active() && JSON.stringify(collect()) !== last;

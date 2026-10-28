@@ -1,14 +1,17 @@
 param([ValidateRange(1024,65480)][int]$Port = 8020, [switch]$NoBrowser)
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
-$phpExe = (Get-Command php -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
-$nodeExe = (Get-Command node -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+$portablePhp = Join-Path $PSScriptRoot 'runtime/php/php.exe'
+$portableNode = Join-Path $PSScriptRoot 'runtime/node/node.exe'
+$phpExe = if (Test-Path -LiteralPath $portablePhp) { $portablePhp } else { (Get-Command php -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source }
+$nodeExe = if (Test-Path -LiteralPath $portableNode) { $portableNode } else { (Get-Command node -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source }
 $statusFile = Join-Path $PSScriptRoot 'storage/app/campus-server.json'
 $interfaces = @(Get-NetIPConfiguration | Where-Object { $_.IPv4DefaultGateway -and $_.IPv4Address })
 if (-not $interfaces.Count) { $interfaces = @(Get-NetIPConfiguration | Where-Object { $_.IPv4Address }) }
 $addresses = @($interfaces | ForEach-Object { $_.IPv4Address.IPAddress } | Where-Object { $_ -notmatch '^(127\.|169\.254\.)' } | Select-Object -Unique)
 $browserUrl = "http://127.0.0.1:$Port"
-if ($addresses.Count) { $browserUrl = "http://$($addresses[0]):$Port" }
+$publicUrl = $browserUrl
+if ($addresses.Count) { $publicUrl = "http://$($addresses[0]):$Port" }
 $listener = Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue
 if ($listener) {
     $existing = $null
@@ -20,7 +23,7 @@ if ($listener) {
     if (Test-Path -LiteralPath $statusFile) { Remove-Item -LiteralPath $statusFile }
     $previousUrl = $env:CAMPUS_PUBLIC_URL
     try {
-        $env:CAMPUS_PUBLIC_URL = $browserUrl
+        $env:CAMPUS_PUBLIC_URL = $publicUrl
         $arguments = '"{0}" "{1}" "{2}" {3}' -f (Join-Path $PSScriptRoot 'scripts/campus-server.cjs'), $PSScriptRoot, $phpExe, $Port
         $server = Start-Process -FilePath $nodeExe -ArgumentList $arguments -WorkingDirectory $PSScriptRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput 'storage/logs/campus.log' -RedirectStandardError 'storage/logs/campus-error.log'
     } finally { $env:CAMPUS_PUBLIC_URL = $previousUrl }

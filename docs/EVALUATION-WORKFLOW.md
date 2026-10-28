@@ -1,39 +1,47 @@
-# Faculty evaluation: where to work
+# Faculty evaluation workflow
 
-Follow the four steps shown on the Dashboard and on the related setup pages.
-Links appear only when the signed-in account has the corresponding permission.
-Campus and department access checks remain enforced by the existing pages/services.
+The main path is **Students → Sections → Teaching Classes → Evaluations → Results**.
+Each page shows a short description, a compact workflow row, and a **Guide me** button.
+Links remain limited by campus, department and permissions. Filters stay visible.
 
-1. **Students & sections** — In Academic Management → Student Master List, upload
-   the campus CSV/Excel file, then open Review / Confirm Uploads. Confirm the reviewed
-   import. In Sections, upload and confirm each section's student list against that
-   master list. A student may belong to multiple sections.
-2. **Teaching classes** — In Faculty Evaluation → Teaching Classes, choose the faculty,
-   subject and academic period. Under Evaluators, assign the saved sections and any
-   explicit individual exceptions. This determines who will evaluate that instructor.
-3. **Open evaluations** — In Faculty Evaluation → Evaluation Setup, choose Annex A
-   (students), Annex B (supervisors), opening/closing dates and the prepared classes.
-   **Save & Review** saves the current edits and opens the readiness checklist.
-   **Open evaluation** publishes only after explicit confirmation and validation.
-   Responses are accepted during the selected dates. Evaluation Forms contains the
-   reusable Annex templates and their editable duplicates.
-4. **Monitor & print** — Monitor Student Progress shows completion and follow-ups by
-   student or section. Evaluation Reports contains Faculty Results, individual Annex
-   copies, department summaries and personal released results, subject to permissions.
+1. **Students** — Upload the campus student list. Select **Check File**, then open
+   **Review Uploads** to inspect the results and **Confirm Import**. New departments
+   and courses appear in the review before they are created.
+2. **Sections** — Create a section and open **Students**. Download **CSV Template**,
+   upload the list, check the matched identities and confirm. Students must already
+   exist in Students; a student can belong to multiple sections.
+3. **Teaching Classes** — Choose the faculty, subject and academic period. Use
+   **Assign Sections** to select sections and supervisors. Turn on **Add or exclude
+   students** only for individual exceptions. Review the changes before saving.
+4. **Evaluations** — Choose the classes, dates, Annex A and Annex B. Save unfinished
+   work as a draft. **Review & Open** saves the current edits and checks readiness;
+   **Open evaluation** requires confirmation. Responses follow the scheduled dates.
+5. **Results & Reports** — View scores, tallies and print previews. **Student Progress**
+   shows completion by section or student without exposing ratings or comments.
 
-**Academic period** means the semester and school year. **Evaluation Setup** means
-the forms, included teaching classes and response schedule within that semester.
-The former “Evaluation Cycles” page is now named “Evaluation Setup”; existing URLs,
-records, permissions, schedules, drafts and historical results are retained.
+**Form Templates** is under Administration for occasional template changes.
+**Uploads & Downloads** keeps background task reviews and private downloads.
+**More Statistics** on the Dashboard expands the additional charts. Draft notices
+are compact; unfinished edits still remain private to the account and campus.
 
-Supervisors answer Annex B through **My Supervisor Tasks**. Students use their own
+Staff Accounts has a direct **Import Instructors** action and a **CSV Template**
+button. This importer creates teaching faculty, so other staff profiles should be
+created with **Add Staff**. Its required CSV fields are `first_name`, `last_name`,
+`email` and `employee_id`; middle name, position and phone are optional. The template
+contains sample values to replace. Excel files must be saved as CSV for this importer.
+
+Supervisors answer Annex B through **My Work → My Supervisor Tasks**, and only after they are
+selected for that faculty in Teaching Classes → Evaluators. Being a Dean or Chairperson
+(Department Leadership) or holding a role listed on a form never makes someone an evaluator. Students use their own
 evaluation entry flow. PIN and approval controls remain exclusive to assessments.
-Assessments and administration stay separate from faculty evaluation and their
-sidebar groups start collapsed. The Dashboard prioritizes the evaluation steps.
+Staff personal work (My Supervisor Tasks, My Evaluation Results) sits in **My Work**
+at the top of the sidebar. Assessments and Administration (staff accounts, roles,
+access, campuses, settings) stay separate from faculty evaluation and their sidebar
+groups start collapsed. The Dashboard prioritizes the evaluation steps.
 # Supervisor selection and visiting faculty
 
-In **Teaching Classes → Evaluators → Assign Evaluators by Section**, choose the
-student sections and **Supervisor evaluators** for that faculty assignment. Every
+In **Teaching Classes → Evaluators → Assign Sections**, choose the
+student sections and **Supervisors** for that faculty assignment. Every
 Annex B evaluator must be explicitly selected, including a Dean or Chairperson.
 Department Leadership identifies the organizational heads for department access
 and report signatories; it never automatically assigns faculty evaluations.

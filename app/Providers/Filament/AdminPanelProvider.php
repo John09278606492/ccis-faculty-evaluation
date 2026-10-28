@@ -5,6 +5,7 @@ namespace App\Providers\Filament;
 use App\Filament\AvatarProviders\InitialsAvatarProvider;
 use App\Filament\Pages\Dashboard;
 use App\Filament\Pages\Login;
+use App\Filament\Plugins\CampusTourPlugin;
 use App\Http\Middleware\EnsurePasswordIsChanged;
 use App\Http\Middleware\ScopeAssignedData;
 use App\Models\Campus;
@@ -61,6 +62,7 @@ class AdminPanelProvider extends PanelProvider
         return $panel
             ->default()
             ->id('admin')
+            ->favicon(asset('images/bisu/favicon-36.png'))
             ->defaultThemeMode(ThemeMode::Light)
             ->path('')
             ->when($this->settings?->login_enabled ?? true, fn ($panel) => $panel->login(Login::class))
@@ -89,6 +91,7 @@ class AdminPanelProvider extends PanelProvider
             ->widgets([])
             ->navigationGroups([
                 NavigationGroup::make('My Learning')->icon('heroicon-o-academic-cap'),
+                NavigationGroup::make('My Work')->icon('heroicon-o-inbox-stack'),
                 NavigationGroup::make('Academic Management')->icon('heroicon-o-building-library'),
                 NavigationGroup::make('Faculty Evaluation')->icon('heroicon-o-clipboard-document-list'),
                 NavigationGroup::make('Evaluation Reports')->icon('heroicon-o-chart-bar'),
@@ -114,6 +117,7 @@ class AdminPanelProvider extends PanelProvider
             ->spaUrlExceptions([
                 '*/background-downloads/*',
                 '*/section-student-template/*',
+                '*/instructor-offerings-template/*',
                 '*/evaluate/*',
                 '*/form-preview/*',
                 '*/quiz-submissions/*',
@@ -135,6 +139,7 @@ class AdminPanelProvider extends PanelProvider
             ->databaseNotifications()
             ->renderHook(PanelsRenderHook::HEAD_START, fn () => view('filament.partials.light-first'))
             ->renderHook(PanelsRenderHook::CONTENT_START, fn () => Blade::render('@livewire("workspace-context")'))
+            ->renderHook(PanelsRenderHook::PAGE_HEADER_ACTIONS_AFTER, fn () => view('filament.partials.guided-help'))
             ->renderHook(PanelsRenderHook::BODY_END, fn () => view('filament.partials.live-connection'))
             // Multi-tenancy with Campus
             ->tenant(Campus::class)
@@ -146,6 +151,7 @@ class AdminPanelProvider extends PanelProvider
     private function getPlugins(): array
     {
         $plugins = [
+            CampusTourPlugin::make()->onlyVisibleOnce()->enableCssSelector(false),
             // ThemesPlugin::make(), // Disabled - causes tenant error before tenant is selected
             FilamentShieldPlugin::make(),
             ApiServicePlugin::make(),

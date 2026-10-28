@@ -8,6 +8,7 @@ let booted = false;
 let staff = false;
 let liveReady = false;
 let subscribedChannels = new Set();
+let checkingFallback = false;
 const panelRefresh = new PanelRefreshQueue({
     components: () => window.Livewire?.all() || [],
     focused: () => document.activeElement,
@@ -29,8 +30,9 @@ function status(message, connected = false) {
 }
 
 function refreshRelatedViews(event = { kind: 'reconnected', quizId: null, courseId: null }) {
-    // Exam progress and tab-leave updates only matter to instructors watching attempts.
-    if (!staff && ['focus', 'progress'].includes(event.kind)) return;
+    // Exam progress, tab-leave and attempt updates only matter to instructors watching attempts.
+    // A student's own attempt changes arrive on their private channel instead.
+    if (!staff && ['focus', 'progress', 'attempt'].includes(event.kind)) return;
     if (window.Livewire) window.Livewire.dispatch('classroom-push', event);
     if (!['focus', 'progress'].includes(event.kind)) panelRefresh.mark({ skipPushHandlers: true, kind: event.kind });
 }
@@ -65,7 +67,9 @@ function connect() {
         wsHost: config.host || window.location.hostname,
         wsPort: config.port, wssPort: config.port,
         forceTLS: (config.scheme || window.location.protocol.replace(':', '')) === 'https',
-        enabledTransports: ['ws', 'wss'],
+        // Pusher's "ws" transport already uses wss when forceTLS is true.
+        // A separate wss fallback on the campus HTTP port cannot complete TLS.
+        enabledTransports: ['ws'],
         authEndpoint: '/broadcasting/auth',
         auth: { headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '' } },
     });
@@ -89,7 +93,10 @@ function connect() {
         echo.private(channel)
             .subscribed(() => { channelReady(channel); schedulePanelRefresh(); })
             .error(() => { subscribedChannels.delete(channel); liveReady = false; status('Live updates unavailable — retrying automatically'); })
-            .listen('.panel.changed', schedulePanelRefresh);
+            .listen('.panel.changed', event => {
+                if (event?.kind === 'attempt' && window.Livewire) window.Livewire.dispatch('classroom-push', event);
+                schedulePanelRefresh(event);
+            });
     }
     // Filament's notification bell listens on window.Echo once it announces itself.
     window.Echo = echo;
@@ -103,16 +110,27 @@ function boot() {
         if (echo?.socketId()) options.headers['X-Socket-ID'] = echo.socketId();
     });
     connect();
-    document.addEventListener('livewire:navigated', connect);
-    document.addEventListener('livewire:navigating', () => panelRefresh.reset());
+    document.addEventListener('livewire:navigated', () => { panelRefresh.resume(); connect(); });
+    document.addEventListener('livewire:navigating', () => panelRefresh.pause());
     document.addEventListener('focusout', () => panelRefresh.schedule(300));
     document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshRelatedViews(); });
     window.addEventListener('online', () => { echo?.connector.pusher.connect(); refreshRelatedViews(); });
+    window.addEventListener('offline', () => status('Connection lost — check your Wi-Fi or campus address.'));
     // Reverb is primary; a temporary socket outage still catches up automatically.
-    setInterval(() => {
-        if (!document.hidden && navigator.onLine && activeChannel && !liveReady) {
+    setInterval(async () => {
+        if (document.hidden || !navigator.onLine || !activeChannel || liveReady || checkingFallback) return;
+        checkingFallback = true;
+        try {
+            // An old campus IP may still look "online" to the browser. Probe first
+            // rather than queueing more component refreshes against an unreachable server.
+            const response = await fetch('/up', { cache: 'no-store', signal: AbortSignal.timeout(3000) });
+            if (!response.ok) throw new Error('Server unavailable');
             status('Auto updates active — reconnecting live connection…');
-            refreshRelatedViews();
+            if (!liveReady) refreshRelatedViews();
+        } catch {
+            status('Connection lost — check your Wi-Fi or campus address.');
+        } finally {
+            checkingFallback = false;
         }
     }, 20000);
 }

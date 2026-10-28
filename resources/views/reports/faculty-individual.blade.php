@@ -1,4 +1,5 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Individual Faculty Evaluation Report — {{ $offering->evaluatee->name }}</title>@include('reports.report-styles')</head><body>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Individual Faculty Evaluation Report — {{ $offering->evaluatee->name }}</title>
+<x-bisu-favicon />@include('reports.report-styles')</head><body>
 @include('reports.report-toolbar')
 <main class="sheet">
 @if(session('status'))<p class="notice no-print">{{ session('status') }}</p>@endif
@@ -10,9 +11,9 @@
 <label for="rank">Current Faculty Rank</label><input id="rank" name="rank" value="{{ old('rank', $details['rank'] ?? '') }}" @readonly(!$canEdit)><div class="print-text">{{ $details['rank'] ?? '________________________' }}</div>
 @include('reports.department-heads')
 <h2>B. Summary of Average SET Rating</h2>
-@php($studentRows = $rows->where('instrument', 'SET')->values())
+@php($studentRows = $setRows->values())
 <table><thead><tr><th rowspan="2">Seq</th><th>(1)</th><th>(2)</th><th>(3)</th><th>(4)</th><th>(3 × 4)</th></tr><tr><th>Course Code</th><th>Year/Section</th><th>No. of Students</th><th>Average SET Rating</th><th>Weighted SET Score</th></tr></thead><tbody>
-@forelse($studentRows as $index => $row)<tr><td>{{ $index + 1 }}</td><td>{{ $row['assignment']->course?->code ?? '—' }}</td><td>{{ $row['form']->settings['program_level'] ?? '' }} {{ $row['assignment']->evaluation_section_label }}</td><td class="numeric">{{ $row['count'] }}</td><td class="numeric">{{ $row['percentage'] === null ? '—' : number_format($row['percentage'], 2) }}</td><td class="numeric">{{ $row['percentage'] === null ? '—' : number_format($row['count'] * $row['percentage'], 2) }}</td></tr>
+@forelse($studentRows as $index => $row)<tr><td>{{ $index + 1 }}</td><td>{{ $row['assignment']->course?->code ?? '—' }}</td><td>{{ $row['form']->settings['program_level'] ?? '' }} {{ $row['section'] }}</td><td class="numeric">{{ $row['count'] }}</td><td class="numeric">{{ $row['percentage'] === null ? '—' : number_format($row['percentage'], 2) }}</td><td class="numeric">{{ $row['percentage'] === null ? '—' : number_format($row['count'] * $row['percentage'], 2) }}</td></tr>
 @empty<tr><td colspan="6">No student evaluation results available.</td></tr>@endforelse
 <tr><th colspan="3">TOTAL</th><th class="numeric">{{ $studentRows->sum('count') }}</th><th>TOTAL</th><th class="numeric">{{ $studentRows->sum('count') ? number_format($studentRows->sum(fn ($row) => $row['count'] * $row['percentage']), 2) : '—' }}</th></tr></tbody></table>
 <p class="muted">No. of Students counts complete student responses for each assignment. Weighted SET Score = No. of Students × Average SET Rating. SET Rating = total weighted score ÷ total complete responses. Scores use the maximum of the assigned instrument; the original 15-item Annex A uses 75.</p>

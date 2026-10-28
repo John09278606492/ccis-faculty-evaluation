@@ -1,10 +1,23 @@
 <?php
 
-use App\Models\{BackgroundTask, CourseOffering, Department, EvaluationCycle, FormSubmission, StudentAcademicRecord, User};
-use App\Services\{AcademicSections, AcademicStudents, BackgroundTasks, EvaluationCopies, EvaluationCycles, EvaluationTemplates, FacultySupervisorEvaluators, ReportService, StudentDeletion};
-use Filament\Facades\Filament;
-use Illuminate\Support\Facades\{DB, Storage};
-use Spatie\Permission\Models\{Permission, Role};
+use App\Models\Department;
+use App\Models\EvaluationCycle;
+use App\Models\FormSubmission;
+use App\Models\StudentAcademicRecord;
+use App\Models\User;
+use App\Services\AcademicSections;
+use App\Services\AcademicStudents;
+use App\Services\BackgroundTasks;
+use App\Services\EvaluationCopies;
+use App\Services\EvaluationCycles;
+use App\Services\EvaluationTemplates;
+use App\Services\FacultySupervisorEvaluators;
+use App\Services\ReportService;
+use App\Services\StudentDeletion;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 
 function reviewedEvaluationFlow(): array
 {
@@ -15,6 +28,7 @@ function reviewedEvaluationFlow(): array
         $user = User::factory()->create(['is_student' => false, 'instructor_department_id' => $departmentId]);
         $user->assignRole(Role::findOrCreate($role, 'web'));
         $user->campuses()->attach($campus);
+
         return $user;
     };
     $owner = $staff('super_admin');
@@ -57,6 +71,7 @@ function reviewedEvaluationFlow(): array
         'starts_at' => now()->subMinute(), 'ends_at' => now()->addDays(2), 'assignment_ids' => [$class->id]]);
     $cycles->publish($admin, $cycle);
     $task = $cycle->assignments()->where('evaluation_type', 'SEF')->sole();
+
     return compact('class', 'student', 'pending', 'campus', 'department', 'owner', 'admin', 'head', 'chair', 'extra', 'faculty', 'a', 'b', 'cycle', 'task');
 }
 
@@ -70,6 +85,18 @@ function submitReviewedResponses($test, array $flow): void
         $test->post(route('evaluate.store', $assignment), ['fields' => $answers, 'overall_comment' => $comment])->assertRedirect(route('evaluate.success', $assignment));
     }
 }
+
+it('keeps a signed-in supervisor identity when a previous student evaluation session remains in the browser', function () {
+    extract(reviewedEvaluationFlow());
+    $this->withSession(['evaluation.student_id' => $student->id, 'evaluation.expires_at' => now()->addMinutes(30)->timestamp]);
+    $this->actingAs($head)->get(route('evaluate.course-offering', $task))->assertOk();
+    $answers = $b->fields()->pluck('name')->mapWithKeys(fn ($name) => [$name => 4])->all();
+    $this->post(route('evaluate.store', $task), ['fields' => $answers, 'overall_comment' => 'Supervisor session check'])
+        ->assertRedirect(route('evaluate.success', $task));
+    $submission = $task->formSubmissions()->sole();
+    expect($submission->evaluator_identity['name'])->toBe($head->name)
+        ->and($class->formSubmissions()->count())->toBe(0);
+});
 
 it('includes primary and additional supervisor scores, comments, tally, CSV and individual Annex B copies', function () {
     $flow = reviewedEvaluationFlow();

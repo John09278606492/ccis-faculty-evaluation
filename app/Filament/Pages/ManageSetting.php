@@ -21,7 +21,11 @@ class ManageSetting extends SettingsPage
 
     protected static ?string $navigationGroup = 'Administration';
 
-    protected static ?int $navigationSort = 2;
+    protected static ?string $navigationLabel = 'System Settings';
+
+    protected static ?string $title = 'System Settings';
+
+    protected static ?int $navigationSort = 5;
 
     protected function afterSave(): void
     {

@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light">
     <title>{{ $kind === 'tally' ? 'Tally Report' : 'Scores Report' }} — {{ $offering->evaluatee->name }}</title>
+<x-bisu-favicon />
     <style>
         :root { color-scheme:light; font-family:Arial,Helvetica,sans-serif; color:#111827; background:#eef2f6; }
         * { box-sizing:border-box; }
@@ -92,7 +93,7 @@
                 <div><b>Campus:</b> {{ $offering->campus->name }}</div>
                 <div><b>Teaching Department:</b> {{ $assignment->teachingDepartment?->name ?? $assignment->course?->department?->name ?? $offering->evaluatee->instructorDepartment?->name ?? '—' }}</div>
                 <div><b>Period:</b> {{ $offering->semester->name }} / {{ $offering->semester->schoolYear->name }}</div>
-                <div><b>Course / Section:</b> {{ $assignment->course?->code ?? 'Faculty evaluation' }} / {{ $assignment->evaluation_section_label }}</div>
+                <div><b>Course / Class label:</b> {{ $assignment->course?->code ?? 'Faculty evaluation' }} / {{ $assignment->evaluation_section_label }}</div>
                 <div><b>Instrument:</b> {{ $report['form']->name }} · Version {{ $report['form']->version ?? 1 }}</div>
             </div>
             <div class="summary">
@@ -100,6 +101,12 @@
                 <b>Mean / 5:</b> {{ $format($score['mean_5']) }} &nbsp; <b>Rating / 100:</b> {{ $format($score['percentage']) }} &nbsp;
                 <b>Mean total per response:</b> {{ $format($score['mean_total']) }} / {{ $tally['maximum'] + 0 }}
             </div>
+            @if($tally['section_summary'] ?? [])
+                <h3>Responses by section</h3>
+                <table aria-label="Section response summary"><thead><tr><th>Section</th><th>Complete</th><th>Incomplete</th><th>Average / {{ $tally['scale_maximum'] + 0 }}</th><th>Rating / 100</th></tr></thead><tbody>
+                    @foreach($tally['section_summary'] as $section)<tr><td class="left">{{ $section['section'] }}</td><td>{{ $section['complete'] }}</td><td>{{ $section['incomplete'] }}</td><td>{{ $format($section['average']) }}</td><td>{{ $format($section['percentage']) }}</td></tr>@endforeach
+                </tbody></table>
+            @endif
             @if($kind === 'scores')
                 <div class="table-wrap">
                     <table class="scores" aria-label="Scores by question">
@@ -127,25 +134,26 @@
                 @forelse(array_chunk($tally['questions'], 15, true) as $questions)
                     @php
                         $lastPanel = $loop->last;
-                        $columnCount = 1 + count($questions) + ($lastPanel ? 2 : 0);
+                        $showSections = $tally['show_sections'] ?? false;
+                        $columnCount = 1 + ($showSections ? 1 : 0) + count($questions) + ($lastPanel ? 2 : 0);
                     @endphp
                     <div class="panel">
                         @if(count($tally['questions']) > 15)<p class="panel-label">{{ $contextLabel }} · Questions {{ reset($questions)['number'] }}–{{ end($questions)['number'] }}. Full-response total and average follow the last question panel.</p>@endif
                         <div class="table-wrap">
                             <table class="tally" aria-label="Anonymous evaluator tally">
-                                <colgroup><col class="evaluator">@foreach($questions as $question)<col>@endforeach @if($lastPanel)<col class="total"><col class="average">@endif</colgroup>
+                                <colgroup><col class="evaluator">@if($showSections)<col>@endif @foreach($questions as $question)<col>@endforeach @if($lastPanel)<col class="total"><col class="average">@endif</colgroup>
                                 <thead>
                                     <tr class="context"><th colspan="{{ $columnCount }}">{{ $contextLabel }} · {{ $offering->semester->name }} / {{ $offering->semester->schoolYear->name }}</th></tr>
-                                    <tr><th class="left">Evaluator</th>@foreach($questions as $question)<th title="{{ $question['label'] }}">Q{{ $question['number'] }}</th>@endforeach @if($lastPanel)<th>Total Score<br>/ {{ $tally['maximum'] + 0 }}</th><th>Average<br>/ {{ $tally['scale_maximum'] + 0 }}</th>@endif</tr>
+                                    <tr><th class="left">Evaluator</th>@if($showSections)<th>Section</th>@endif @foreach($questions as $question)<th title="{{ $question['label'] }}">Q{{ $question['number'] }}</th>@endforeach @if($lastPanel)<th>Total Score<br>/ {{ $tally['maximum'] + 0 }}</th><th>Average<br>/ {{ $tally['scale_maximum'] + 0 }}</th>@endif</tr>
                                 </thead>
                                 <tbody>
                                     @forelse($tally['rows'] as $row)
-                                        <tr><th class="left">{{ $row['label'] }}</th>@foreach($questions as $index => $question)<td class="numeric">{{ $row['values'][$index] === null ? '—' : $row['values'][$index] + 0 }}</td>@endforeach @if($lastPanel)<td class="numeric"><b>{{ $row['total'] === null ? 'Incomplete' : $format($row['total']) }}</b></td><td class="numeric"><b>{{ $format($row['average']) }}</b></td>@endif</tr>
+                                        <tr><th class="left">{{ $row['label'] }}</th>@if($showSections)<td>{{ $row['section'] }}</td>@endif @foreach($questions as $index => $question)<td class="numeric">{{ $row['values'][$index] === null ? '—' : $row['values'][$index] + 0 }}</td>@endforeach @if($lastPanel)<td class="numeric"><b>{{ $row['total'] === null ? 'Incomplete' : $format($row['total']) }}</b></td><td class="numeric"><b>{{ $format($row['average']) }}</b></td>@endif</tr>
                                     @empty
                                         <tr><td colspan="{{ $columnCount }}" class="empty">No submitted responses.</td></tr>
                                     @endforelse
-                                    <tr class="totals"><th class="left">Question totals</th>@foreach($questions as $index => $question)<td class="numeric">{{ $format($summary['question_totals'][$index]) }}</td>@endforeach @if($lastPanel)<td class="numeric">{{ $format($summary['grand_total']) }}</td><td>—</td>@endif</tr>
-                                    <tr class="totals"><th class="left">Question averages</th>@foreach($questions as $index => $question)<td class="numeric">{{ $format($summary['question_averages'][$index]) }}</td>@endforeach @if($lastPanel)<td class="numeric">{{ $format($summary['mean_total']) }}</td><td class="numeric">{{ $format($summary['mean_average']) }}</td>@endif</tr>
+                                    <tr class="totals"><th class="left">Question totals</th>@if($showSections)<td>—</td>@endif @foreach($questions as $index => $question)<td class="numeric">{{ $format($summary['question_totals'][$index]) }}</td>@endforeach @if($lastPanel)<td class="numeric">{{ $format($summary['grand_total']) }}</td><td>—</td>@endif</tr>
+                                    <tr class="totals"><th class="left">Question averages</th>@if($showSections)<td>—</td>@endif @foreach($questions as $index => $question)<td class="numeric">{{ $format($summary['question_averages'][$index]) }}</td>@endforeach @if($lastPanel)<td class="numeric">{{ $format($summary['mean_total']) }}</td><td class="numeric">{{ $format($summary['mean_average']) }}</td>@endif</tr>
                                 </tbody>
                             </table>
                         </div>
