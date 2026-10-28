@@ -6,8 +6,8 @@
   "applicationDirectory": "evaluation-app",
   "publicDirectory": "public_html",
   "phpCli": "/opt/alt/php83/usr/bin/php",
-  "deployedRevision": "82cff54",
+  "deployedRevision": "db5eaae",
   "sourceBranch": "claude/project-thread-zjbov2",
   "automaticGitDeploymentConfigured": false,
-  "lastPatch": "Published form navigation and overall comment requirements; live Annex A/B controls verified 2026-10-28"
+  "lastPatch": "Correct garbled punctuation in results, form settings and section lists; live Results & Reports verified 2026-10-28"
 }
