@@ -6,8 +6,8 @@
   "applicationDirectory": "evaluation-app",
   "publicDirectory": "public_html",
   "phpCli": "/opt/alt/php83/usr/bin/php",
-  "deployedRevision": "db5eaae",
+  "deployedRevision": "57e77e7",
   "sourceBranch": "claude/project-thread-zjbov2",
   "automaticGitDeploymentConfigured": false,
-  "lastPatch": "Correct garbled punctuation in results, form settings and section lists; live Results & Reports verified 2026-10-28"
+  "lastPatch": "Bulk home department instructor assignment and department roster; live list/edit pickers and search verified 2026-10-28"
 }
