@@ -37,7 +37,7 @@ class FormResource extends Resource implements HasShieldPermissions
 
     protected static ?string $pluralModelLabel = 'Form Templates';
 
-    // Disable built-in tenant scoping â€” we use custom scoping via pivot table
+    // Disable built-in tenant scoping — we use custom scoping via pivot table
     protected static bool $isScopedToTenant = false;
 
     /**
@@ -254,7 +254,7 @@ class FormResource extends Resource implements HasShieldPermissions
                     ->description('Choose where this form appears in the Annex D summary. Copies retain this setting; adjust it when creating a different instrument.')
                     ->schema([
                         Forms\Components\Select::make('settings.instrument')->label('Summary report category')
-                            ->options(['SET' => 'Student Evaluation of Teachers (SET)', 'SEF' => 'Supervisorâ€™s Evaluation of Faculty (SEF)', 'Other' => 'Other evaluation'])->default('Other'),
+                            ->options(['SET' => 'Student Evaluation of Teachers (SET)', 'SEF' => 'Supervisor’s Evaluation of Faculty (SEF)', 'Other' => 'Other evaluation'])->default('Other'),
                         Forms\Components\TextInput::make('settings.program_level')->label('Program Level / Year')->maxLength(255),
                         Forms\Components\TextInput::make('settings.academic_rank')->label('Academic Rank')->maxLength(255),
                     ])->columns(3)->disabled(! $isSuperAdmin),
@@ -265,9 +265,9 @@ class FormResource extends Resource implements HasShieldPermissions
                         Forms\Components\Select::make('scoring_config.section_method')
                             ->label('Section Score Calculation')
                             ->options([
-                                'average' => 'Average â€” Mean of all ratings in the section',
-                                'sum' => 'Sum â€” Total of all ratings in the section',
-                                'percentage' => 'Percentage â€” Score as % of maximum possible',
+                                'average' => 'Average — Mean of all ratings in the section',
+                                'sum' => 'Sum — Total of all ratings in the section',
+                                'percentage' => 'Percentage — Score as % of maximum possible',
                             ])
                             ->default('average')
                             ->helperText('How to compute each section\'s score from individual ratings'),
@@ -275,10 +275,10 @@ class FormResource extends Resource implements HasShieldPermissions
                         Forms\Components\Select::make('scoring_config.overall_method')
                             ->label('Overall Score Calculation')
                             ->options([
-                                'average' => 'Average â€” Mean of all section scores',
-                                'sum' => 'Sum â€” Total of all section scores',
-                                'weighted_average' => 'Weighted Average â€” Sections have different weights',
-                                'grand_average' => 'Grand Average â€” Average of ALL individual ratings (ignoring sections)',
+                                'average' => 'Average — Mean of all section scores',
+                                'sum' => 'Sum — Total of all section scores',
+                                'weighted_average' => 'Weighted Average — Sections have different weights',
+                                'grand_average' => 'Grand Average — Average of ALL individual ratings (ignoring sections)',
                             ])
                             ->default('average')
                             ->live()

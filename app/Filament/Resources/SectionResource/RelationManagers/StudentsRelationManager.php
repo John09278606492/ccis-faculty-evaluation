@@ -32,7 +32,7 @@ class StudentsRelationManager extends RelationManager
 
     public function table(Table $table): Table
     {
-        return $table->description('Upload this sectionâ€™s list using IDs from Students.')
+        return $table->description('Upload this section’s list using IDs from Students.')
             ->emptyStateHeading('No students in this section yet')
             ->emptyStateDescription('Upload a student list or add students individually.')->columns([
                 Tables\Columns\TextColumn::make('student_id')->label('ID No.')->searchable()->sortable(),
@@ -64,8 +64,8 @@ class StudentsRelationManager extends RelationManager
                     ->visible(fn () => $this->canManage() && $this->getOwnerRecord()->is_active)->form([
                         Forms\Components\Select::make('ids')->label('Students')->multiple()->required()->searchable()
                             ->getSearchResultsUsing(fn (string $search) => app(AcademicSections::class)->eligible(auth()->user(), filament()->getTenant(), $this->getOwnerRecord())
-                                ->where(fn ($q) => $q->where('student_id', 'like', '%'.$search.'%')->orWhere('name', 'like', '%'.$search.'%'))->limit(50)->get()->mapWithKeys(fn ($s) => [$s->id => $s->student_id.' Â· '.$s->name]))
-                            ->getOptionLabelsUsing(fn (array $values) => app(AcademicSections::class)->eligible(auth()->user(), filament()->getTenant(), $this->getOwnerRecord())->whereKey($values)->get()->mapWithKeys(fn ($s) => [$s->id => $s->student_id.' Â· '.$s->name])),
+                                ->where(fn ($q) => $q->where('student_id', 'like', '%'.$search.'%')->orWhere('name', 'like', '%'.$search.'%'))->limit(50)->get()->mapWithKeys(fn ($s) => [$s->id => $s->student_id.' · '.$s->name]))
+                            ->getOptionLabelsUsing(fn (array $values) => app(AcademicSections::class)->eligible(auth()->user(), filament()->getTenant(), $this->getOwnerRecord())->whereKey($values)->get()->mapWithKeys(fn ($s) => [$s->id => $s->student_id.' · '.$s->name])),
                     ])->action(function (array $data) {
                         $count = app(AcademicSections::class)->add(auth()->user(), filament()->getTenant(), $this->getOwnerRecord(), $data['ids']);
                         Notification::make()->success()->title($count.' students added to section')->send();
