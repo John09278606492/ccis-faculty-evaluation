@@ -59,3 +59,30 @@ obtain approval for replacing the default site. Public student access currently
 identifies students by ID only; decide on stronger verification before using it
 for unrestricted public submissions. Configure email delivery separately if used.
 Do not claim the site is deployed until the actual HTTPS domain passes checks.
+
+## Publication verified — 28 October 2026
+
+Published after the user's explicit approval to retain the current student-ID-only
+entry. The original default public folder is retained as `public_html-before-20261028`
+and a separate private rollback ZIP exists. The application and SQLite file remain
+in `evaluation-app`, outside the served directory. Temporary protected diagnostic
+scripts are in the retained old folder and are no longer served by the live site.
+
+The restored snapshot was created at 13:20:37 Asia/Manila: 2,313 students, 54 sections,
+420 teaching classes and the existing two submissions. Source record counts and
+original encryption/fingerprint keys matched; no migrations, key generation or
+seeders ran. Both staged entry pages rendered on Hostinger. The two queue modes
+exited successfully under PHP 8.3.36, and hPanel lists three every-minute jobs.
+Actual scheduler output reported evaluation maintenance and notification sync DONE.
+
+The HTTPS login, student ID entry and health pages returned 200. A real browser
+switched the Faculty & Staff tab through Livewire and reached the student entry
+form without console errors. Fourteen same-origin assets returned 200. Signed-out
+staff report requests redirected to login. Private configuration/database requests
+were denied or missing; old diagnostic URLs now resolve through the normal login
+route instead of executing their former scripts. Actual student submissions and
+staff password authentication were not exercised against the live records.
+
+Use Hostinger for new records after cutover; separate laptop/campus copies do not
+synchronize their databases. Hostinger Git auto-deployment is not configured, and
+the Windows campus update controller is not part of this PHP hosting runtime.

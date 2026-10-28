@@ -1,0 +1,12 @@
+{
+  "domain": "faculty-evaluation.bisubalilihan.com",
+  "username": "u428200722",
+  "type": "php",
+  "plan": "Business Web Hosting",
+  "applicationDirectory": "evaluation-app",
+  "publicDirectory": "public_html",
+  "phpCli": "/opt/alt/php83/usr/bin/php",
+  "deployedRevision": "916a411024c75d48581547951036713379659604",
+  "sourceBranch": "claude/project-thread-zjbov2",
+  "automaticGitDeploymentConfigured": false
+}
