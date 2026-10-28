@@ -9,6 +9,7 @@ use App\Models\FormSubmission;
 use App\Services\AssignedDataAccess;
 use App\Services\ClassroomUpdates;
 use App\Services\EvaluationAccessService;
+use App\Services\EvaluationSections;
 use App\Services\EvaluationSubmissionIdentity;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -128,7 +129,7 @@ class EvaluationController extends Controller
                     'user_id' => null,
                     'evaluator_identity' => $request->user() ? ['name' => $request->user()->name, 'student_id' => $request->user()->student_id] : null,
                     'data' => $request->user()?->isStudent() ? [...$fieldData, '_evaluation_context' => [
-                        'section' => app(\App\Services\EvaluationSections::class)->forStudent($currentAssignment, $request->user()),
+                        'section' => app(EvaluationSections::class)->forStudent($currentAssignment, $request->user()),
                         'recorded_at' => now()->toIso8601String(),
                     ]] : $fieldData,
                     'ip_address' => null,

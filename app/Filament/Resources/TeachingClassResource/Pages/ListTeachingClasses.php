@@ -3,12 +3,12 @@
 namespace App\Filament\Resources\TeachingClassResource\Pages;
 
 use App\Filament\Concerns\ShowsEvaluationWorkflow;
-use App\Filament\Resources\TeachingClassResource;
 use App\Filament\Pages\BackgroundProcessing;
+use App\Filament\Resources\TeachingClassResource;
 use App\Models\User;
 use App\Services\AcademicPeriod;
-use App\Services\AcademicStudents;
 use App\Services\AcademicSections;
+use App\Services\AcademicStudents;
 use App\Services\BackgroundTasks;
 use App\Services\InstructorOfferingImports;
 use Filament\Actions\Action;
@@ -29,6 +29,7 @@ class ListTeachingClasses extends ListRecords
     {
         $allowed = fn () => app(InstructorOfferingImports::class)->allowed(auth()->user(), filament()->getTenant());
         $departments = fn () => app(AcademicStudents::class)->departments(auth()->user(), filament()->getTenant())->pluck('code', 'id');
+
         return [
             Action::make('importOfferings')->label('Import Offering File')->icon('heroicon-o-document-arrow-up')->visible($allowed)
                 ->extraAttributes(['data-guide' => 'offering-upload'])

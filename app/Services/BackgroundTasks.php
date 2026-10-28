@@ -218,7 +218,9 @@ class BackgroundTasks
             if ($result['issues'] ?? []) {
                 $this->csv($task, 'section-assignment-validation.csv', function ($handle) use ($result) {
                     $this->row($handle, ['Row', 'Student ID', 'Section', 'Validation']);
-                    foreach ($result['issues'] as $row) $this->row($handle, [$row['row'], $row['student_id'], $row['section'], implode(' ', $row['messages'])]);
+                    foreach ($result['issues'] as $row) {
+                        $this->row($handle, [$row['row'], $row['student_id'], $row['section'], implode(' ', $row['messages'])]);
+                    }
                 });
                 $result['issues'] = array_slice($result['issues'], 0, 100);
             }
@@ -242,6 +244,7 @@ class BackgroundTasks
             $review['unclassified_period_count'] = count($review['unclassified_period_rows'] ?? []);
             unset($review['unclassified_period_rows']);
             $review['details'] = array_slice($review['details'], 0, 100);
+
             return ['review' => $review, 'message' => $review['ready_classes'].' classes ready; '.$review['blocked_classes'].' need attention. Review before importing.'];
         }
         if ($task->kind === 'offering-import') {

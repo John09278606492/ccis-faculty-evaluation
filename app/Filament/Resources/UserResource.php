@@ -5,10 +5,12 @@ namespace App\Filament\Resources;
 use App\Filament\AvatarProviders\InitialsAvatarProvider;
 use App\Filament\Resources\UserResource\Pages;
 use App\Models\Department;
+use App\Models\FacultySourceLink;
 use App\Models\User;
 use App\Services\BackgroundTasks;
 use App\Services\StudentPins;
 use App\Services\UserAccessAdministration;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Section;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -118,9 +120,9 @@ class UserResource extends Resource
                             ->helperText(fn (?User $record): ?string => $record && blank($record->email) ? 'Add an email and home department, then issue a temporary password for staff sign-in.' : null)
                             ->maxLength(255)
                             ->unique(ignoreRecord: true),
-                        \Filament\Forms\Components\Placeholder::make('registrar_id')->label('Source Faculty ID')
-                            ->visible(fn (?User $record) => $record && \App\Models\FacultySourceLink::where('campus_id', filament()->getTenant()->id)->where('user_id', $record->id)->exists())
-                            ->content(fn (?User $record) => \App\Models\FacultySourceLink::where('campus_id', filament()->getTenant()->id)->where('user_id', $record?->id)->pluck('external_id')->join(', ')),
+                        Placeholder::make('registrar_id')->label('Source Faculty ID')
+                            ->visible(fn (?User $record) => $record && FacultySourceLink::where('campus_id', filament()->getTenant()->id)->where('user_id', $record->id)->exists())
+                            ->content(fn (?User $record) => FacultySourceLink::where('campus_id', filament()->getTenant()->id)->where('user_id', $record?->id)->pluck('external_id')->join(', ')),
                         TextInput::make('password')
                             ->password()
                             ->required(fn (string $operation): bool => $operation === 'create')

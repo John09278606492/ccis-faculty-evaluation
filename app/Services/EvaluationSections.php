@@ -15,7 +15,9 @@ class EvaluationSections
 
     public function requiresSection(CourseOffering $class): bool
     {
-        if (! $class->course_id) return false;
+        if (! $class->course_id) {
+            return false;
+        }
 
         return CourseOffering::withoutGlobalScope('assigned_data')->where('course_id', $class->course_id)->where('semester_id', $class->semester_id)
             ->where('is_active', true)->where(fn ($q) => $q->whereDoesntHave('evaluationForm')->orWhereHas('evaluationForm', fn ($f) => $f->withoutGlobalScope('assigned_data')->where('settings->annex', '!=', 'B')->orWhereNull('settings->annex')))
@@ -74,7 +76,9 @@ class EvaluationSections
             foreach ($ids as $id) {
                 $labels[$id] = $section->name;
             }
-            if (isset($selection['auto_match'])) $selection['auto_match']['pending_section'] = $class->students()->pluck('users.id')->filter(fn ($id) => empty($labels[$id]))->count();
+            if (isset($selection['auto_match'])) {
+                $selection['auto_match']['pending_section'] = $class->students()->pluck('users.id')->filter(fn ($id) => empty($labels[$id]))->count();
+            }
             $class->update(['evaluator_selection' => [...$selection, 'report_sections' => $labels, 'auto_section_roster' => false]]);
             $fingerprints = collect($ids)->map(fn ($id) => app(EvaluationSubmissionIdentity::class)->forUser($class, $id))->all();
             $classified = 0;

@@ -13,6 +13,7 @@ use App\Services\AssignedDataAccess;
 use App\Services\BackgroundTasks;
 use App\Services\EvaluationCycles;
 use App\Services\EvaluationDraftPreparation;
+use App\Services\EvaluationResultsRelease;
 use App\Services\EvaluationSetupAutomation;
 use App\Services\EvaluationTemplates;
 use App\Services\FacultySupervisorEvaluators;
@@ -234,8 +235,9 @@ it('keeps an explicitly assigned other-department supervisor valid in a scoped d
     $this->student->update(['student_department_id' => $this->department->id]);
     $this->class->supervisorEvaluators()->attach($this->head);
     $cycle = app(EvaluationCycles::class)->save($this->actor, $this->campus, $this->data);
-    $this->actor->removeRole('super_admin');$this->actor->update(['instructor_department_id' => $this->department->id]);
-    app(\App\Services\AssignedDataAccess::class)->actor = $this->actor;
+    $this->actor->removeRole('super_admin');
+    $this->actor->update(['instructor_department_id' => $this->department->id]);
+    app(AssignedDataAccess::class)->actor = $this->actor;
     expect(app(EvaluationCycles::class)->readiness($cycle->fresh())['errors'])->toBe([]);
 });
 
@@ -245,7 +247,7 @@ it('keeps manual-closing results private after the semester ends until the evalu
     app(EvaluationCycles::class)->publish($this->actor, $cycle);
     $this->class->semester->update(['end_date' => now()->subDay()]);
     expect($this->class->fresh()->isEvaluationAvailable())->toBeTrue()
-        ->and(\App\Services\EvaluationResultsRelease::isClosed($this->class->fresh()))->toBeFalse();
+        ->and(EvaluationResultsRelease::isClosed($this->class->fresh()))->toBeFalse();
     app(EvaluationCycles::class)->close($this->actor, $cycle->fresh());
-    expect(\App\Services\EvaluationResultsRelease::isClosed($this->class->fresh()))->toBeTrue();
+    expect(EvaluationResultsRelease::isClosed($this->class->fresh()))->toBeTrue();
 });

@@ -3,6 +3,7 @@
 use App\Filament\Imports\InstructorImporter;
 use App\Filament\Imports\StudentImporter;
 use App\Filament\Imports\UserImporter;
+use App\Filament\Resources\UserResource\Pages\ListUsers;
 use App\Models\User;
 use Filament\Actions\Imports\Models\Import;
 use Filament\Facades\Filament;
@@ -117,7 +118,7 @@ it('downloads the staff CSV template directly from Staff Accounts', function () 
     Filament::setTenant($this->importOffering->campus, isQuiet: true);
     $this->actingAs($this->importActor);
 
-    Livewire\Livewire::test(App\Filament\Resources\UserResource\Pages\ListUsers::class)
+    Livewire\Livewire::test(ListUsers::class)
         ->callAction('staffTemplate')
         ->assertFileDownloaded('instructors-template.csv');
 });

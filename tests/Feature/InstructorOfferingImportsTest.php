@@ -14,8 +14,10 @@ use App\Models\TeachingClassSourceLink;
 use App\Models\User;
 use App\Services\BackgroundTasks;
 use App\Services\InstructorOfferingImports;
+use App\Services\StudentAcademicRecords;
 use Filament\Facades\Filament;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
@@ -83,14 +85,14 @@ it('reviews only the selected actual academic period without importing records',
 
 it('automatically connects exact subject enrolments after committing the original offering upload', function () {
     $this->student->update(['student_department_id' => $this->offering->course->department_id]);
-    app(\App\Services\StudentAcademicRecords::class)->save($this->student, $this->offering->semester_id, ['program' => 'BSIT', 'subjects' => [
+    app(StudentAcademicRecords::class)->save($this->student, $this->offering->semester_id, ['program' => 'BSIT', 'subjects' => [
         ['subject_code' => 'IT 412', 'description' => 'System Integration and Architecture 1', 'units' => 3],
     ]]);
     $prepared = prepareInstructorOfferings([instructorOfferingRow(), instructorOfferingRow(['section' => 'BSIT 4B'])]);
     $result = $this->service->commit($this->actor, $this->campus, $prepared['plan']);
     $classes = TeachingClassSourceLink::pluck('course_offering_id');
     expect($result['automatic_evaluators'])->toBe(1)->and($result['unresolved_evaluators'])->toBe(0)
-        ->and(\Illuminate\Support\Facades\DB::table('course_offering_student')->whereIn('course_offering_id', $classes)->where('user_id', $this->student->id)->count())->toBe(1);
+        ->and(DB::table('course_offering_student')->whereIn('course_offering_id', $classes)->where('user_id', $this->student->id)->count())->toBe(1);
 });
 
 it('downloads an example with the selected period that the real importer can review without saving records', function () {

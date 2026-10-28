@@ -2,12 +2,13 @@
 
 namespace App\Filament\Resources\DepartmentResource\Pages;
 
+use App\Filament\Concerns\QueuesDepartmentSupervisors;
 use App\Filament\Pages\DraftCreateRecord as CreateRecord;
 use App\Filament\Resources\DepartmentResource;
 
 class CreateDepartment extends CreateRecord
 {
-    use \App\Filament\Concerns\QueuesDepartmentSupervisors;
+    use QueuesDepartmentSupervisors;
 
     protected static string $resource = DepartmentResource::class;
 

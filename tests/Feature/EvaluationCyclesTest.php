@@ -143,8 +143,10 @@ it('supports an opening date without a closing date and a closing date without a
     $this->travel(2)->days();
     expect($offering->fresh()->isEvaluationAvailable())->toBeTrue();
     $other = $offering->fresh()->replicate();
-    $other->fill(['evaluation_cycle_id' => null, 'section' => 'Closing only']);$other->save();
-    $other->students()->attach($student);$other->supervisorEvaluators()->attach($head);
+    $other->fill(['evaluation_cycle_id' => null, 'section' => 'Closing only']);
+    $other->save();
+    $other->students()->attach($student);
+    $other->supervisorEvaluators()->attach($head);
     $closing = $service->save($head, $campus, [...$data, 'starts_at' => null, 'ends_at' => now()->addDay(), 'assignment_ids' => [$other->id]]);
     $service->publish($head, $closing);
     expect($other->fresh()->isEvaluationAvailable())->toBeTrue();

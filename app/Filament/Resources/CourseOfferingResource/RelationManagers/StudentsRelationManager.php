@@ -8,6 +8,7 @@ use App\Filament\Resources\SectionResource;
 use App\Filament\Resources\TeachingClassResource\Pages\EditTeachingClass;
 use App\Models\User;
 use App\Services\AcademicStudents;
+use App\Services\EvaluationSections;
 use App\Services\FacultySupervisorEvaluators;
 use App\Services\StudentAcademicRecords;
 use Filament\Forms;
@@ -107,7 +108,7 @@ class StudentsRelationManager extends RelationManager
                 Tables\Columns\TextColumn::make('email')->label('Email')->sortable()->searchable()->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\TextColumn::make('studentDepartment.code')->label('Department')->badge(),
                 Tables\Columns\TextColumn::make('period_sections')->label('Sections')->state(fn (User $record) => $record->studentSectionMemberships->pluck('section')->all())->badge(),
-                Tables\Columns\TextColumn::make('report_section')->label('Report Section')->state(fn (User $record) => app(\App\Services\EvaluationSections::class)->forStudent($this->getOwnerRecord(), $record) ?: 'Section pending')->badge(),
+                Tables\Columns\TextColumn::make('report_section')->label('Report Section')->state(fn (User $record) => app(EvaluationSections::class)->forStudent($this->getOwnerRecord(), $record) ?: 'Section pending')->badge(),
                 Tables\Columns\TextColumn::make('pivot.enrolled_at')->label('Enrolled At')->dateTime()->sortable()->toggleable(isToggledHiddenByDefault: true),
             ])->filters([])->headerActions([
                 $this->matchEnrolledAction(),
