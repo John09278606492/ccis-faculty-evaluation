@@ -83,7 +83,7 @@ try {
                     mkdir($file, 0700, true);
                 }
 
-continue;
+                continue;
             }
             if (! is_dir(dirname($file))) {
                 mkdir(dirname($file), 0700, true);
