@@ -12,7 +12,7 @@ it('shows anonymous student ratings with a correct row total and no identity met
     FormSubmission::create(['form_id' => $form->id, 'course_offering_id' => $offering->id, 'user_id' => $student->id, 'data' => ['teaching_quality' => 5, 'q2' => 3, 'q3' => 4]]);
     FormSubmission::create(['form_id' => $form->id, 'course_offering_id' => $offering->id, 'data' => ['teaching_quality' => 4]]);
     $tally = app(EvaluationTally::class)->build($offering, $offering->formSubmissions()->get());
-    expect($tally['rows'][0])->toBe(['label' => 'Student 1', 'values' => [5.0, 3.0, 4.0], 'total' => 12.0, 'average' => 4.0, 'percentage' => 80.0]);
+    expect($tally['rows'][0])->toBe(['label' => 'Student 1', 'section' => 'A', 'values' => [5.0, 3.0, 4.0], 'total' => 12.0, 'average' => 4.0, 'percentage' => 80.0]);
     expect($tally['rows'][1]['label'])->toBe('Student 2')->and($tally['rows'][1]['total'])->toBeNull();
     expect(json_encode($tally))->not->toContain($student->email)->not->toContain('user_id')->not->toContain('submission_fingerprint');
     $html = view('filament.pages.partials.evaluator-tally', compact('tally'))->render();

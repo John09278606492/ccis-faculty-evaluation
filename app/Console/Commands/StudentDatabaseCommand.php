@@ -96,13 +96,14 @@ class StudentDatabaseCommand extends Command
      */
     protected function hostConfig(StudentDbServer $server): int
     {
-        $running = $server->isRunning();
+        $installed = $server->isInstalled();
+        $running = $installed && $server->isRunning();
         if ($running) {
             // Do not mistake an unrelated process on this port for this classroom's database.
             $server->connect()->query('SELECT 1');
         }
         $this->line(json_encode([
-            'installed' => $server->isInstalled(),
+            'installed' => $installed,
             'running' => $running,
             'mysql_port' => $server->port(),
             'phpmyadmin_arguments' => $server->phpMyAdminServerArguments(0),

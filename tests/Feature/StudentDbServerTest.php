@@ -17,10 +17,22 @@ it('reports a stopped student server to a web host without claiming an occupied 
 
 it('refuses to reuse a student database port when its credentials cannot be verified', function () {
     $server = Mockery::mock(StudentDbServer::class);
+    $server->shouldReceive('isInstalled')->once()->andReturn(true);
     $server->shouldReceive('isRunning')->once()->andReturn(true);
     $server->shouldReceive('connect')->once()->andThrow(new PDOException('Student database credential check failed'));
     app()->instance(StudentDbServer::class, $server);
     $this->artisan('classroom:student-db host-config')->expectsOutputToContain('Student database credential check failed')->assertFailed();
+});
+
+it('starts an evaluation host without probing an uninstalled assessment database or another application on its port', function () {
+    $server = Mockery::mock(StudentDbServer::class);
+    $server->shouldReceive('isInstalled')->once()->andReturn(false);
+    $server->shouldNotReceive('isRunning');
+    $server->shouldNotReceive('connect');
+    $server->shouldReceive('port')->once()->andReturn(3307);
+    $server->shouldReceive('phpMyAdminServerArguments')->with(0)->once()->andReturn([]);
+    app()->instance(StudentDbServer::class, $server);
+    $this->artisan('classroom:student-db host-config')->expectsOutputToContain('"installed":false,"running":false')->assertSuccessful();
 });
 
 it('refreshes the phpmyadmin port after moving or reconfiguring a classroom', function () {
