@@ -23,11 +23,17 @@
     }
     document.addEventListener('livewire:navigate', waitForDraft)
     component.addCleanup(() => document.removeEventListener('livewire:navigate', waitForDraft))
-    await import(@js(\Illuminate\Support\Facades\Vite::asset('resources/js/workspace-drafts.js')))
-    if (component.el.isConnected) {
-        window.mountWorkspaceDraft($wire, component, @js($this->workspaceDraftClientConfig()), @js($this->workspaceDraftInitialStateForClient()))
+    try {
+        await import(@js(\Illuminate\Support\Facades\Vite::asset('resources/js/workspace-drafts.js')))
+        if (component.el.isConnected) {
+            window.mountWorkspaceDraft($wire, component, @js($this->workspaceDraftClientConfig()), @js($this->workspaceDraftInitialStateForClient()))
+        }
+    } catch {
+        const status = component.el.querySelector('[data-draft-status]')
+        if (status) status.textContent = 'Draft autosave is unavailable. Use Save changes before leaving.'
+    } finally {
+        document.removeEventListener('livewire:navigate', waitForDraft)
     }
-    document.removeEventListener('livewire:navigate', waitForDraft)
     if (destination && component.el.isConnected) window.Livewire.navigate(destination)
 </script>
 @endscript

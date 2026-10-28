@@ -107,6 +107,20 @@ class FormResource extends Resource implements HasShieldPermissions
             ->disabled(fn (?Form $record) => $record?->isLocked() ?? false)
             ->schema([
                 // Campus selector - multi-select, only visible to super_admin
+                Forms\Components\Section::make('Overall comments')
+                    ->description(fn (?Form $record) => $record?->isLocked()
+                        ? 'Use the Overall comments button above to change the requirement for new submissions.'
+                        : 'Choose whether an overall comment is required before submitting this form.')
+                    ->schema([
+                        Forms\Components\Select::make('scoring_config.overall_comment')
+                            ->label('Overall comments')
+                            ->options(['required' => 'Required', 'optional' => 'Optional', 'hidden' => 'Hidden'])
+                            ->default('optional')
+                            ->required()
+                            ->in(['required', 'optional', 'hidden']),
+                    ])
+                    ->visible($isSuperAdmin),
+
                 Forms\Components\Section::make('Campus Assignment')
                     ->schema([
                         Forms\Components\Select::make('campuses')
@@ -290,23 +304,6 @@ class FormResource extends Resource implements HasShieldPermissions
                             ->addActionLabel('Add Section Weight')
                             ->visible(fn ($get) => $get('scoring_config.overall_method') === 'weighted_average')
                             ->helperText('Define weights for each section. Total should equal 100%.'),
-                    ])
-                    ->collapsible()
-                    ->collapsed()
-                    ->visible(fn (Forms\Get $get): bool => $isSuperAdmin && (bool) $get('use_custom_scale')),
-
-                Forms\Components\Section::make('Comments Configuration')
-                    ->description('Configure whether evaluators can or must leave comments.')
-                    ->schema([
-                        Forms\Components\Select::make('scoring_config.overall_comment')
-                            ->label('Overall Comment')
-                            ->options([
-                                'hidden' => 'Hidden â€” No overall comment field',
-                                'optional' => 'Optional â€” Evaluators may leave an overall comment',
-                                'required' => 'Required â€” Evaluators must leave an overall comment',
-                            ])
-                            ->default('optional')
-                            ->helperText('Controls the overall comment field shown before the submit button'),
                     ])
                     ->collapsible()
                     ->collapsed()

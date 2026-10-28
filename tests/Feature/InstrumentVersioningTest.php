@@ -70,3 +70,17 @@ it('keeps assigned draft instruments from being deleted and supports legacy subm
     DB::table('form_submissions')->where('id', $response->id)->update(['instrument_snapshot' => null]);
     expect(EvaluationInstrument::forSubmission($response->fresh())->id)->toBe($form->id);
 });
+
+it('allows prospective comment requirements while protecting published scores and snapshots', function () {
+    ['form' => $form, 'offering' => $offering] = evaluationFixture();
+    $form->update(['scoring_config' => ['overall_comment' => 'optional', 'overall_method' => 'sum']]);
+    $form->update(['published_at' => now()]);
+    $response = FormSubmission::create(['form_id' => $form->id, 'course_offering_id' => $offering->id, 'data' => ['teaching_quality' => 4, '_overall_comment' => 'Original']]);
+    $snapshot = $response->instrument_snapshot;
+    $form->update(['scoring_config' => [...$form->scoring_config, 'overall_comment' => 'required']]);
+    expect($response->fresh()->instrument_snapshot)->toBe($snapshot)
+        ->and($response->fresh()->data['_overall_comment'])->toBe('Original')
+        ->and(app(EvaluationScoring::class)->response($form->fresh(), $response->fresh())['raw_total'])->toBe(4.0);
+    expect(fn () => $form->fresh()->update(['scoring_config' => ['overall_comment' => 'required', 'overall_method' => 'average']]))->toThrow(ValidationException::class);
+    expect(fn () => $form->fresh()->update(['scoring_config' => ['overall_comment' => 'invalid', 'overall_method' => 'sum']]))->toThrow(ValidationException::class);
+});

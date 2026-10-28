@@ -9,7 +9,8 @@ async function guardDraftNavigation(event) {
     navigating = true;
     const url = event.detail.url.toString();
     try {
-        if ((await Promise.all(changed.map(editor => editor.flush()))).every(Boolean)) {
+        const saved = (await Promise.all(changed.map(editor => editor.flush()))).every(Boolean);
+        if (saved || window.confirm('Your latest changes could not be saved as a draft. Leave this page anyway? Unsaved changes may be lost.')) {
             // Livewire resolves a call before its queued DOM morph completes.
             // Let that finish before replacing the page containing the editor.
             await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -77,7 +78,7 @@ export function mountWorkspaceDraft(wire, component, config, initialState) {
                 status(result.at ? 'Draft saved. You can leave and resume here.' : 'All changes saved.');
                 return true;
             } catch {
-                status('Draft could not be saved. Keep this page open and retry.');
+                status('Draft could not be saved. Retry, or choose to leave when navigating away.');
                 return false;
             }
         })();

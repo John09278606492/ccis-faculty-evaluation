@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -68,7 +69,15 @@ class Form extends Model
             if ($form->isDirty('published_at') && $form->getRawOriginal('published_at') !== null) {
                 throw ValidationException::withMessages(['published_at' => 'A published instrument cannot be unlocked. Duplicate it as a new draft version.']);
             }
-            if ($form->isDirty(['name', 'description', 'rating_scale', 'scoring_config', 'field_columns', 'settings', 'evaluator_roles'])) {
+            // The overall comment requirement is a prospective response policy,
+            // not a scoring rule. All other published scoring keys remain locked.
+            $scoringChanged = $form->isDirty('scoring_config') &&
+                Arr::except($form->scoring_config ?? [], ['overall_comment']) !==
+                Arr::except($form->getOriginal('scoring_config') ?? [], ['overall_comment']);
+            if ($form->isDirty('scoring_config') && ! in_array($form->scoring_config['overall_comment'] ?? 'optional', ['required', 'optional', 'hidden'], true)) {
+                throw ValidationException::withMessages(['scoring_config.overall_comment' => 'Choose Required, Optional, or Hidden.']);
+            }
+            if ($scoringChanged || $form->isDirty(['name', 'description', 'rating_scale', 'field_columns', 'settings', 'evaluator_roles'])) {
                 $form->assertEditable();
             }
         });

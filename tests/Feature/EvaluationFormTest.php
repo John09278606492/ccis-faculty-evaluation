@@ -149,6 +149,7 @@ it('ignores legacy required criterion comments and keeps overall comments availa
 
 it('requires an overall comment when the form asks for one', function () {
     ['student' => $student, 'offering' => $offering, 'form' => $form] = evaluationFixture();
+    $form->update(['published_at' => now()]);
     $form->update(['scoring_config' => ['overall_comment' => 'required']]);
 
     $this->actingAs($student)

@@ -3,11 +3,13 @@
 use App\Filament\Pages\FormBuilder;
 use App\Filament\Pages\QuizBuilder;
 use App\Filament\Resources\CourseOfferingResource\RelationManagers\StudentsRelationManager;
+use App\Filament\Resources\FormResource\Pages\EditForm;
 use App\Filament\Resources\SectionResource\Pages\CreateSection;
 use App\Filament\Resources\SectionResource\Pages\EditSection;
 use App\Filament\Resources\TeachingClassResource\Pages\EditTeachingClass;
 use App\Models\AcademicSection;
 use App\Models\Campus;
+use App\Models\Form;
 use App\Models\Quiz;
 use App\Models\StudentAcademicRecord;
 use App\Models\User;
@@ -181,4 +183,31 @@ it('prunes only expired drafts while preserving saved records and current workin
     $this->artisan('workspace-drafts:prune')->assertSuccessful();
     expect(WorkspaceDraft::count())->toBe(1)->and(WorkspaceDraft::sole()->payload['data']['name'])->toBe('Current draft')
         ->and($this->section->fresh())->not->toBeNull();
+});
+
+it('does not mount draft autosave on a published form and exposes its comment action', function (string $annex) {
+    $this->actor->givePermissionTo(Permission::findOrCreate('view_form', 'web'));
+    $this->actor->givePermissionTo(Permission::findOrCreate('view_any_form', 'web'));
+    $form = app(EvaluationTemplates::class)->create($annex, $this->campus);
+    $form->update(['published_at' => now()]);
+    Livewire::test(EditForm::class, ['record' => $form->id])->assertStatus(200)
+        ->assertSet('workspaceDraftContext', '')
+        ->assertDontSeeHtml('data-workspace-draft')
+        ->assertActionVisible('overallComments')
+        ->callAction('overallComments', data: ['mode' => 'required'])
+        ->assertHasNoActionErrors();
+    expect($form->fresh()->scoring_config['overall_comment'])->toBe('required');
+    expect(WorkspaceDraft::count())->toBe(0);
+})->with(['A', 'B']);
+
+it('preserves comment requirements when using the standard rating scale', function () {
+    $this->actor->givePermissionTo(Permission::findOrCreate('view_form', 'web'));
+    $this->actor->givePermissionTo(Permission::findOrCreate('view_any_form', 'web'));
+    $form = Form::create(['name' => 'Standard scale', 'scoring_config' => ['overall_comment' => 'optional']]);
+    $form->campuses()->attach($this->campus);
+    Livewire::test(EditForm::class, ['record' => $form->id])->assertStatus(200)
+        ->fillForm(['use_custom_scale' => false, 'scoring_config.overall_comment' => 'required'])
+        ->call('save')->assertHasNoFormErrors();
+    expect($form->fresh()->rating_scale)->toBeNull()
+        ->and($form->fresh()->scoring_config['overall_comment'])->toBe('required');
 });

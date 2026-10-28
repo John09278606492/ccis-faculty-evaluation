@@ -8,7 +8,7 @@
     @if (method_exists($this, 'getEvaluationWorkflowStep') && $this->getEvaluationWorkflowStep())
         @include('filament.partials.evaluation-workflow', ['currentStep' => $this->getEvaluationWorkflowStep()])
     @endif
-    @if (method_exists($this, 'workspaceDraftClientConfig'))
+    @if (method_exists($this, 'workspaceDraftClientConfig') && $this->workspaceDraftContext !== '')
         @include('filament.partials.workspace-draft')
     @endif
     @capture($form)
