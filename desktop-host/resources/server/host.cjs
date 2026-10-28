@@ -10,7 +10,7 @@ const { RestartPolicy } = require('./restart-policy.cjs');
 const { campusLinks } = require('./network-links.cjs');
 const [project, php, rawPort, statusFile] = process.argv.slice(2);
 const port = Number(rawPort);
-const wsPort = port + 7;
+const wsPort = process.argv.includes('--managed-backend') && process.env.CAMPUS_REVERB_PORT ? Number(process.env.CAMPUS_REVERB_PORT) : port + 7;
 // Independent PHP workers; reserve the WebSocket and phpMyAdmin ports.
 const workerPorts = [8, 9, 10, 11, ...Array.from({length:12},(_,i)=>14+i)].slice(0, Math.min(16, Math.max(4, os.cpus().length))).map(offset => port + offset);
 const publicDir = path.join(project, 'public');
@@ -19,6 +19,8 @@ const phpMyAdminPorts = [12, 13].map(offset => port + offset);
 let studentDb = null;
 let ownsStudentDb = false;
 const campusMode = process.argv.includes('--campus');
+const managedBackend = process.argv.includes('--managed-backend');
+const publicPort = Number(process.argv.find(value => value.startsWith('--public-port='))?.split('=')[1] ?? port);
 let nextPhpMyAdmin = 0;
 const children = new Set();
 const serviceStates = new Map();
@@ -31,10 +33,14 @@ let lastStatus;
 // credentials into the shared Laravel application.
 const env = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
     /^(PATH|PHPRC|PHP_INI_SCAN_DIR|CCIS_PHP_RUNTIME_DIR|SYSTEMROOT|WINDIR|TEMP|TMP|COMSPEC|PATHEXT|USERPROFILE|APPDATA|LOCALAPPDATA|PROGRAMDATA|PROGRAMFILES|PROGRAMFILES\(X86\)|SYSTEMDRIVE|NUMBER_OF_PROCESSORS|PROCESSOR_ARCHITECTURE)$/i.test(key)));
+if (managedBackend) Object.assign(env, {
+    CAMPUS_SHARED_ROOT: process.env.CAMPUS_SHARED_ROOT, CAMPUS_RELEASE_ID: process.env.CAMPUS_RELEASE_ID,
+    DB_DATABASE: process.env.DB_DATABASE, DB_CONNECTION: 'sqlite', DB_URL: '',
+});
 Object.assign(env, {
     REVERB_HOST: '127.0.0.1', REVERB_PORT: String(wsPort), REVERB_SCHEME: 'http',
     REVERB_SERVER_HOST: '127.0.0.1', REVERB_SERVER_PORT: String(wsPort),
-    CLASSROOM_WEBSOCKET_PORT: String(port), CLASSROOM_WEBSOCKET_HOST: '',
+    CLASSROOM_WEBSOCKET_PORT: String(publicPort), CLASSROOM_WEBSOCKET_HOST: '',
     CLASSROOM_WEBSOCKET_SCHEME: 'http', BROADCAST_CONNECTION: 'reverb', APP_DEBUG: 'false',
     STUDENT_DB_PHPMYADMIN_URL: '/phpmyadmin',
     // Requests arrive from this gateway, which passes on each device's own address.
@@ -174,6 +180,7 @@ function pickWorker() {
     return available.length ? available.reduce((best, value) => ((busy.get(value) ?? 0) < (busy.get(best) ?? 0) ? value : best)) : null;
 }
 function clientAddress(req) {
+    if (managedBackend && typeof req.headers['x-forwarded-for'] === 'string') return req.headers['x-forwarded-for'];
     return (req.socket.remoteAddress ?? '').replace(/^::ffff:/, '');
 }
 
@@ -234,8 +241,8 @@ async function main() {
     status('starting', 'Checking the classroom database and starting live updates…');
     if (!fs.existsSync(path.join(project, 'artisan')) || !fs.existsSync(php)) throw new Error('Select the classroom project folder and PHP executable in Settings.');
     if (fs.existsSync(path.join(project, 'bootstrap/cache/config.php'))) throw new Error('The classroom project has cached configuration. Clear its configuration cache before using the desktop host.');
-    await checkPort(port, '0.0.0.0');
-    for (const value of [wsPort, ...workerPorts]) await checkPort(value);
+    await checkPort(port, managedBackend ? '127.0.0.1' : '0.0.0.0');
+    for (const value of [...(managedBackend ? [] : [wsPort]), ...workerPorts]) await checkPort(value);
     const probe = spawnSync(php, ['-d', 'opcache.enable_cli=0', '-r', "require 'vendor/autoload.php'; $app = require 'bootstrap/app.php'; $app->make(Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap(); try { Illuminate\\Support\\Facades\\DB::connection()->getPdo(); } catch (Throwable $e) { exit(2); }"], { cwd: project, env, windowsHide: true, timeout: 15000, stdio: 'ignore' });
     if (probe.status !== 0) throw new Error('The application database is unavailable. Check SQLite file permissions or the configured database service, then try again.');
     const studentDbConfig = spawnSync(php, ['-d', 'opcache.enable_cli=0', 'artisan', 'classroom:student-db', 'host-config'], { cwd: project, env, windowsHide: true, timeout: 15000, encoding: 'utf8' });
@@ -244,7 +251,7 @@ async function main() {
     if (!studentDb?.installed) studentDb = null;
     if (studentDb) {
         for (const value of phpMyAdminPorts) await checkPort(value);
-        if (!campusMode || !studentDb.running) {
+        if (!managedBackend && (!campusMode || !studentDb.running)) {
             await checkPort(studentDb.mysql_port);
             launch(['artisan', 'classroom:student-db', 'serve'], project);
             ownsStudentDb = true;
@@ -256,19 +263,23 @@ async function main() {
     }
     // Live updates need a key and secret; new installs start with them empty.
     artisan('classroom:live-keys');
-    launch(['artisan', 'reverb:start', '--host=127.0.0.1', `--port=${wsPort}`], project);
+    if (!managedBackend) launch(['artisan', 'reverb:start', '--host=127.0.0.1', `--port=${wsPort}`], project);
     // Runs scheduled work such as the daily backup while the server is open.
-    launch(['artisan', 'schedule:work'], project);
-    launch(['artisan', 'queue:work', '--sleep=1', '--tries=1'], project);
-    launch(['artisan', 'queue:work', 'bulk', '--queue=bulk', '--sleep=1', '--tries=1', '--timeout=900'], project);
+    if (!managedBackend) {
+        launch(['artisan', 'schedule:work'], project);
+        launch(['artisan', 'queue:work', '--sleep=1', '--tries=1'], project);
+        launch(['artisan', 'queue:work', 'bulk', '--queue=bulk', '--sleep=1', '--tries=1', '--timeout=900'], project);
+    }
     status('starting', 'Preparing the classroom pages…');
     for (const cache of caches) artisan(cache.includes(':') ? cache : `${cache}:cache`);
     if (artisan('config:cache').status !== 0) throw new Error('Application configuration could not be cached. Check the database and writable storage directory.');
     for (const value of workerPorts) launch(['-S', `127.0.0.1:${value}`, path.join(project, 'vendor/laravel/framework/src/Illuminate/Foundation/resources/server.php')], publicDir, opcache);
     await Promise.all([wsPort, ...workerPorts, ...(studentDb ? [studentDb.mysql_port, ...phpMyAdminPorts] : [])].map(waitReady));
     // Close expired attempts and retry/freeze retained workspaces before exposing phpMyAdmin.
-    const maintenance = artisan('classroom:assessments-maintain', '--limit=5000');
-    if (maintenance.status !== 0) console.error('Some assessment snapshots need attention; their workspaces were retained.');
+    if (!managedBackend) {
+        const maintenance = artisan('classroom:assessments-maintain', '--limit=5000');
+        if (maintenance.status !== 0) console.error('Some assessment snapshots need attention; their workspaces were retained.');
+    }
     gateway = http.createServer((req, res) => {
         if (serveStatic(req, res)) return;
         const toPhpMyAdmin = studentDb && /^\/phpmyadmin(\/|$|\?)/.test(req.url);
@@ -311,7 +322,7 @@ async function main() {
     gateway.on('error', error => stop(error.code === 'EADDRINUSE' ? 'This sharing port is already in use. Choose another port in Settings.' : 'The sharing server could not start.', true));
     gateway.keepAliveTimeout = 65000;
     gateway.headersTimeout = 66000;
-    gateway.listen({port, host:'0.0.0.0', backlog:4096}, () => status('running', 'Ready. Devices on the same Wi-Fi can open the link below.'
+    gateway.listen({port, host:managedBackend ? '127.0.0.1' : '0.0.0.0', backlog:4096}, () => status('running', 'Ready. Devices on the same Wi-Fi can open the link below.'
         + (studentDb ? ' Student databases (phpMyAdmin) are running too.' : '')));
 }
 process.on('SIGTERM', () => stop('Server stopped.'));

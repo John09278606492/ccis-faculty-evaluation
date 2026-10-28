@@ -63,6 +63,13 @@ background processing, the scheduler and live updates are managed by the launche
 
 ## Later application updates from GitHub
 
+The updated campus package now checks GitHub automatically and switches compatible,
+CI-tested code through a permanent gateway. It does not overwrite the database or
+uploads. See [automatic campus updates](AUTOMATIC-CAMPUS-UPDATES.md) for the release
+pipeline, retained sessions, rollback and database-migration boundaries. The older
+transfer ZIP predating this controller cannot begin listening without installing
+the updated launcher/package once.
+
 The deployment branch currently used by this workspace is
 `claude/project-thread-zjbov2`. Do not assume the repository's `main` branch contains
 these newer features. Use the exact branch/commit recorded in the transfer

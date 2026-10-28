@@ -92,6 +92,7 @@ def build(args):
     metadata = json.loads(metadata_file.read_text())
     metadata_file.unlink()
     shutil.copy2(ROOT/'docs/CAMPUS-SERVER-TRANSFER.md', project/'START-HERE.md')
+    shutil.copy2(ROOT/'campus-updates.example.json', project/'campus-updates.json')
     entries = {p.relative_to(project).as_posix(): {'bytes':p.stat().st_size, 'sha256':digest(p)}
                for p in sorted(project.rglob('*')) if p.is_file()}
     manifest = {'version':1, 'revision':revision, 'branch':subprocess.check_output(['git','branch','--show-current'],cwd=ROOT,text=True).strip(),

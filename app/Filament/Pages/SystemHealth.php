@@ -41,9 +41,21 @@ class SystemHealth extends Page
         rsort($files);
         $last = $files[0] ?? null;
         $keyRecovery = filled(config('backup.recovery_passphrase')) || filled(env('BACKUP_RECOVERY_PASSPHRASE'));
+        $updates = [];
+        try {
+            $stateFile = storage_path('app/campus-updates/update.json');
+            if (is_file($stateFile)) {
+                $decoded = json_decode(file_get_contents($stateFile), true, 16, JSON_THROW_ON_ERROR);
+                $updates = is_array($decoded) ? $decoded : [];
+            }
+        } catch (\Throwable $error) {
+            // A development host or a server not yet using the managed launcher.
+        }
 
         return [
             ['label' => 'Application database', 'state' => $database ? 'Available' : 'Unavailable', 'detail' => strtoupper(config('database.default')).' — required for evaluations, students and assessments.'],
+            ['label' => 'Automatic campus updates', 'state' => str_replace('-', ' ', ucfirst($updates['state'] ?? 'Not enabled on this host')),
+                'detail' => $updates['message'] ?? 'The managed campus package checks its configured GitHub branch and stages tested code while retaining your existing data.'],
             ['label' => 'Student SQL workspaces', 'state' => $sql ? 'Available' : 'Stopped / unavailable', 'detail' => 'Used by SQL coding assessments. Ordinary evaluations remain available independently.'],
             ['label' => 'Evaluation maintenance', 'state' => Cache::get('evaluation-maintenance:last-run', 'No heartbeat recorded yet'), 'detail' => 'The scheduler closes evaluations only when a closing date is configured. Manual-closing evaluations remain open.'],
             ['label' => 'Assessment maintenance', 'state' => Cache::get('assessment-maintenance:last-run', 'No heartbeat recorded yet'), 'detail' => 'The scheduler closes expired attempts and retries pending snapshots every minute.'],

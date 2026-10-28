@@ -9,7 +9,7 @@ use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
-return Application::configure(basePath: dirname(__DIR__))
+$application = Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         web: __DIR__.'/../routes/web.php',
         api: __DIR__.'/../routes/api.php',
@@ -50,3 +50,16 @@ return Application::configure(basePath: dirname(__DIR__))
             return $response;
         });
     })->create();
+
+// Versioned campus releases share private data, keys, sessions and uploads. Code,
+// vendor dependencies and bootstrap caches remain inside each individual release.
+if ($sharedRoot = getenv('CAMPUS_SHARED_ROOT')) {
+    $sharedRoot = realpath($sharedRoot);
+    if (! $sharedRoot || ! is_file($sharedRoot.'/.env') || ! is_dir($sharedRoot.'/storage')) {
+        throw new RuntimeException('The campus shared data directory is unavailable.');
+    }
+    $application->useEnvironmentPath($sharedRoot);
+    $application->useStoragePath($sharedRoot.'/storage');
+}
+
+return $application;
