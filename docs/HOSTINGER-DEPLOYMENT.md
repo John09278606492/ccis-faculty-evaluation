@@ -34,13 +34,16 @@ opening unavailable WebSocket connections or forcing a page reload. This is not
 instant server push. Default campus/Reverb behavior remains unchanged elsewhere.
 
 Add three once-per-minute PHP cron commands in hPanel after staging, using the
-account's PHP CLI executable (verify PHP >=8.2 and the required extensions):
+account's PHP CLI executable (the installed lockfile requires PHP >=8.3):
 
 ```
 evaluation-app/scripts/hostinger-maintain.php queue
 evaluation-app/scripts/hostinger-maintain.php bulk
 evaluation-app/scripts/hostinger-maintain.php schedule
 ```
+
+The server's verified PHP 8.3 CLI is `/opt/alt/php83/usr/bin/php`; the default
+`/usr/bin/php` is PHP 8.2 and must not be used with this lockfile.
 
 Paths in the hPanel command must include `domains/<domain>/` relative to the
 displayed account home prefix. Workers exit when idle and use separate locks so
