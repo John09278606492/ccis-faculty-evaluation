@@ -2,7 +2,9 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Actions\AssignDepartmentInstructors;
 use App\Filament\Resources\DepartmentResource\Pages;
+use App\Filament\Resources\DepartmentResource\RelationManagers\InstructorsRelationManager;
 use App\Models\Department;
 use App\Models\User;
 use App\Services\AcademicPeriod;
@@ -107,6 +109,7 @@ class DepartmentResource extends Resource
                     ->label('Active Status'),
             ], layout: FiltersLayout::AboveContent)
             ->actions([
+                AssignDepartmentInstructors::make(table: true),
                 Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make(),
@@ -121,7 +124,7 @@ class DepartmentResource extends Resource
     public static function getRelations(): array
     {
         return [
-            //
+            InstructorsRelationManager::class,
         ];
     }
 
