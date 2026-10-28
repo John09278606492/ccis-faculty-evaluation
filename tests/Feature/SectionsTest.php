@@ -20,6 +20,7 @@ use App\Services\AcademicSections;
 use App\Services\AcademicStudents;
 use App\Services\BackgroundTasks;
 use Filament\Facades\Filament;
+use Filament\Tables\Actions\Action;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Queue;
@@ -131,7 +132,7 @@ it('keeps section assignment available alongside enrolled matching and supports 
         'ownerRecord' => $this->offering, 'pageClass' => EditCourseOffering::class,
     ]);
     $actions = $component->instance()->getTable()->getHeaderActions();
-    expect(collect($actions)->filter(fn ($action) => $action instanceof \Filament\Tables\Actions\Action)->map->getName()->all())->toContain('assignSections', 'matchEnrolledStudents');
+    expect(collect($actions)->filter(fn ($action) => $action instanceof Action)->map->getName()->all())->toContain('assignSections', 'matchEnrolledStudents');
     $component->mountTableAction('assignSections')->assertTableActionDataSet(['include' => [], 'use_exceptions' => false])->assertSee('Teaching class')
         ->setTableActionData(['sections' => [], 'use_exceptions' => true, 'include' => [$extra->id], 'exclude' => []])
         ->callMountedTableAction()->assertHasTableActionErrors(['sections' => 'required']);

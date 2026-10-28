@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Services\AssignedDataAccess;
 use App\Services\EvaluationResultsRelease;
 use App\Services\EvaluationScoring;
+use App\Services\EvaluationSections;
 use App\Services\FacultySupervisorEvaluators;
 use App\Services\ReportService;
 use Illuminate\Http\Request;
@@ -62,7 +63,7 @@ class FacultyReportController extends Controller
                 'items' => $score['fields']->map(fn ($field) => ['label' => $field['label'], 'section' => $field['section'], 'mean' => $field['native_avg']])]);
             if ($score['instrument'] === 'SET') {
                 $submissions = $assignment->formSubmissions->where('form_id', $assignment->form_id);
-                $groups = $submissions->groupBy(fn ($submission) => app(\App\Services\EvaluationSections::class)->label($submission, $assignment));
+                $groups = $submissions->groupBy(fn ($submission) => app(EvaluationSections::class)->label($submission, $assignment));
                 if ($groups->isEmpty()) {
                     $groups = collect([$assignment->evaluation_section_label => collect()]);
                 }

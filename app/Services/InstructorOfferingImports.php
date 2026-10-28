@@ -450,7 +450,9 @@ class InstructorOfferingImports
         $updated = 0;
         foreach ($classes as $class) {
             $selection = $class->evaluator_selection ?? [];
-            if (! empty($selection['auto_enrolment']) || ($selection['source'] ?? '') === 'auto_enrolment_v1') continue;
+            if (! empty($selection['auto_enrolment']) || ($selection['source'] ?? '') === 'auto_enrolment_v1') {
+                continue;
+            }
             if (empty($selection['auto_section_roster']) || ! empty($selection['include']) || ! empty($selection['exclude'])
                 || array_values($selection['sections'] ?? []) !== [$expected]) {
                 continue;

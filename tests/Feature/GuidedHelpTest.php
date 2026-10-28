@@ -6,6 +6,7 @@ use App\Models\FormSubmission;
 use App\Models\User;
 use App\Services\GuidedHelp;
 use Filament\Facades\Filament;
+use Illuminate\Http\Request;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -84,7 +85,7 @@ it('anchors introductory and explanatory steps instead of creating centered moda
 
 it('keeps page help available when the header is refreshed by Livewire', function () {
     $original = request();
-    $request = Illuminate\Http\Request::create('/livewire/update', 'POST', [
+    $request = Request::create('/livewire/update', 'POST', [
         'components' => [['snapshot' => json_encode(['memo' => ['path' => $this->campus->id.'/academic-students']])]],
     ], server: ['HTTP_X_LIVEWIRE' => 'true']);
     app()->instance('request', $request);

@@ -8,6 +8,7 @@ use App\Models\CourseOffering;
 use App\Services\AcademicPeriod;
 use App\Services\AcademicStudents;
 use App\Services\AssignedDataAccess;
+use App\Services\FacultySectioning;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Tables;
@@ -72,9 +73,13 @@ class TeachingClassResource extends CourseOfferingResource
                     if (($record->evaluator_selection['source'] ?? null) !== 'sections_v1') {
                         if (($record->evaluator_selection['source'] ?? null) === 'auto_enrolment_v1') {
                             $labels = array_values(array_unique(array_filter($record->evaluator_selection['report_sections'] ?? [])));
-                            if ($record->evaluator_selection['auto_match']['pending_section'] ?? 0) $labels[] = 'Section pending';
+                            if ($record->evaluator_selection['auto_match']['pending_section'] ?? 0) {
+                                $labels[] = 'Section pending';
+                            }
+
                             return $labels ?: ['Section pending'];
                         }
+
                         return ['Needs review'];
                     }
 
@@ -92,7 +97,7 @@ class TeachingClassResource extends CourseOfferingResource
                 Tables\Filters\TernaryFilter::make('is_active')->label('Active'),
             ], layout: FiltersLayout::AboveContent)->filtersFormColumns(3)->actions([
                 Tables\Actions\Action::make('sectionStudents')->label('Section students')->icon('heroicon-o-rectangle-stack')
-                    ->visible(fn (CourseOffering $record) => app(\App\Services\FacultySectioning::class)->allowed(auth()->user(), filament()->getTenant()) && auth()->user()->can('manageEvaluators', $record))
+                    ->visible(fn (CourseOffering $record) => app(FacultySectioning::class)->allowed(auth()->user(), filament()->getTenant()) && auth()->user()->can('manageEvaluators', $record))
                     ->modalHeading('Student Sectioning')->modalWidth('5xl')->modalSubmitAction(false)->modalCancelActionLabel('Close')
                     ->closeModalByEscaping(false)->closeModalByClickingAway(false)
                     ->stickyModalHeader()->stickyModalFooter()->modalAutofocus(false)
@@ -111,7 +116,9 @@ class TeachingClassResource extends CourseOfferingResource
 
     public static function sharedCountLabel(CourseOffering $record): string|int
     {
-        if (($record->evaluator_selection['source'] ?? '') !== 'auto_enrolment_v1' || empty($record->evaluator_selection['auto_enrolment'])) return 0;
+        if (($record->evaluator_selection['source'] ?? '') !== 'auto_enrolment_v1' || empty($record->evaluator_selection['auto_enrolment'])) {
+            return 0;
+        }
         $s = $record->evaluator_selection['auto_match'] ?? [];
 
         return ! empty($s['grouped_class_id']) && ! empty($s['grouped_count']) && empty($s['ambiguous']) && empty($s['elsewhere'])
@@ -120,17 +127,30 @@ class TeachingClassResource extends CourseOfferingResource
 
     public static function evaluatorStatus(CourseOffering $record): string
     {
-        if (! $record->is_active) return 'Inactive';
+        if (! $record->is_active) {
+            return 'Inactive';
+        }
         $s = ($record->evaluator_selection['source'] ?? '') === 'auto_enrolment_v1' ? ($record->evaluator_selection['auto_match'] ?? null) : null;
         if ($record->students_count) {
-            if ($s['section_required'] ?? 0) return $s['section_required'].' require sections';
+            if ($s['section_required'] ?? 0) {
+                return $s['section_required'].' require sections';
+            }
+
             return $s && ($s['pending_section'] ?? 0) ? $s['pending_section'].' section pending'
                 : (in_array($record->evaluator_selection['source'] ?? '', ['sections_v1', 'auto_enrolment_v1'], true) ? 'Ready' : 'Review sections');
         }
-        if (! $s) return 'None assigned';
-        if ($s['ambiguous']) return $s['ambiguous'].' need teacher / section';
-        if ($s['elsewhere']) return $s['elsewhere'].' assigned in another class';
-        if (static::sharedCountLabel($record) !== 0) return 'One evaluation per faculty / subject';
+        if (! $s) {
+            return 'None assigned';
+        }
+        if ($s['ambiguous']) {
+            return $s['ambiguous'].' need teacher / section';
+        }
+        if ($s['elsewhere']) {
+            return $s['elsewhere'].' assigned in another class';
+        }
+        if (static::sharedCountLabel($record) !== 0) {
+            return 'One evaluation per faculty / subject';
+        }
 
         return 'No matching subject enrolments';
     }
