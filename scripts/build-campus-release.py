@@ -30,12 +30,16 @@ def build(output, sha):
             if not DENY.search(relative) and file.is_file():
                 names.add(relative)
     entries = {}
+    seen = set()
     for name in sorted(names):
         file = ROOT/name
         if DENY.search(name) or not file.is_file():
             continue
         if not file.resolve().is_relative_to(ROOT):
             raise ValueError('A release file points outside the build checkout.')
+        if name.lower() in seen:
+            raise ValueError('Release paths collide on a Windows server.')
+        seen.add(name.lower())
         entries[name] = {'bytes':file.stat().st_size, 'sha256':digest(file)}
     schema = {p.relative_to(ROOT/'database/migrations').as_posix():hashlib.sha256(p.read_bytes().replace(b'\r\n', b'\n')).hexdigest()
               for p in sorted((ROOT/'database/migrations').rglob('*')) if p.is_file()}

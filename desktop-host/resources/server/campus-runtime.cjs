@@ -94,8 +94,8 @@ class BackgroundRunner {
     }
     tick(){
         if(this.paused)return;
-        this.launch('queue',['artisan','queue:work','--sleep=1','--tries=1','--max-time=300']);
-        this.launch('bulk',['artisan','queue:work','bulk','--queue=bulk','--sleep=1','--tries=1','--timeout=900','--max-time=300']);
+        this.launch('queue',['artisan','queue:work','--sleep=1','--tries=1','--max-time=30']);
+        this.launch('bulk',['artisan','queue:work','bulk','--queue=bulk','--sleep=1','--tries=1','--timeout=900','--max-time=30']);
         const minute=Math.floor(Date.now()/60000);
         if(minute!==this.lastMinute && ![...this.children].some(c=>c.key==='schedule')){
             this.lastMinute=minute;this.launch('schedule',[path.join(this.backend.project,'scripts/run-campus-schedule.php')]);

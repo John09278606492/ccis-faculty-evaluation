@@ -46,6 +46,8 @@ jobs:
         run: npm run build
       - name: Package production dependencies and code only
         run: |
+          sed -i 's/^APP_ENV=.*/APP_ENV=production/' .env
+          sed -i 's/^APP_DEBUG=.*/APP_DEBUG=false/' .env
           composer install --no-dev --no-interaction --prefer-dist --no-progress --optimize-autoloader
           python scripts/build-campus-release.py --sha "$GITHUB_SHA" --output /tmp/campus-release
       - name: Publish the complete tested package
