@@ -5,6 +5,11 @@ $portablePhp = Join-Path $PSScriptRoot 'runtime/php/php.exe'
 $portableNode = Join-Path $PSScriptRoot 'runtime/node/node.exe'
 $phpExe = if (Test-Path -LiteralPath $portablePhp) { $portablePhp } else { (Get-Command php -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source }
 $nodeExe = if (Test-Path -LiteralPath $portableNode) { $portableNode } else { (Get-Command node -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source }
+if (Test-Path -LiteralPath $portablePhp) {
+    $env:CCIS_PHP_RUNTIME_DIR = Join-Path $PSScriptRoot 'runtime/php'
+    $env:PHPRC = $env:CCIS_PHP_RUNTIME_DIR
+    $env:PHP_INI_SCAN_DIR = Join-Path $env:CCIS_PHP_RUNTIME_DIR 'conf.d'
+}
 $statusFile = Join-Path $PSScriptRoot 'storage/app/campus-server.json'
 $interfaces = @(Get-NetIPConfiguration | Where-Object { $_.IPv4DefaultGateway -and $_.IPv4Address })
 if (-not $interfaces.Count) { $interfaces = @(Get-NetIPConfiguration | Where-Object { $_.IPv4Address }) }

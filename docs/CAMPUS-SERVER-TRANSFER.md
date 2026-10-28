@@ -85,6 +85,30 @@ file integrity. Original-key recovery needs either the retained `.env` or a
 configured protected recovery envelope. See `config/backup.php` and
 `php artisan help classroom:restore`.
 
+## Rebuild a fresh private transfer on the source PC
+
+After committing the reviewed source and finishing background jobs, a developer
+can rebuild the same folder-based package with Python 3.11+:
+
+```powershell
+python scripts/build-campus-transfer.py --php-dir "C:\path\to\php-8.3" --node-dir "C:\path\to\node-24"
+```
+
+The PHP folder needs its working `php.ini`, extensions and a CA certificate bundle
+(`cacert.pem`); the builder can also reuse the installed Laragon CA bundle on the
+source PC. The installed `vendor` directory is included, so Composer is not needed
+on the receiving PC. Python/Git are build tools on the source PC; they are not
+required to run the extracted server. The active campus configuration is detected
+from its status file, or can be selected with `--config-cache`.
+
+The builder uses a SQLite snapshot operation, rejects snapshots containing pending
+background jobs, preserves both the encryption and anonymous-evaluation keys,
+removes machine-specific paths, verifies the exported copy and checks ZIP integrity.
+Output is stored in an ignored private `output/campus-transfer-*` directory. This
+is a point-in-time export; rebuilding does not stop or replace the source server.
+The initial-transfer verifier should be used before starting the extracted server;
+later legitimate changes to its live database will no longer match that snapshot.
+
 References: [AnyDesk file transfer](https://support.anydesk.com/docs/file-manager-and-file-transfer),
 [SQLite online snapshots](https://www.sqlite.org/backup.html),
 [Laravel encryption keys](https://laravel.com/docs/12.x/encryption).

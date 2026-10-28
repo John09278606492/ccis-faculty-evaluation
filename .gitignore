@@ -43,3 +43,5 @@ rr
 
 # Private campus import/reconciliation reports belong with local data, not source releases.
 /docs/reviews/
+/runtime/
+/TRANSFER-MANIFEST.json
