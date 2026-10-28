@@ -6,7 +6,8 @@
   "applicationDirectory": "evaluation-app",
   "publicDirectory": "public_html",
   "phpCli": "/opt/alt/php83/usr/bin/php",
-  "deployedRevision": "916a411024c75d48581547951036713379659604",
+  "deployedRevision": "82cff54",
   "sourceBranch": "claude/project-thread-zjbov2",
-  "automaticGitDeploymentConfigured": false
+  "automaticGitDeploymentConfigured": false,
+  "lastPatch": "Published form navigation and overall comment requirements; live Annex A/B controls verified 2026-10-28"
 }
