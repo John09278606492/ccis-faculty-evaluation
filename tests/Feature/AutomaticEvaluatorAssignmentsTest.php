@@ -184,6 +184,27 @@ it('does not expand an explicit section roster to unrelated enrolled students', 
     expect($this->class->students()->pluck('users.id')->all())->toBe([$this->student->id]);
 });
 
+it('does not match unrelated teaching classes while assigning one section', function () {
+    $subject = $this->class->course->replicate();
+    $subject->code = 'UNRELATED-101';
+    $subject->name = 'Unrelated subject';
+    $subject->save();
+    $other = $this->class->replicate();
+    $other->course_id = $subject->id;
+    $other->save();
+    importedAutomaticClass($other);
+    app(StudentAcademicRecords::class)->save($this->student, $this->class->semester_id, ['program' => 'BSIT', 'subjects' => [
+        ['subject_code' => $this->class->course->code, 'description' => $this->class->course->name, 'units' => 3],
+        ['subject_code' => $subject->code, 'description' => $subject->name, 'units' => 3],
+    ]]);
+    $section = AcademicSection::create(['name' => $this->class->section, 'department_id' => $this->class->course->department_id,
+        'semester_id' => $this->class->semester_id, 'is_active' => true]);
+    app(FacultySectioning::class)->assign($this->actor, $this->campus,
+        ['anchor_id' => $this->class->id, 'faculty_id' => $this->class->user_id, 'section_id' => $section->id], [$this->student->id]);
+
+    expect($other->students()->count())->toBe(0);
+});
+
 it('preserves completed anonymous answers and their instructor while recording a pending section', function () {
     $this->class->update(['form_id' => $this->form->id]);
     $this->class->students()->attach($this->student);

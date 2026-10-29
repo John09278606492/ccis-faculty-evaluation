@@ -191,7 +191,8 @@ class FacultySectioning
                 'include' => array_values(array_diff($finalIds, $sectionIds)), 'exclude' => array_values(array_diff($sectionIds, $finalIds)),
                 'mode' => 'replace', 'count' => count($finalIds),
                 'report_sections' => $labels, 'sectioned_by' => $actor->id, 'sectioned_at' => now()->toIso8601String()]]);
-            app(AutomaticEvaluatorAssignments::class)->synchronize($actor, $campus, (int) $anchor->semester_id);
+            // This operation changes only the reviewed subject/teacher roster.
+            // A campus-wide match would also alter unrelated teaching classes.
             ClassroomUpdates::panel('setup');
 
             return ['validation_error_count' => 0, 'students' => count($ids), 'class_id' => $target->id,
