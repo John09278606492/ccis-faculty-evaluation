@@ -182,8 +182,14 @@ class FacultySectioning
             foreach ($attach as $id) {
                 $labels[$id] = $section->name;
             }
-            $target->update(['evaluator_selection' => [...$selection, 'source' => 'auto_enrolment_v1', 'auto_enrolment' => true, 'sectioning_policy' => true,
+            // An explicit instructor list is authoritative. Subject matching must
+            // not grow it with students the operator did not select or upload.
+            $finalIds = $target->students()->pluck('users.id')->map(fn ($id) => (int) $id)->all();
+            $sectionIds = $section->students()->pluck('users.id')->map(fn ($id) => (int) $id)->all();
+            $target->update(['evaluator_selection' => [...$selection, 'source' => 'sections_v1', 'auto_enrolment' => false, 'auto_section_roster' => false, 'sectioning_policy' => true,
                 'sections' => [$section->department_id.'~'.$section->semester_id.'~'.rawurlencode($section->name)],
+                'include' => array_values(array_diff($finalIds, $sectionIds)), 'exclude' => array_values(array_diff($sectionIds, $finalIds)),
+                'mode' => 'replace', 'count' => count($finalIds),
                 'report_sections' => $labels, 'sectioned_by' => $actor->id, 'sectioned_at' => now()->toIso8601String()]]);
             app(AutomaticEvaluatorAssignments::class)->synchronize($actor, $campus, (int) $anchor->semester_id);
             ClassroomUpdates::panel('setup');

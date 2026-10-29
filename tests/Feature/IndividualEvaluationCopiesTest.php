@@ -116,3 +116,18 @@ it('resolves an existing keyed anonymous response only when identity reveal is a
     $this->staff->campuses()->attach($otherCampus);
     expect(fn () => app(EvaluationCopies::class)->previewUrl($this->staff, $otherCampus, [$this->first->id]))->toThrow(HttpException::class);
 });
+
+it('keeps the copies page available when an unrelated offering has an archived instructor', function () {
+    $archived = User::factory()->create(['is_instructor' => true, 'is_student' => false]);
+    $archived->campuses()->attach($this->campus);
+    $old = $this->assignment->replicate();
+    $old->user_id = $archived->id;
+    $old->save();
+    $archived->delete();
+    Filament::setCurrentPanel(Filament::getPanel('admin'));
+    Filament::setTenant($this->campus, isQuiet: true);
+
+    Livewire::test(IndividualEvaluationCopies::class)
+        ->assertSuccessful()
+        ->assertCanSeeTableRecords([$this->first, $this->second]);
+});

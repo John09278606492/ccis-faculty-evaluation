@@ -167,6 +167,23 @@ it('validates and assigns a valid uploaded section list through the background w
         ->and($section->students()->count())->toBe(1)->and($this->class->students()->count())->toBe(1);
 });
 
+it('does not expand an explicit section roster to unrelated enrolled students', function () {
+    $unselected = User::factory()->create(['is_student' => true, 'is_instructor' => false, 'student_id' => 'NOT-SELECTED',
+        'student_department_id' => $this->class->course->department_id]);
+    $unselected->campuses()->attach($this->campus);
+    $unselected->assignRole('student');
+    app(StudentAcademicRecords::class)->save($unselected, $this->class->semester_id, ['program' => 'BSIT', 'subjects' => [
+        ['subject_code' => $this->class->course->code, 'description' => $this->class->course->name, 'units' => 3],
+    ]]);
+    $section = AcademicSection::create(['name' => $this->class->section, 'department_id' => $this->class->course->department_id,
+        'semester_id' => $this->class->semester_id, 'is_active' => true]);
+    app(FacultySectioning::class)->assign($this->actor, $this->campus,
+        ['anchor_id' => $this->class->id, 'faculty_id' => $this->class->user_id, 'section_id' => $section->id], [$this->student->id]);
+    $this->service->synchronize($this->actor, $this->campus, $this->class->semester_id);
+
+    expect($this->class->students()->pluck('users.id')->all())->toBe([$this->student->id]);
+});
+
 it('preserves completed anonymous answers and their instructor while recording a pending section', function () {
     $this->class->update(['form_id' => $this->form->id]);
     $this->class->students()->attach($this->student);

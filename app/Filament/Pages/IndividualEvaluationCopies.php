@@ -40,7 +40,9 @@ class IndividualEvaluationCopies extends Page implements HasTable
 
     public function table(Table $table): Table
     {
-        return $table->query(app(EvaluationCopies::class)->query(filament()->getTenant())->with(['form', 'courseOffering.evaluatee', 'courseOffering.course']))
+        return $table->query(app(EvaluationCopies::class)->query(filament()->getTenant())->with(['form',
+            'courseOffering.evaluatee' => fn ($query) => $query->withTrashed()->withoutGlobalScope('assigned_data'),
+            'courseOffering.course']))
             ->columns([
                 Tables\Columns\TextColumn::make('courseOffering.evaluatee.name')->label('Faculty')->searchable(),
                 Tables\Columns\TextColumn::make('form.name')->label('Instrument')->wrap(),
@@ -50,7 +52,9 @@ class IndividualEvaluationCopies extends Page implements HasTable
                 }),
             ])->filters([
                 Tables\Filters\SelectFilter::make('form_id')->label('Instrument')->options(fn () => filament()->getTenant()->forms()->whereIn('settings->annex', ['A', 'B'])->pluck('name', 'forms.id')),
-                Tables\Filters\SelectFilter::make('course_offering_id')->label('Evaluation Assignment')->options(fn () => CourseOffering::whereHas('semester.schoolYear', fn ($q) => $q->where('campus_id', filament()->getTenant()->id))->with(['evaluatee', 'course'])->get()->mapWithKeys(fn ($a) => [$a->id => $a->evaluatee->name.' · '.$a->course?->code.' · '.$a->section])),
+                Tables\Filters\SelectFilter::make('course_offering_id')->label('Evaluation Assignment')->options(fn () => CourseOffering::whereHas('semester.schoolYear', fn ($q) => $q->where('campus_id', filament()->getTenant()->id))
+                    ->with(['evaluatee' => fn ($query) => $query->withTrashed()->withoutGlobalScope('assigned_data'), 'course'])
+                    ->get()->mapWithKeys(fn ($a) => [$a->id => ($a->evaluatee?->name ?? 'Faculty unavailable').' · '.$a->course?->code.' · '.$a->section])),
             ], layout: FiltersLayout::AboveContent)
             ->filtersFormColumns(['default' => 1, 'md' => 2])
             ->headerActions([
