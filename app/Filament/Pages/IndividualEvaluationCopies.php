@@ -21,9 +21,13 @@ class IndividualEvaluationCopies extends Page implements HasTable
     use InteractsWithTable;
 
     protected static string $view = 'filament.pages.individual-evaluation-copies';
+
     protected static ?string $title = 'Individual Evaluation Copies';
+
     protected static ?string $navigationGroup = 'Evaluation Reports';
+
     protected static ?int $navigationSort = 2;
+
     protected static ?string $navigationIcon = 'heroicon-o-printer';
 
     #[Url]

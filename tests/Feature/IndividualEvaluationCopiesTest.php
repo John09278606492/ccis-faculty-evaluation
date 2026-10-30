@@ -2,6 +2,7 @@
 
 use App\Filament\Pages\IndividualEvaluationCopies;
 use App\Models\Campus;
+use App\Models\Department;
 use App\Models\FormSubmission;
 use App\Models\User;
 use App\Services\EvaluationCopies;
@@ -163,7 +164,7 @@ it('groups student and supervisor responses into one instructor row', function (
 });
 
 it('counts only authorized teaching departments and blocks unrelated instructor detail links', function () {
-    $department = \App\Models\Department::create(['name' => 'Other department', 'code' => 'OTHER', 'campus_id' => $this->campus->id, 'is_active' => true]);
+    $department = Department::create(['name' => 'Other department', 'code' => 'OTHER', 'campus_id' => $this->campus->id, 'is_active' => true]);
     $course = $this->assignment->course->replicate();
     $course->department_id = $department->id;
     $course->code = 'OTHER-101';
