@@ -134,3 +134,26 @@ it('protects the period course and evaluatee after responses while allowing desc
     expect($this->offering->fresh()->section)->toBe('Corrected label');
     expect($submission->fresh()->getRawOriginal())->toBe($originalData);
 })->with(['semester_id', 'course_id', 'user_id']);
+
+it('deletes only unused classes without students or faculty and keeps classes with records', function () {
+    foreach (['delete_course::offering', 'delete_any_course::offering'] as $permission) {
+        $this->actor->givePermissionTo(Permission::findOrCreate($permission, 'web'));
+    }
+    $empty = $this->service->save($this->actor, $this->campus, $this->data);
+    $gone = User::factory()->create(['is_instructor' => true]);
+    $noFaculty = $this->service->save($this->actor, $this->campus, [...$this->data, 'section' => 'BSIT 3C']);
+    $noFaculty->students()->attach($this->student, ['enrolled_at' => now()]);
+    $noFaculty->forceFill(['user_id' => $gone->id])->save();
+    $gone->delete();
+    $answered = $this->offering;
+    FormSubmission::create(['form_id' => $answered->form_id, 'course_offering_id' => $answered->id, 'user_id' => $this->student->id, 'data' => ['teaching_quality' => 5]]);
+    $answered->students()->detach();
+
+    Livewire::test(ListTeachingClasses::class)
+        ->assertTableActionVisible('deleteEmpty', $empty)->assertTableActionHidden('deleteEmpty', $answered)
+        ->callTableAction('deleteEmpty', $empty);
+    expect(CourseOffering::find($empty->id))->toBeNull();
+
+    Livewire::test(ListTeachingClasses::class)->callTableBulkAction('deleteEmpty', [$noFaculty, $answered]);
+    expect(CourseOffering::find($noFaculty->id))->toBeNull()->and(CourseOffering::find($answered->id))->not->toBeNull();
+});

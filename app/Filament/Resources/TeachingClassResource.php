@@ -5,16 +5,19 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\TeachingClassResource\Pages;
 use App\Models\Course;
 use App\Models\CourseOffering;
+use App\Models\User;
 use App\Services\AcademicPeriod;
 use App\Services\AcademicStudents;
 use App\Services\AssignedDataAccess;
 use App\Services\FacultySectioning;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Notifications\Notification;
 use Filament\Tables;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 
 class TeachingClassResource extends CourseOfferingResource
@@ -109,9 +112,59 @@ class TeachingClassResource extends CourseOfferingResource
                     ->url(fn (CourseOffering $record) => static::getUrl('edit', ['record' => ! $record->students_count && static::sharedCountLabel($record) !== 0
                         ? $record->evaluator_selection['auto_match']['grouped_class_id'] : $record->id, 'activeRelationManager' => '0'])),
                 Tables\Actions\EditAction::make()->label('Class details')->iconButton()->tooltip('Edit class details'),
+                Tables\Actions\Action::make('deleteEmpty')->label('Delete')->icon('heroicon-o-trash')->color('danger')->iconButton()->tooltip('Delete this unused class')
+                    ->visible(fn (CourseOffering $record) => auth()->user()->can('delete', $record) && static::deletable($record))
+                    ->requiresConfirmation()->modalHeading('Delete this class?')
+                    ->modalDescription(fn (CourseOffering $record) => ($record->course?->code ?? 'This class').' has '.static::emptyReason($record).' and no evaluation or assessment records. This cannot be undone.')
+                    ->action(function (CourseOffering $record) {
+                        abort_unless(auth()->user()->can('delete', $record) && static::deletable($record->fresh()), 403);
+                        $record->delete();
+                        Notification::make()->success()->title('Class deleted')->send();
+                    }),
+            ])->bulkActions([
+                Tables\Actions\BulkAction::make('deleteEmpty')->label('Delete unused classes')->icon('heroicon-o-trash')->color('danger')
+                    ->visible(fn () => auth()->user()->can('deleteAny', CourseOffering::class))
+                    ->requiresConfirmation()->modalHeading('Delete unused classes?')
+                    ->modalDescription('Only selected classes with no students or no faculty, and no evaluation or assessment records, are deleted. Others are skipped.')
+                    ->deselectRecordsAfterCompletion()
+                    ->action(function (Collection $records) {
+                        $deleted = 0;
+                        foreach ($records as $record) {
+                            if (auth()->user()->can('delete', $record) && static::deletable($record->fresh())) {
+                                $record->delete();
+                                $deleted++;
+                            }
+                        }
+                        Notification::make()->success()->title($deleted.' classes deleted')->body(($records->count() - $deleted).' skipped because they have students and faculty or evaluation records.')->send();
+                    }),
             ])->recordUrl(fn (CourseOffering $record) => auth()->user()->can('update', $record) ? static::getUrl('edit', ['record' => $record, 'activeRelationManager' => '0']) : null)
             ->defaultSort(fn (Builder $query) => $query->orderByDesc('evaluator_selection->auto_match->ambiguous')->orderByDesc('evaluator_selection->auto_match->section_required')->orderByDesc('id'))
             ->emptyStateHeading('No teaching classes yet')->emptyStateDescription('Import instructor offerings to match enrolled students automatically.');
+    }
+
+    /** Unused setup rows only: never a class in an evaluation or with responses, scores or assessments. */
+    public static function deletable(?CourseOffering $record): bool
+    {
+        if (! $record || $record->evaluation_cycle_id || $record->formSubmissions()->withoutGlobalScope('assigned_data')->exists()
+            || $record->ratings()->exists() || $record->quizzes()->exists()) {
+            return false;
+        }
+
+        return static::emptyReason($record) !== null;
+    }
+
+    public static function emptyReason(CourseOffering $record): ?string
+    {
+        $faculty = User::withoutGlobalScope('assigned_data')->withTrashed()->find($record->user_id);
+        $noFaculty = ! $faculty || $faculty->trashed() || ! $faculty->is_instructor || $faculty->is_student;
+        $noStudents = ! $record->students()->exists() && static::sharedCountLabel($record) === 0;
+
+        return match (true) {
+            $noFaculty && $noStudents => 'no faculty and no students',
+            $noFaculty => 'no faculty',
+            $noStudents => 'no students',
+            default => null,
+        };
     }
 
     public static function sharedCountLabel(CourseOffering $record): string|int
