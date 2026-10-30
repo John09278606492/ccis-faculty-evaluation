@@ -33,7 +33,7 @@ then review and open the evaluation. See [enrolment matching](ENROLMENT-EVALUATO
 | Export field | Used for |
 | --- | --- |
 | `sy`, `sem` | Match the selected school year and actual semester. Other periods are excluded. |
-| `course_code`, `course_desc`, `units` | Reuse matching subjects or create missing subjects when permitted. Conflicting catalogue entries are retained for attention. |
+| `course_code`, `course_desc`, `units` | A subject is its code plus title, because curricula reuse codes (PROF ELEC 2 is Web Systems for BSIT and Graphics for BSCS). Reuse the matching code+title or create it when permitted. Rows for the same code+title with different units need attention. |
 | `id`, `first_name`, `last_name` | Link source faculty identities to campus faculty profiles. Source IDs are stored separately from local user IDs and employee IDs. |
 | `section` | Match the exact saved department/semester section, allowing case and whitespace normalization. New sections start empty. |
 | `code`, `name` | Identify the degree program and suggest its teaching department. Explicit program matches can override the suggestion within authorized departments. |
@@ -73,7 +73,7 @@ explicitly, and importing never opens an evaluation or assigns Annex A/B forms.
 
 Existing matching classes, rosters, supervisor choices and submitted responses are
 retained. Source links make repeat uploads idempotent. Duplicate source
-rows for the same class are combined. Conflicting subject variants or different
+rows for the same class are combined. Section students who already evaluate the same subject in another class stay in that class and are counted in the review. Unit disagreements or different
 instructors for the same subject/section require attention.
 
 ## Background validation
@@ -103,3 +103,14 @@ FPST OJT 1 matched 103 students; CLJ 6 requires sectioning for its 267 enrolled
 students because multiple instructors teach it. The existing two submitted
 evaluations were verified unchanged against pre-backfill hashes. A SQLite backup
 was taken before applying the backfill.
+
+## Same code, different titles (2026-10-30)
+
+Before this change every row of a code with two titles was blocked, so 16
+first-semester classes (PROF ELEC 2, FPST 5, GE CW, NSTP 1) never appeared. Each
+title is now its own subject. Automatic enrolment matching also counts students
+already in classes prepared for an evaluation, so a later import never gives them
+a second class for the same subject. Tested on a copy of the 2026-10-29 campus
+data: all 340 classes import, repeating the file creates nothing, and no student
+gains a second class for one subject.
+

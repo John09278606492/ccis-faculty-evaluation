@@ -8,6 +8,7 @@ use App\Models\Campus;
 use App\Models\Course;
 use App\Models\CourseOffering;
 use App\Models\Department;
+use App\Models\EvaluationCycle;
 use App\Models\FacultySourceLink;
 use App\Models\StudentSectionMembership;
 use App\Models\TeachingClassSourceLink;
@@ -95,6 +96,21 @@ it('automatically connects exact subject enrolments after committing the origina
         ->and(DB::table('course_offering_student')->whereIn('course_offering_id', $classes)->where('user_id', $this->student->id)->count())->toBe(1);
 });
 
+it('does not auto-assign a student who already evaluates the subject in a class prepared for an evaluation', function () {
+    $this->student->update(['student_department_id' => $this->offering->course->department_id]);
+    app(StudentAcademicRecords::class)->save($this->student, $this->offering->semester_id, ['program' => 'BSIT', 'subjects' => [
+        ['subject_code' => 'IT 412', 'description' => 'System Integration and Architecture 1', 'units' => 3],
+    ]]);
+    $this->service->commit($this->actor, $this->campus, prepareInstructorOfferings([instructorOfferingRow()])['plan']);
+    $prepared = CourseOffering::findOrFail(TeachingClassSourceLink::sole()->course_offering_id);
+    $prepared->update(['evaluation_cycle_id' => EvaluationCycle::create(['campus_id' => $this->campus->id, 'department_id' => $prepared->teaching_department_id,
+        'semester_id' => $prepared->semester_id, 'name' => 'First evaluation', 'status' => 'draft'])->id]);
+    expect($prepared->students()->pluck('users.id')->all())->toBe([$this->student->id]);
+    $result = $this->service->commit($this->actor, $this->campus, prepareInstructorOfferings([instructorOfferingRow(), instructorOfferingRow(['section' => 'BSIT 4B'])])['plan']);
+    expect($result['new_classes'])->toBe(1)->and($result['automatic_evaluators'])->toBe(0)
+        ->and(DB::table('course_offering_student')->where('user_id', $this->student->id)->whereIn('course_offering_id', TeachingClassSourceLink::pluck('course_offering_id'))->count())->toBe(1);
+});
+
 it('downloads an example with the selected period that the real importer can review without saving records', function () {
     $before = [User::count(), Course::count(), CourseOffering::count()];
     $download = $this->get(route('instructor-offerings.template', [
@@ -164,18 +180,53 @@ it('is idempotent and never replaces an existing class roster or its evaluation 
         ->and($class->fresh()->form_id)->toBe($this->offering->form_id)->and($class->students()->count())->toBe(1);
 });
 
-it('separates conflicting subjects from ready classes and does not overwrite the catalogue', function () {
+it('keeps a different title under the same code as its own subject without changing the catalogue', function () {
     $row = instructorOfferingRow();
-    $conflict = Course::create(['department_id' => $this->offering->course->department_id, 'code' => $row['course_code'], 'name' => 'Different approved subject', 'units' => 3, 'is_active' => true]);
+    $other = Course::create(['department_id' => $this->offering->course->department_id, 'code' => $row['course_code'], 'name' => 'Different approved subject', 'units' => 3, 'is_active' => true]);
     $prepared = prepareInstructorOfferings([$row, instructorOfferingRow(['course_code' => 'IT 499', 'course_desc' => 'Capstone', 'section' => 'BSIT 4B'])]);
-    expect($prepared['review']['blocked_classes'])->toBe(1)->and($prepared['review']['ready_classes'])->toBe(1);
+    expect($prepared['review']['blocked_classes'])->toBe(0)->and($prepared['review']['ready_classes'])->toBe(2);
     $result = $this->service->commit($this->actor, $this->campus, $prepared['plan']);
-    expect($result['new_classes'])->toBe(1)->and($conflict->fresh()->name)->toBe('Different Approved Subject');
+    expect($result['new_classes'])->toBe(2)->and($other->fresh()->name)->toBe('Different Approved Subject')
+        ->and(Course::where('department_id', $other->department_id)->where('code', $row['course_code'])->count())->toBe(2);
+});
+
+it('imports one code with two titles in the same file as two subjects', function () {
+    $prepared = prepareInstructorOfferings([
+        instructorOfferingRow(['course_code' => 'PROF ELEC 2', 'course_desc' => 'Web Systems and Technologies', 'section' => 'BSIT 3A']),
+        instructorOfferingRow(['course_code' => 'PROF ELEC 2', 'course_desc' => 'Graphics and Visual Computing', 'section' => 'BSCS 3',
+            'id' => 'REG-008', 'last_name' => 'Cruz', 'first_name' => 'Pedro']),
+    ]);
+    expect($prepared['review']['blocked_classes'])->toBe(0)->and($prepared['review']['new_courses'])->toBe(2);
+    $this->service->commit($this->actor, $this->campus, $prepared['plan']);
+    expect(Course::where('code', 'PROF ELEC 2')->pluck('name')->sort()->values()->all())->toBe(['Graphics And Visual Computing', 'Web Systems And Technologies']);
+});
+
+it('still stops a subject whose rows disagree on units', function () {
+    $prepared = prepareInstructorOfferings([instructorOfferingRow(), instructorOfferingRow(['section' => 'BSIT 4B', 'units' => '2'])]);
+    expect($prepared['review']['blocked_classes'])->toBe(2)
+        ->and(collect($prepared['review']['details'])->pluck('messages')->flatten()->all())->toContain('This subject has different units in the selected period.');
+});
+
+it('leaves section students in the class where they already evaluate the subject', function () {
+    $section = AcademicSection::create(['department_id' => $this->offering->course->department_id, 'semester_id' => $this->offering->semester_id, 'name' => 'BSIT 4A', 'is_active' => true]);
+    $classmate = User::factory()->create(['is_student' => true, 'student_id' => '700001']);
+    foreach ([$this->student, $classmate] as $student) {
+        StudentSectionMembership::create(['academic_section_id' => $section->id, 'department_id' => $section->department_id, 'semester_id' => $section->semester_id, 'section' => $section->name, 'user_id' => $student->id]);
+    }
+    $row = instructorOfferingRow(['course_code' => $this->offering->course->code, 'course_desc' => $this->offering->course->name, 'units' => (string) (float) $this->offering->course->units]);
+    $this->offering->students()->syncWithoutDetaching([$this->student->id => ['enrolled_at' => now()]]);
+    $prepared = prepareInstructorOfferings([$row]);
+    $detail = collect($prepared['review']['details'])->sole();
+    $this->service->commit($this->actor, $this->campus, $prepared['plan']);
+    $class = CourseOffering::findOrFail(TeachingClassSourceLink::sole()->course_offering_id);
+    expect($prepared['review']['students_in_other_classes'])->toBe(1)->and($detail['messages'][0])->toContain('already evaluate this subject')
+        ->and($class->students()->pluck('users.id')->all())->not->toContain($this->student->id)
+        ->and($this->offering->students()->pluck('users.id')->all())->toContain($this->student->id);
 });
 
 it('rejects stale reviews before creating any profile or class', function () {
     $prepared = prepareInstructorOfferings([instructorOfferingRow()]);
-    Course::create(['department_id' => $this->offering->course->department_id, 'code' => 'IT 412', 'name' => 'Changed after review', 'is_active' => true]);
+    Course::create(['department_id' => $this->offering->course->department_id, 'code' => 'IT 412', 'name' => 'System Integration and Architecture 1', 'units' => 3, 'is_active' => true]);
     expect(fn () => $this->service->commit($this->actor, $this->campus, $prepared['plan']))->toThrow(ValidationException::class);
     expect(FacultySourceLink::count())->toBe(0)->and(TeachingClassSourceLink::count())->toBe(0);
 });

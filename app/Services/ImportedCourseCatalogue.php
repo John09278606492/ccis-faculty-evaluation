@@ -46,15 +46,16 @@ class ImportedCourseCatalogue
                 if ($code === '' || $name === '') {
                     continue;
                 }
-                $key = ($department->exists ? $department->id : 'new:'.$department->code).'|'.self::codeKey($code);
-                $variant = StudentAcademicRecords::code($name).'|'.(is_numeric($subject['units'] ?? null) ? number_format((float) $subject['units'], 2, '.', '') : 'invalid');
+                // Code + title identify a subject; one code can name different subjects across curricula.
+                $key = ($department->exists ? $department->id : 'new:'.$department->code).'|'.self::codeKey($code).'|'.StudentAcademicRecords::code($name);
+                $variant = (is_numeric($subject['units'] ?? null) ? number_format((float) $subject['units'], 2, '.', '') : 'invalid');
                 $targets[$key]['department'] = $department;
                 $targets[$key]['variants'][$variant] = ['code' => $code, 'name' => $name, 'units' => $subject['units'] ?? null];
             }
         }
         $courses = $targets ? Course::withoutGlobalScope('assigned_data')->whereIn('department_id', $departments->pluck('id'))->orderBy('id')
             ->when(DB::transactionLevel() > 0, fn ($q) => $q->lockForUpdate())->get() : collect();
-        $byCode = $courses->groupBy(fn ($course) => $course->department_id.'|'.self::codeKey($course->code));
+        $byCode = $courses->groupBy(fn ($course) => $course->department_id.'|'.self::codeKey($course->code).'|'.StudentAcademicRecords::code($course->name));
         $new = $warnings = [];
         $existing = 0;
         $canCreate = $actor->can('create_course');
@@ -64,13 +65,13 @@ class ImportedCourseCatalogue
             $matches = $byCode->get($key, collect());
             $reason = null;
             if (count($variants) > 1) {
-                $reason = 'The same code has different titles or units in this department. Confirm the correct course first.';
+                $reason = 'The same subject has different units in this department. Confirm the correct course first.';
             } elseif ($matches->count() > 1) {
                 $reason = 'Multiple existing courses have equivalent codes. Resolve the existing duplicates first.';
             } elseif ($matches->isNotEmpty()) {
                 $course = $matches->first();
-                if (StudentAcademicRecords::code($course->name) !== StudentAcademicRecords::code($subject['name']) || abs((float) $course->units - (float) $subject['units']) > .001) {
-                    $reason = 'An existing course has this code but a different title or unit value. It will be kept unchanged.';
+                if (abs((float) $course->units - (float) $subject['units']) > .001) {
+                    $reason = 'An existing course has this code and title but a different unit value. It will be kept unchanged.';
                 } elseif (! $course->is_active) {
                     $reason = 'This course already exists but is inactive. It will not be reactivated by an import.';
                 } else {
@@ -93,7 +94,7 @@ class ImportedCourseCatalogue
 
         return ['new_courses' => count($new), 'existing_courses' => $existing, 'courses_needing_review' => count($warnings),
             'courses_to_create' => $new, 'course_warnings' => $warnings,
-            'catalogue_state' => hash('sha256', json_encode([$canCreate, $courses->filter(fn ($c) => isset($targets[$c->department_id.'|'.self::codeKey($c->code)]))->values()->map(fn ($c) => $c->only(['id', 'department_id', 'code', 'name', 'units', 'is_active', 'updated_at']))->all(), $new, $warnings]))];
+            'catalogue_state' => hash('sha256', json_encode([$canCreate, $courses->filter(fn ($c) => isset($targets[$c->department_id.'|'.self::codeKey($c->code).'|'.StudentAcademicRecords::code($c->name)]))->values()->map(fn ($c) => $c->only(['id', 'department_id', 'code', 'name', 'units', 'is_active', 'updated_at']))->all(), $new, $warnings]))];
     }
 
     public function synchronize(User $actor, Campus $campus, array $rows): array

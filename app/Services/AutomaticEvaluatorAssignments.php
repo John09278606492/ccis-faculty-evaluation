@@ -76,12 +76,13 @@ class AutomaticEvaluatorAssignments
         $byClass = $pivots->groupBy('course_offering_id');
         $groups = $classes->groupBy(fn ($c) => $this->subject($c->course->code, $c->course->name).'|'.(int) $c->evaluation_cycle_id);
         $multiTeacherGroups = $groups->map(fn ($g) => $g->pluck('user_id')->unique()->count() > 1);
+        // A student already in any class of the subject, including classes prepared
+        // in an evaluation cycle, has a confirmed teacher; never add a second class.
         $existing = [];
-        foreach ($groups as $key => $group) {
-            foreach ($group as $class) {
-                foreach ($byClass->get($class->id, collect()) as $pivot) {
-                    $existing[$key][$pivot->user_id][] = $class->id;
-                }
+        foreach ($classes as $class) {
+            $key = $this->subject($class->course->code, $class->course->name).'|0';
+            foreach ($byClass->get($class->id, collect()) as $pivot) {
+                $existing[$key][$pivot->user_id][] = $class->id;
             }
         }
         $programs = [];

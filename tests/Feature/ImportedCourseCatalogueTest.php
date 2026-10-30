@@ -77,15 +77,15 @@ it('reads many repeated CSV subject blocks without treating degree programs as s
     expect(Course::where('code', 'like', 'SUB%')->count())->toBe(8)->and(Course::where('code', 'BSCS')->exists())->toBeFalse();
 });
 
-it('keeps title and unit conflicts unchanged and skips ambiguous new codes', function () {
+it('adds a different title under an existing code as its own course and keeps unit conflicts unchanged', function () {
     $row = $this->row;
     $row['student_id'] = 'CAT-002';
     $row['subjects'][0]['description'] = 'Different existing title';
     $row['subjects'][1]['description'] = 'Different new title';
     $review = $this->imports->review($this->actor, $this->campus, [$this->row, $row], $this->offering->semester_id);
-    expect($review)->toMatchArray(['new_courses' => 0, 'courses_needing_review' => 2, 'error_count' => 0]);
+    expect($review)->toMatchArray(['new_courses' => 3, 'courses_needing_review' => 0, 'error_count' => 0]);
     $this->imports->commit($this->actor, $this->campus, $review['token'], $this->offering->semester_id);
-    expect(Course::count())->toBe(1)->and($this->offering->course->fresh()->name)->toBe('Introduction To Computing')
+    expect(Course::count())->toBe(4)->and($this->offering->course->fresh()->name)->toBe('Introduction To Computing')
         ->and(StudentSubjectEnrolment::count())->toBe(4);
     $row = $this->row;
     $row['subjects'] = [['subject_code' => 'CS101', 'description' => 'Introduction to Computing', 'units' => 4]];

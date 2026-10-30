@@ -53,7 +53,8 @@ class CourseResource extends Resource
                             ->required()
                             ->maxLength(20)
                             ->placeholder('e.g., CS101')
-                            ->unique(ignoreRecord: true, modifyRuleUsing: fn ($rule, Forms\Get $get) => $rule->where('department_id', $get('department_id'))),
+                            ->unique(ignoreRecord: true, modifyRuleUsing: fn ($rule, Forms\Get $get) => $rule->where('department_id', $get('department_id'))->where('name', $get('name')))
+                            ->validationMessages(['unique' => 'This department already has a subject with this code and title.']),
 
                         Forms\Components\TextInput::make('name')
                             ->required()

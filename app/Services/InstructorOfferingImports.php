@@ -178,6 +178,15 @@ class InstructorOfferingImports
             ->whereIn('user_id', $eligible)->get(['academic_section_id', 'user_id'])->groupBy('academic_section_id');
         $classes = CourseOffering::withoutGlobalScope('assigned_data')->where('semester_id', $semester)->whereHas('course', fn ($q) => $q->whereIn('department_id', $allDepartments->modelKeys()))->get();
         $links = TeachingClassSourceLink::where('campus_id', $campus->id)->get()->keyBy('source_key');
+        $subjectOf = fn ($code, $name) => ImportedCourseCatalogue::codeKey($code).'|'.StudentAcademicRecords::code($name);
+        $classSubjects = $classes->load(['course' => fn ($q) => $q->withoutGlobalScope('assigned_data')])->filter->course
+            ->mapWithKeys(fn ($c) => [$c->id => $subjectOf($c->course->code, $c->course->name)]);
+        $assigned = [];
+        foreach ($classSubjects->keys()->chunk(500) as $chunk) {
+            foreach (DB::table('course_offering_student')->whereIn('course_offering_id', $chunk)->get(['course_offering_id', 'user_id']) as $pivot) {
+                $assigned[$classSubjects[$pivot->course_offering_id]][$pivot->user_id] = true;
+            }
+        }
         $faculty = $groups = $details = [];
         $skipped = $duplicates = 0;
         foreach ($rows as $row) {
@@ -265,8 +274,10 @@ class InstructorOfferingImports
         }
         $courseVariants = $classTeachers = [];
         foreach ($groups as $g) {
-            $courseKey = $g['department_code'].'|'.ImportedCourseCatalogue::codeKey($g['row']['course_code']);
-            $courseVariants[$courseKey][self::key($g['row']['course_desc']).'|'.(float) $g['row']['units']] = true;
+            // One code can name different subjects in different curricula, so the
+            // title is part of the subject's identity; only units may not disagree.
+            $courseKey = $g['department_code'].'|'.ImportedCourseCatalogue::codeKey($g['row']['course_code']).'|'.self::key($g['row']['course_desc']);
+            $courseVariants[$courseKey][(string) (float) $g['row']['units']] = true;
             $classTeachers[$courseKey.'|'.self::key($g['row']['section'])][$g['faculty_id']] = true;
         }
         $ready = $newFaculty = $newCourses = $newSections = $newDepartments = [];
@@ -274,20 +285,20 @@ class InstructorOfferingImports
             $r = $g['row'];
             $f = $faculty[$g['faculty_id']];
             $errors = array_merge($g['errors'], $f['errors']);
-            $courseKey = $g['department_code'].'|'.ImportedCourseCatalogue::codeKey($r['course_code']);
+            $courseKey = $g['department_code'].'|'.ImportedCourseCatalogue::codeKey($r['course_code']).'|'.self::key($r['course_desc']);
             if (count($courseVariants[$courseKey]) > 1) {
-                $errors[] = 'This subject code has different titles or units in the selected period.';
+                $errors[] = 'This subject has different units in the selected period.';
             }
             if (count($classTeachers[$courseKey.'|'.self::key($r['section'])]) > 1) {
                 $errors[] = 'Different instructors are listed for the same subject and section. Verify the assignment.';
             }
-            $courseMatches = $courses->filter(fn ($c) => $g['department_id'] && (int) $c->department_id === (int) $g['department_id'] && ImportedCourseCatalogue::codeKey($c->code) === ImportedCourseCatalogue::codeKey($r['course_code']));
+            $courseMatches = $courses->filter(fn ($c) => $g['department_id'] && (int) $c->department_id === (int) $g['department_id'] && ImportedCourseCatalogue::codeKey($c->code) === ImportedCourseCatalogue::codeKey($r['course_code']) && self::key($c->name) === self::key($r['course_desc']));
             $course = $courseMatches->count() === 1 ? $courseMatches->first() : null;
             if ($courseMatches->count() > 1) {
                 $errors[] = 'Duplicate matching subjects exist. Resolve the catalogue duplicates.';
             }
-            if ($course && (! $course->is_active || self::key($course->name) !== self::key($r['course_desc']) || abs((float) $course->units - (float) $r['units']) > .001)) {
-                $errors[] = 'The existing subject is inactive or has a different title/units. It will remain unchanged.';
+            if ($course && (! $course->is_active || abs((float) $course->units - (float) $r['units']) > .001)) {
+                $errors[] = 'The existing subject is inactive or has different units. It will remain unchanged.';
             }
             if (! $course && ! $actor->can('create_course')) {
                 $errors[] = 'Creating missing subjects requires create_course permission.';
@@ -308,7 +319,8 @@ class InstructorOfferingImports
             if (! $section && ! $actor->can('manage_academic_students')) {
                 $errors[] = 'Creating missing sections requires student-management permission.';
             }
-            $sourceKey = hash('sha256', implode('|', [$campus->id, $options['source_campus_id'] ?? '6', $semester, $courseKey, $g['faculty_id'], self::key($r['section'])]));
+            // Keyed without the title so links made before title variants still match.
+            $sourceKey = hash('sha256', implode('|', [$campus->id, $options['source_campus_id'] ?? '6', $semester, $g['department_code'].'|'.ImportedCourseCatalogue::codeKey($r['course_code']), $g['faculty_id'], self::key($r['section'])]));
             $linked = $links->get($sourceKey);
             $candidates = $classes->filter(function ($c) use ($course, $f, $r, $section) {
                 if (! $course || ! $f['user_id'] || (int) $c->course_id !== (int) $course->id || (int) $c->user_id !== (int) $f['user_id']) {
@@ -329,12 +341,24 @@ class InstructorOfferingImports
                 $errors[] = 'Multiple existing classes match this offering.';
             }
             $ids = $section ? ($members->get($section->id, collect())->pluck('user_id')->unique()->sort()->values()->all()) : [];
+            $elsewhere = [];
+            if (! $existing) {
+                // Section members already evaluating this subject in another class keep
+                // that class; adding them here would give them a second evaluation.
+                $subject = $subjectOf($r['course_code'], $r['course_desc']);
+                $taken = $assigned[$subject] ?? [];
+                $elsewhere = array_values(array_filter($ids, fn ($id) => isset($taken[$id])));
+                $ids = array_values(array_diff($ids, $elsewhere));
+                // Students listed in two sections join only the first new class.
+                $assigned[$subject] = $taken + array_fill_keys($ids, true);
+            }
             $item = [...$g, 'faculty' => $f, 'course_id' => $course?->id, 'section_id' => $section?->id, 'section_name' => $section?->name ?? self::key($r['section']),
                 'class_id' => $existing?->id, 'source_key' => $sourceKey, 'student_ids' => $ids, 'class_state' => $existing?->only(['id', 'course_id', 'user_id', 'section', 'evaluation_cycle_id', 'form_id', 'evaluator_selection', 'is_active', 'updated_at']),
                 'errors' => array_values(array_unique($errors))];
             $details[] = ['rows' => implode(', ', array_map(fn ($source) => ($source['_sheet'] ?? 'Rows').':'.$source['_row'], $g['metadata'])), 'subject' => $r['course_code'].' - '.$r['course_desc'], 'faculty' => $r['last_name'].', '.$r['first_name'],
-                'source_id' => $r['id'], 'department' => $g['department_code'] ?? '?', 'section' => $item['section_name'], 'students' => count($ids),
-                'status' => $errors ? 'Needs attention' : ($existing ? 'Already exists' : 'Ready'), 'messages' => $item['errors']];
+                'source_id' => $r['id'], 'department' => $g['department_code'] ?? '?', 'section' => $item['section_name'], 'students' => count($ids), 'already_in_another_class' => count($elsewhere),
+                'status' => $errors ? 'Needs attention' : ($existing ? 'Already exists' : 'Ready'),
+                'messages' => [...$item['errors'], ...($elsewhere ? [count($elsewhere).' section students already evaluate this subject in another class and stay there. Move them under Section students if that class is wrong.'] : [])]];
             if ($errors) {
                 continue;
             }
@@ -357,6 +381,7 @@ class InstructorOfferingImports
             'existing_classes' => count(array_filter($ready, fn ($i) => (bool) $i['class_id'])), 'blocked_classes' => count($details) - count($ready),
             'new_faculty' => count($newFaculty), 'new_courses' => count($newCourses), 'new_sections' => count($newSections), 'new_departments' => count($newDepartments),
             'empty_classes' => count(array_filter($ready, fn ($i) => ! $i['class_id'] && ! $i['student_ids'])),
+            'students_in_other_classes' => array_sum(array_column($details, 'already_in_another_class')),
             'faculty_profiles' => array_values($newFaculty), 'details' => $details, 'error_count' => $ready ? 0 : 1];
 
         return ['ready' => $ready, 'review' => $review, 'state_hash' => hash('sha256', json_encode([$allowed, $options, $ready, $details, $review]))];
@@ -402,7 +427,7 @@ class InstructorOfferingImports
                 if ($item['class_id']) {
                     $class = CourseOffering::withoutGlobalScope('assigned_data')->findOrFail($item['class_id']);
                 } else {
-                    $courseKey = $code.'|'.ImportedCourseCatalogue::codeKey($r['course_code']);
+                    $courseKey = $code.'|'.ImportedCourseCatalogue::codeKey($r['course_code']).'|'.self::key($r['course_desc']);
                     $course = $courses[$courseKey] ??= ($item['course_id'] ? Course::findOrFail($item['course_id'])
                         : Course::create(['department_id' => $department->id, 'code' => $r['course_code'], 'name' => $r['course_desc'], 'units' => $r['units'], 'is_active' => true]));
                     $sectionKey = $code.'|'.$item['section_name'];
