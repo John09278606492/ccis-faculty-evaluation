@@ -11,6 +11,31 @@ use Illuminate\Support\Str;
 
 class EvaluationCopies
 {
+    public function responses(Campus $campus, User $actor, ?int $faculty = null, ?int $semester = null)
+    {
+        return $this->query($campus, $actor)
+            ->when($faculty, fn ($query) => $query->whereHas('courseOffering', fn ($offering) => $offering->where('user_id', $faculty)))
+            ->when($semester, fn ($query) => $query->whereHas('courseOffering', fn ($offering) => $offering->where('semester_id', $semester)));
+    }
+
+    public function faculties(Campus $campus, User $actor, ?int $semester = null)
+    {
+        $counts = $this->responses($campus, $actor, semester: $semester)
+            ->join('course_offerings as copy_offerings', 'copy_offerings.id', '=', 'form_submissions.course_offering_id')
+            ->join('forms as copy_forms', 'copy_forms.id', '=', 'form_submissions.form_id');
+        $annex = $counts->getQuery()->getGrammar()->wrap('copy_forms.settings->annex');
+        $counts->selectRaw('copy_offerings.user_id AS faculty_id, COUNT(*) AS response_count')
+            ->selectRaw("SUM(CASE WHEN {$annex} = ? THEN 1 ELSE 0 END) AS student_count", ['A'])
+            ->selectRaw("SUM(CASE WHEN {$annex} = ? THEN 1 ELSE 0 END) AS supervisor_count", ['B'])
+            ->groupBy('copy_offerings.user_id');
+
+        // The response query determines access, including visiting faculty.
+        // Archived faculty remain available for their authorized historical copies.
+        return User::withTrashed()->withoutGlobalScope('assigned_data')
+            ->joinSub($counts, 'copy_counts', fn ($join) => $join->on('users.id', '=', 'copy_counts.faculty_id'))
+            ->select('users.*', 'copy_counts.response_count', 'copy_counts.student_count', 'copy_counts.supervisor_count');
+    }
+
     public function query(Campus $campus, ?User $actor = null)
     {
         $query = FormSubmission::query()->whereHas('form', fn ($q) => $q->whereIn('settings->annex', ['A', 'B']))

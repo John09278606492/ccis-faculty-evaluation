@@ -100,8 +100,8 @@ it('includes Annex B copies and supports the selected-copy modal', function () {
     $this->get($url)->assertOk()->assertSee('SUPERVISOR’S EVALUATION')->assertSee('100.00%')->assertSee('Supervisor');
     Filament::setCurrentPanel(Filament::getPanel('admin'));
     Filament::setTenant($this->campus, isQuiet: true);
-    Livewire::test(IndividualEvaluationCopies::class)->mountTableBulkAction('printSelected', [$this->first, $this->second])->assertSee('<iframe', false);
-    Livewire::test(IndividualEvaluationCopies::class)->mountTableAction('printAll')->assertSee('<iframe', false);
+    Livewire::test(IndividualEvaluationCopies::class, ['faculty' => $this->assignment->user_id])->mountTableBulkAction('printSelected', [$this->first, $this->second])->assertSee('<iframe', false);
+    Livewire::test(IndividualEvaluationCopies::class, ['faculty' => $this->assignment->user_id])->mountTableAction('printAll')->assertSee('<iframe', false);
 });
 
 it('resolves an existing keyed anonymous response only when identity reveal is authorized', function () {
@@ -115,6 +115,7 @@ it('resolves an existing keyed anonymous response only when identity reveal is a
     $otherCampus = Campus::create(['name' => 'Other campus', 'slug' => 'copy-other', 'is_active' => true]);
     $this->staff->campuses()->attach($otherCampus);
     expect(fn () => app(EvaluationCopies::class)->previewUrl($this->staff, $otherCampus, [$this->first->id]))->toThrow(HttpException::class);
+    expect(app(EvaluationCopies::class)->faculties($otherCampus, $this->staff)->count())->toBe(0);
 });
 
 it('keeps the copies page available when an unrelated offering has an archived instructor', function () {
@@ -129,5 +130,74 @@ it('keeps the copies page available when an unrelated offering has an archived i
 
     Livewire::test(IndividualEvaluationCopies::class)
         ->assertSuccessful()
-        ->assertCanSeeTableRecords([$this->first, $this->second]);
+        ->assertCanSeeTableRecords([$this->assignment->evaluatee])
+        ->assertCountTableRecords(1);
+});
+
+it('preserves the faculty name on historical copies after the instructor account is archived', function () {
+    $faculty = $this->assignment->evaluatee;
+    $name = $faculty->name;
+    $faculty->delete();
+    $url = app(EvaluationCopies::class)->previewUrl($this->staff, $this->campus, [$this->first->id]);
+
+    $this->get($url)->assertOk()->assertSee($name);
+});
+
+it('groups student and supervisor responses into one instructor row', function () {
+    $supervisorForm = app(EvaluationTemplates::class)->create('B', $this->campus);
+    $class = $this->assignment->replicate();
+    $class->section = 'SEF';
+    $class->form_id = $supervisorForm->id;
+    $class->save();
+    FormSubmission::create(['course_offering_id' => $class->id, 'form_id' => $supervisorForm->id, 'data' => []]);
+    $row = app(EvaluationCopies::class)->faculties($this->campus, $this->staff)->sole();
+    expect($row->id)->toBe($this->assignment->user_id)
+        ->and((int) $row->student_count)->toBe(2)
+        ->and((int) $row->supervisor_count)->toBe(1)
+        ->and((int) $row->response_count)->toBe(3);
+    Filament::setCurrentPanel(Filament::getPanel('admin'));
+    Filament::setTenant($this->campus, isQuiet: true);
+    Livewire::test(IndividualEvaluationCopies::class)->assertCountTableRecords(1)->assertSee('View Copies');
+    Livewire::test(IndividualEvaluationCopies::class, ['faculty' => $row->id])
+        ->assertCountTableRecords(3)->assertSee('All Instructors');
+});
+
+it('counts only authorized teaching departments and blocks unrelated instructor detail links', function () {
+    $department = \App\Models\Department::create(['name' => 'Other department', 'code' => 'OTHER', 'campus_id' => $this->campus->id, 'is_active' => true]);
+    $course = $this->assignment->course->replicate();
+    $course->department_id = $department->id;
+    $course->code = 'OTHER-101';
+    $course->save();
+    $faculty = User::factory()->create(['is_instructor' => true, 'is_student' => false]);
+    $faculty->campuses()->attach($this->campus);
+    foreach ([$this->assignment->user_id, $faculty->id] as $facultyId) {
+        $class = $this->assignment->replicate();
+        $class->course_id = $course->id;
+        $class->teaching_department_id = $department->id;
+        $class->user_id = $facultyId;
+        $class->save();
+        FormSubmission::create(['course_offering_id' => $class->id, 'form_id' => $this->form->id, 'data' => []]);
+    }
+    $rows = app(EvaluationCopies::class)->faculties($this->campus, $this->staff)->get();
+    expect($rows)->toHaveCount(1)->and((int) $rows->first()->response_count)->toBe(2);
+    Filament::setCurrentPanel(Filament::getPanel('admin'));
+    Filament::setTenant($this->campus, isQuiet: true);
+    Livewire::test(IndividualEvaluationCopies::class, ['faculty' => $faculty->id])->assertNotFound();
+});
+
+it('recalculates grouped counts when the academic period filter changes', function () {
+    $period = $this->assignment->semester->replicate();
+    $period->name = 'Another term';
+    $period->save();
+    $class = $this->assignment->replicate();
+    $class->semester_id = $period->id;
+    $class->save();
+    FormSubmission::create(['course_offering_id' => $class->id, 'form_id' => $this->form->id, 'data' => []]);
+    Filament::setCurrentPanel(Filament::getPanel('admin'));
+    Filament::setTenant($this->campus, isQuiet: true);
+    $page = Livewire::test(IndividualEvaluationCopies::class)->filterTable('semester_id', (string) $period->id)->assertCountTableRecords(1);
+    expect((int) $page->instance()->getTableRecords()->first()->response_count)->toBe(1);
+    $page->filterTable('semester_id', (string) $this->assignment->semester_id);
+    expect((int) $page->instance()->getTableRecords()->first()->response_count)->toBe(2);
+    $page->assertTableActionHasUrl('viewCopies', IndividualEvaluationCopies::getUrl(['faculty' => $this->assignment->user_id, 'period' => $this->assignment->semester_id]), $this->assignment->evaluatee);
 });

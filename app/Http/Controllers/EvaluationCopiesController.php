@@ -18,7 +18,9 @@ class EvaluationCopiesController extends Controller
         abort_unless($service->allowed($request->user(), $campus), 403);
         $reveal = $request->boolean('identity');
         abort_if($reveal && ! $request->user()->can('view_evaluator_identity_form'), 403);
-        $submissions = $service->query($campus)->whereKey($selection['ids'])->with(['form.fields', 'courseOffering.teachingDepartment', 'courseOffering.evaluatee.instructorDepartment', 'courseOffering.course.department', 'courseOffering.semester.schoolYear'])->orderBy('id')->get();
+        $submissions = $service->query($campus)->whereKey($selection['ids'])->with(['form.fields', 'courseOffering.teachingDepartment',
+            'courseOffering.evaluatee' => fn ($query) => $query->withTrashed()->withoutGlobalScope('assigned_data')->with('instructorDepartment'),
+            'courseOffering.course.department', 'courseOffering.semester.schoolYear'])->orderBy('id')->get();
         abort_unless($submissions->count() === count($selection['ids']), 403);
         $copies = $submissions->map(function ($submission) use ($service, $reveal) {
             $number = $submission->newQuery()->where('course_offering_id', $submission->course_offering_id)->where('form_id', $submission->form_id)->where('id', '<=', $submission->id)->count();
