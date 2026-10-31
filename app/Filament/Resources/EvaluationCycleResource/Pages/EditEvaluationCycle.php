@@ -83,7 +83,9 @@ class EditEvaluationCycle extends EditRecord
                 ->fillForm(function () {
                     $this->classAdditionPreview = app(EvaluationClassAdditions::class)->preview(auth()->user(), filament()->getTenant(), $this->record->id);
 
-                    return ['preview_token' => $this->classAdditionPreview['token'], 'class_ids' => array_column($this->classAdditionPreview['rows'], 'id')];
+                    // Classes whose students all rate this subject elsewhere already start unticked.
+                    return ['preview_token' => $this->classAdditionPreview['token'], 'class_ids' => array_column(array_filter($this->classAdditionPreview['rows'],
+                        fn ($row) => ($row['already_evaluating'] ?? 0) < $row['students']), 'id')];
                 })
                 ->form([
                     Forms\Components\Hidden::make('preview_token')->required(),
@@ -91,7 +93,9 @@ class EditEvaluationCycle extends EditRecord
                         ->content(fn () => view('filament.forms.evaluation-class-additions', ['preview' => $this->classAdditionPreview])),
                     Forms\Components\CheckboxList::make('class_ids')->label('Classes to add')->required()->minItems(1)->searchable()->bulkToggleable()
                         ->options(fn () => collect($this->classAdditionPreview['rows'] ?? [])->pluck('label', 'id')->all())
-                        ->descriptions(fn () => collect($this->classAdditionPreview['rows'] ?? [])->mapWithKeys(fn ($row) => [$row['id'] => $row['subject'].' · '.$row['students'].' students · Supervisors: '.$row['supervisors'].($row['uses_default'] ? ' (department default)' : '')])->all())
+                        ->descriptions(fn () => collect($this->classAdditionPreview['rows'] ?? [])->mapWithKeys(fn ($row) => [$row['id'] => $row['subject'].' · '.$row['students'].' students'
+                            .(($row['already_evaluating'] ?? 0) ? ' · ⚠ '.$row['already_evaluating'].' already rate this subject in another class'.($row['already_evaluating'] >= $row['students'] ? ' (likely a duplicate, left unticked)' : '') : '')
+                            .' · Supervisors: '.$row['supervisors'].($row['uses_default'] ? ' (department default)' : '')])->all())
                         ->extraAttributes(['style' => 'max-height: min(50vh, 28rem); overflow-y: auto'])
                         ->visible(fn () => ! empty($this->classAdditionPreview['rows'])),
                 ])

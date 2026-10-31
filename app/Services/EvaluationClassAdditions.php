@@ -44,6 +44,7 @@ class EvaluationClassAdditions
             return [...$row, 'label' => ($class?->evaluatee?->name ?? 'Faculty needs correction').' — '.$row['label']];
         })->values()->all();
         $rows = [];
+        $evaluating = $this->evaluatingBySubject($cycle->semester_id);
         foreach ($plan['prepared']->whereNull('evaluation_cycle_id')->sortBy('id') as $class) {
             $ids = DB::table('course_offering_supervisor')->where('course_offering_id', $class->id)->orderBy('user_id')->pluck('user_id')->map(fn ($id) => (int) $id)->all();
             $usesDefault = ! $ids;
@@ -62,6 +63,7 @@ class EvaluationClassAdditions
                 $class->evaluatee->only(['id', 'name', 'is_instructor', 'is_student', 'deleted_at']), $heads->map->only(['id', 'name'])->all()];
             $rows[] = ['id' => $class->id, 'label' => $class->evaluatee->name.' — '.$class->course->code.' · '.$sections,
                 'subject' => $class->course->name, 'students' => count($students),
+                'already_evaluating' => count(array_intersect(array_column($students, 0), $evaluating[$this->subjectKey($class->course)] ?? [])),
                 'supervisor_ids' => $ids, 'supervisors' => $heads->pluck('name')->implode(', '), 'uses_default' => $usesDefault,
                 'fingerprint' => hash('sha256', json_encode($state))];
         }
@@ -70,6 +72,29 @@ class EvaluationClassAdditions
             $cycle->studentForm->getAttributes(), $cycle->studentForm->fields->toArray(),
             $cycle->supervisorForm->getAttributes(), $cycle->supervisorForm->fields->toArray()])),
             'rows' => $rows, 'excluded' => $excluded];
+    }
+
+    private function subjectKey($course): string
+    {
+        return mb_strtoupper(trim($course->code)).'|'.mb_strtoupper(trim($course->name));
+    }
+
+    /**
+     * Students already answering for each subject (code + title) in any evaluation of the period. A late class whose
+     * students all appear here is usually a leftover duplicate; adding it would ask them to rate the subject twice.
+     */
+    private function evaluatingBySubject(int $semesterId): array
+    {
+        $result = [];
+        DB::table('course_offering_student')->join('course_offerings', 'course_offerings.id', '=', 'course_offering_student.course_offering_id')
+            ->join('courses', 'courses.id', '=', 'course_offerings.course_id')
+            ->where('course_offerings.semester_id', $semesterId)->whereNotNull('course_offerings.evaluation_cycle_id')
+            ->select('courses.code', 'courses.name', 'course_offering_student.user_id')->orderBy('course_offering_student.user_id')
+            ->each(function ($row) use (&$result) {
+                $result[$this->subjectKey($row)][] = (int) $row->user_id;
+            });
+
+        return $result;
     }
 
     public function preview(User $actor, Campus $campus, int $cycleId): array

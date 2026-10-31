@@ -238,3 +238,16 @@ it('creates Annex B tasks for visiting faculty with an explicitly chosen supervi
     expect($task->form_id)->toBe($this->b->id)
         ->and(app(FacultySupervisorEvaluators::class)->taskIds($head, $this->campus)->where('task.id', $task->id)->exists())->toBeTrue();
 });
+
+it('flags late classes whose students already rate the subject in the evaluation and leaves full duplicates unticked', function () {
+    $copy = latePreparedClass(User::factory()->create(['is_instructor' => true]));
+    $copy->update(['course_id' => $this->original->course_id]);
+    $plan = $this->service->plan($this->actor, $this->campus, $this->cycle->id);
+    $rows = collect($plan['rows'])->keyBy('id');
+    expect($rows[$this->late->id]['already_evaluating'])->toBe(0);
+    if ($rows->has($copy->id)) {
+        expect($rows[$copy->id]['already_evaluating'])->toBe(1);
+    }
+    Livewire::test(EditEvaluationCycle::class, ['record' => $this->cycle->id])->mountAction('addPreparedClasses')
+        ->assertActionDataSet(['class_ids' => [$this->late->id]]);
+});
