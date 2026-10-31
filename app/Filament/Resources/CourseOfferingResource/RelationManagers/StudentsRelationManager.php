@@ -388,7 +388,7 @@ class StudentsRelationManager extends RelationManager
                         'result' => $files ? app(ClassRosterVerification::class)->compare(auth()->user(), $this->getOwnerRecord()->fresh(), $files) : null]);
                 }),
                 Forms\Components\Checkbox::make('add_missing')->label('Add the listed students who are missing from this class')->default(true),
-                Forms\Components\Checkbox::make('remove_extra')->label('Remove evaluators who are not in any list (students who already submitted are kept)')->default(false),
+                Forms\Components\Checkbox::make('remove_extra')->label('Remove evaluators who are not in the file (students who already submitted are kept)')->default(true),
                 Forms\Components\Checkbox::make('fill_sections')->label('Set each student\'s report section from the list title when it is still pending')->default(true),
             ])->action(function (array $data) {
                 [$files, $error] = $this->readLists($data['files'] ?? []);
