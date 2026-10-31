@@ -4,9 +4,11 @@ use App\Filament\Pages\MyEvaluationResults;
 use App\Filament\Pages\MyEvaluations;
 use App\Filament\Pages\MyQuizzes;
 use App\Filament\Pages\TakeQuiz;
+use App\Filament\Widgets\StudentPendingEvaluationsWidget;
 use App\Models\FormSubmission;
 use App\Models\Quiz;
 use App\Models\User;
+use App\Services\EvaluationSubmissionIdentity;
 use Filament\Facades\Filament;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Permission;
@@ -126,6 +128,23 @@ it('marks an evaluation the student already sent as completed', function () {
     Livewire::test(MyEvaluations::class)
         ->assertSuccessful()
         ->assertSee('Completed');
+});
+
+it('lists instructors the student has not evaluated yet first', function () {
+    ['student' => $student, 'offering' => $done, 'form' => $form] = evaluationFixture();
+    $student->givePermissionTo(Permission::findOrCreate('page_MyEvaluations', 'web'));
+    $pending = $done->replicate();
+    $pending->section = 'B';
+    $pending->user_id = User::factory()->create(['is_instructor' => true])->id;
+    $pending->save();
+    $pending->students()->attach($student, ['enrolled_at' => now()]);
+    FormSubmission::create(['form_id' => $form->id, 'course_offering_id' => $done->id, 'data' => ['teaching_quality' => 5],
+        'submission_fingerprint' => app(EvaluationSubmissionIdentity::class)->forUser($done, $student->id)]);
+    Filament::setTenant($done->campus, isQuiet: true);
+    $this->actingAs($student);
+
+    Livewire::test(MyEvaluations::class)->assertCanSeeTableRecords([$pending, $done], inOrder: true);
+    Livewire::test(StudentPendingEvaluationsWidget::class)->assertCanSeeTableRecords([$pending])->assertCanNotSeeTableRecords([$done]);
 });
 
 it('sends a student away from the evaluations page without the permission', function () {
