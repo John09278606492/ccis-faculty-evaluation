@@ -14,6 +14,7 @@ use App\Services\EvaluationSubmissionIdentity;
 use App\Services\StudentEmailAddress;
 use App\Settings\EmailReminderSetting;
 use Filament\Facades\Filament;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
 use Livewire\Livewire;
@@ -184,4 +185,27 @@ it('lists reminder emails with their status and retries failed ones', function (
     $student = User::factory()->create(['is_student' => true]);
     $this->actingAs($student);
     expect(EmailLog::canAccess())->toBeFalse();
+});
+
+it('fills student emails automatically on save and in bulk, keeping typed and duplicate addresses', function () {
+    $new = User::factory()->create(['is_student' => true, 'first_name' => 'Gerald Jim', 'last_name' => 'Montañez', 'email' => 'student.abc@students.invalid']);
+    expect($new->email)->toBe('geraldjim.montanez@bisu.edu.ph');
+    $new->update(['last_name' => 'Montanez Jr']);
+    expect($new->fresh()->email)->toBe('geraldjim.montanezjr@bisu.edu.ph');
+    $typed = User::factory()->create(['is_student' => true, 'first_name' => 'Ana', 'last_name' => 'Reyes', 'email' => 'ana.real@gmail.com']);
+    $typed->update(['last_name' => 'Cruz']);
+    expect($typed->fresh()->email)->toBe('ana.real@gmail.com');
+
+    $a = User::factory()->create(['is_student' => true, 'first_name' => 'Juan', 'last_name' => 'Peña']);
+    $b = User::factory()->create(['is_student' => true, 'first_name' => 'Juan', 'last_name' => 'Pena']);
+    DB::table('users')->whereIn('id', [$a->id, $b->id])->update(['email' => DB::raw("'student.' || id || '@students.invalid'")]);
+    $result = app(StudentEmailAddress::class)->backfill();
+    expect($result['filled'])->toBeGreaterThanOrEqual(1)->and($result['duplicate'])->toBe(1)
+        ->and($a->fresh()->email)->toBe('juan.pena@bisu.edu.ph')->and($b->fresh()->email)->toEndWith('@students.invalid');
+
+    $settings = app(EmailReminderSetting::class);
+    $settings->address_format = 'firstlast';
+    $settings->save();
+    app(StudentEmailAddress::class)->backfill(true);
+    expect($a->fresh()->email)->toBe('juanpena@bisu.edu.ph')->and($typed->fresh()->email)->toBe('ana.real@gmail.com');
 });

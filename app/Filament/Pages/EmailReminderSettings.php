@@ -16,6 +16,7 @@ use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Radio;
 use Filament\Forms\Components\Section;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Forms\Form;
 use Filament\Forms\Get;
 use Filament\Notifications\Notification;
@@ -67,6 +68,28 @@ class EmailReminderSettings extends SettingsPage
     protected function getHeaderActions(): array
     {
         return [
+            Action::make('fillEmails')->label('Fill student emails')->icon('heroicon-o-at-symbol')->color('gray')
+                ->modalHeading('Fill in student school emails')
+                ->modalDescription(function () {
+                    $preview = app(StudentEmailAddress::class)->backfill(false, true);
+
+                    return $preview['filled'].' students still have a placeholder email and will get their school address. '
+                        .($preview['duplicate'] ? $preview['duplicate'].' share a name with another account and will be left for you to fill by hand. ' : '')
+                        .'Addresses that staff typed in are never changed.';
+                })
+                ->form([
+                    Toggle::make('rebuild')->label('Also redo addresses filled in automatically before')
+                        ->helperText('Use this after changing the domain or the address format above.'),
+                ])
+                ->modalSubmitActionLabel('Fill emails')
+                ->action(function (array $data) {
+                    $result = app(StudentEmailAddress::class)->backfill((bool) ($data['rebuild'] ?? false));
+                    Notification::make()->success()->persistent()->title($result['filled'].' student emails filled in')
+                        ->body(collect([
+                            $result['duplicate'] ? $result['duplicate'].' left as is because the address belongs to another account: '.implode('; ', array_slice($result['duplicates'], 0, 10)).(count($result['duplicates']) > 10 ? '; ...' : '') : null,
+                            $result['no_name'] ? $result['no_name'].' have no first or last name' : null,
+                        ])->filter()->join('. '))->send();
+                }),
             Action::make('test')->label('Send test email')->icon('heroicon-o-paper-airplane')
                 ->disabled(fn () => ! app(EvaluationReminders::class)->emailReady())
                 ->tooltip(fn () => app(EvaluationReminders::class)->emailReady() ? 'Sends a sample reminder to the sender address' : 'Save the sender email and app password first')

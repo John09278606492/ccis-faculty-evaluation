@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Services\AcademicPeriod;
 use App\Services\AcademicStudents;
 use App\Services\StudentDeletion;
+use App\Settings\EmailReminderSetting;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -90,7 +91,7 @@ class AcademicStudentResource extends Resource
                     Forms\Components\TextInput::make('first_name')->required()->maxLength(100),
                     Forms\Components\TextInput::make('middle_name')->maxLength(100),
                     Forms\Components\TextInput::make('last_name')->required()->maxLength(100),
-                    Forms\Components\TextInput::make('email')->email()->maxLength(255)->helperText('Optional. Evaluation entry uses the student ID.'),
+                    Forms\Components\TextInput::make('email')->email()->maxLength(255)->helperText('Filled in automatically as firstname.lastname@'.app(EmailReminderSetting::class)->student_domain.' (ñ becomes n). Change it only if the student\'s school email is different.'),
                 ])->columns(2),
             Forms\Components\Section::make('Academic Placement')->schema([
                 Forms\Components\Select::make('semester_id')->label('Academic Period')->required()->live()

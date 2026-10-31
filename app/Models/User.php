@@ -4,6 +4,7 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 
+use App\Services\StudentEmailAddress;
 use App\Traits\NormalizesTextFields;
 use Database\Factories\UserFactory;
 use Filament\Models\Contracts\FilamentUser;
@@ -52,6 +53,11 @@ class User extends Authenticatable implements FilamentUser, HasAvatar, HasTenant
             if ($user->first_name && $user->last_name) {
                 $middleName = $user->middle_name ? " {$user->middle_name} " : ' ';
                 $user->name = trim("{$user->first_name}{$middleName}{$user->last_name}");
+            }
+
+            // Students get their school address (firstname.lastname@bisu.edu.ph) instead of a placeholder.
+            if ($user->is_student) {
+                app(StudentEmailAddress::class)->applyTo($user);
             }
         });
     }
