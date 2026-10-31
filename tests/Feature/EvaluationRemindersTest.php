@@ -1,5 +1,6 @@
 <?php
 
+use App\Filament\Pages\EmailLog;
 use App\Filament\Pages\EmailReminderSettings;
 use App\Filament\Pages\StudentEvaluationProgress;
 use App\Jobs\SendEvaluationReminderEmail;
@@ -154,4 +155,33 @@ it('shows the latest reminder on the student ID page while evaluations are still
     $this->post(route('evaluation.leave'));
     $this->post(route('evaluation.identify'), ['student_id' => 'REM-0002']);
     $this->get(route('evaluation.entry'))->assertOk()->assertDontSee('Complete your faculty evaluation to see your grades');
+});
+
+it('lists reminder emails with their status and retries failed ones', function () {
+    configureReminderEmail();
+    Queue::fake();
+    Livewire::test(StudentEvaluationProgress::class)->callAction('bySection')
+        ->callTableAction('remind', $this->section, ['subject' => 'Please finish', 'message' => '', 'bell' => true, 'email' => true, 'skip_hours' => 0]);
+    $reminder = EvaluationReminder::sole();
+    $reminder->update(['email_status' => 'failed', 'email_error' => 'Username and Password not accepted']);
+    $other = User::factory()->create(['is_student' => false]);
+    $hidden = EvaluationReminder::create(['campus_id' => $this->campus->id, 'sender_id' => $other->id, 'user_id' => $this->student->id,
+        'subject' => 'OTHER SENDER REMINDER', 'email_status' => 'sent', 'email' => 'x@bisu.edu.ph']);
+
+    Livewire::test(EmailLog::class)->assertCanSeeTableRecords([$reminder])->assertCanNotSeeTableRecords([$hidden])
+        ->assertSee('Failed')->assertSee('Wrong sender email or app password')
+        ->callTableAction('retry', $reminder)->assertNotified('1 email queued again');
+    expect($reminder->fresh()->email_status)->toBe('queued')->and($reminder->fresh()->email_error)->toBeNull();
+    Queue::assertPushed(SendEvaluationReminderEmail::class, 2);
+
+    $admin = User::factory()->create(['is_student' => false]);
+    $admin->assignRole(Role::findOrCreate('super_admin', 'web'));
+    $admin->campuses()->attach($this->campus);
+    $this->actingAs($admin);
+    Livewire::test(EmailLog::class)->assertCanSeeTableRecords([$reminder, $hidden])
+        ->filterTable('email_status', 'sent')->assertCanSeeTableRecords([$hidden])->assertCanNotSeeTableRecords([$reminder]);
+
+    $student = User::factory()->create(['is_student' => true]);
+    $this->actingAs($student);
+    expect(EmailLog::canAccess())->toBeFalse();
 });

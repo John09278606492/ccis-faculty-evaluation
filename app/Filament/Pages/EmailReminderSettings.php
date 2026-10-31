@@ -147,6 +147,7 @@ class EmailReminderSettings extends SettingsPage
         return new HtmlString('<p class="text-sm">Today: <strong>'.(clone $today)->count().'</strong> reminders · '
             .'<strong>'.($counts['sent'] ?? 0).'</strong> emails sent · <strong>'.($counts['queued'] ?? 0).'</strong> waiting · '
             .'<strong>'.($counts['failed'] ?? 0).'</strong> failed</p><p class="mt-1 text-xs text-gray-500">Gmail allows about 500 emails a day from a personal account and 2,000 from a Google Workspace account. Emails go out about 50 per minute.</p>'
-            .($failed ? '<p class="mt-2 text-xs text-danger-600">Last error: '.e(mb_substr($failed, 0, 300)).'</p>' : ''));
+            .($failed ? '<p class="mt-2 text-xs text-danger-600">Last error: '.e(mb_substr($failed, 0, 300)).'</p>' : '')
+            .'<p class="mt-2 text-sm"><a class="font-medium text-primary-600 hover:underline" href="'.e(EmailLog::getUrl()).'">Open the Email Log →</a></p>');
     }
 }
