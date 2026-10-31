@@ -7,7 +7,34 @@
         @endforeach
     </div>
     <p>Matched sections: @foreach($review['sections'] as $section => $count)<span class="mr-3">{{ $section }} ({{ $count }})</span>@endforeach</p>
-    @if($review['error_count'])
+    @if(isset($review['comparison']))
+        @php($c = $review['comparison'])
+        <div class="space-y-3 rounded-lg border border-gray-200 p-3">
+            <p class="font-semibold">Compared with {{ $review['class_label'] }} today
+                @if($review['file_titles'] ?? [])<span class="font-normal text-gray-500">· the file calls it {{ implode(', ', $review['file_titles']) }}</span>@endif</p>
+            <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
+                @foreach(['In the section now' => $c['current'], 'Valid in this file' => $c['in_file'], 'Already in the section' => $c['already'], 'New to the section' => count($c['new'])] as $label => $value)
+                    <div class="rounded-lg bg-gray-50 p-3 dark:bg-white/5"><p class="text-gray-500">{{ $label }}</p><p class="text-xl font-semibold">{{ number_format($value) }}</p></div>
+                @endforeach
+            </div>
+            @foreach(['new' => ['Will be added', 'text-success-700'], 'missing' => ['In the section but not in this file (kept; remove them in the section if they left)', 'text-warning-600']] as $key => [$title, $color])
+                @if($c[$key])
+                    <details @if($key === 'new' && count($c['new']) <= 15) open @endif><summary class="cursor-pointer {{ $color }}">{{ $title }}: {{ count($c[$key]) }}</summary>
+                        <p class="mt-1 text-gray-600">@foreach($c[$key] as $s)<span class="mr-3 inline-block">{{ $s['id'] }} {{ $s['name'] }}</span>@endforeach</p></details>
+                @endif
+            @endforeach
+            @foreach($c['elsewhere'] as $group)
+                <details><summary class="cursor-pointer text-warning-600">{{ count($group['students']) }} new students are already in {{ $group['section'] }}; they will be in both sections</summary>
+                    <p class="mt-1 text-gray-600">@foreach($group['students'] as $s)<span class="mr-3 inline-block">{{ $s['id'] }} {{ $s['name'] }}</span>@endforeach</p></details>
+            @endforeach
+            @foreach($c['similar'] as $other)
+                <p class="text-warning-600">Look-alike section {{ $other['section'] }} has {{ $other['students'] }} students, {{ $other['in_file'] }} of them in this file. If they are the same section, use Merge on {{ $other['section'] }} in Sections instead of keeping both.</p>
+            @endforeach
+        </div>
+    @endif
+    @if($review['nothing_new'] ?? false)
+        <p class="font-semibold text-gray-700">Nothing to upload: every student in this file is already in {{ $review['class_label'] }}. No changes will be made.</p>
+    @elseif($review['error_count'])
         <p class="font-semibold text-danger-600">Correct the listed IDs, names or other errors, then upload again. No students will be assigned until every row is valid.</p>
     @else
         <p class="text-success-700">Ready to confirm. @if(($review['target'] ?? 'class') === 'section') Only the listed students will be added to this section for this academic period. Select the saved section separately in Teaching Classes. @else Only the listed students will be added to this class. Their sections will be saved for this academic period. @endif Other section memberships and existing evaluations will be preserved.</p>

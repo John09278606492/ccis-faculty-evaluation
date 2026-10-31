@@ -145,6 +145,46 @@ class AcademicSections
         };
     }
 
+    /** Sections in the same department and period that a duplicate could be merged into. */
+    public function mergeTargets(User $actor, Campus $campus, AcademicSection $section): Builder
+    {
+        return $this->query($actor, $campus)->whereKeyNot($section->id)
+            ->where('department_id', $section->department_id)->where('semester_id', $section->semester_id);
+    }
+
+    /**
+     * Moves every student of a duplicate section (e.g. BSCRIM 2B) into the section kept (BSCRM 2B), points
+     * teaching classes that selected the duplicate at the kept one, then deletes the emptied duplicate.
+     * Class rosters and evaluations are not touched. Returns how many students were new to the kept section.
+     */
+    public function merge(User $actor, Campus $campus, AcademicSection $from, AcademicSection $into): int
+    {
+        return DB::transaction(function () use ($actor, $campus, $from, $into) {
+            $from = $this->section($actor, $campus, $from->id, true);
+            $into = $this->mergeTargets($actor, $campus, $from)->findOrFail($into->id);
+            $this->authorize($actor, $campus, true);
+            $members = StudentSectionMembership::where('academic_section_id', $from->id)
+                ->orWhere(fn ($q) => $q->where('department_id', $from->department_id)->where('semester_id', $from->semester_id)->where('section', $from->name))->get();
+            $added = 0;
+            foreach ($members as $member) {
+                $kept = StudentSectionMembership::firstOrCreate(['user_id' => $member->user_id, 'department_id' => $into->department_id,
+                    'semester_id' => $into->semester_id, 'section' => $into->name], ['academic_section_id' => $into->id]);
+                $added += (int) $kept->wasRecentlyCreated;
+                $member->delete();
+            }
+            $oldGroup = $from->department_id.'~'.$from->semester_id.'~'.rawurlencode($from->name);
+            $newGroup = $into->department_id.'~'.$into->semester_id.'~'.rawurlencode($into->name);
+            DB::table('course_offerings')->where('semester_id', $from->semester_id)->whereJsonContains('evaluator_selection->sections', $oldGroup)->orderBy('id')->each(function ($class) use ($oldGroup, $newGroup) {
+                $selection = json_decode($class->evaluator_selection, true);
+                $selection['sections'] = array_values(array_unique(array_map(fn ($key) => $key === $oldGroup ? $newGroup : $key, $selection['sections'])));
+                DB::table('course_offerings')->where('id', $class->id)->update(['evaluator_selection' => json_encode($selection)]);
+            });
+            $from->delete();
+
+            return $added;
+        });
+    }
+
     /** True when no student belongs to the section, by link or by its department/period/name. */
     public function isEmpty(AcademicSection $section): bool
     {

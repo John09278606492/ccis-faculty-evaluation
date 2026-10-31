@@ -320,3 +320,37 @@ it('accepts a section list whose title spells the section differently', function
     $review = ($this->review)("BS-IT 3A\nID No.\n000123\n");
     expect($review->result['review']['error_count'])->toBe(0);
 });
+
+it('compares a section list with the section and look-alikes and refuses a list that adds nothing', function () {
+    $lookAlike = $this->sections->save($this->actor, $this->campus, ['name' => 'BS IT 3-A', 'department_id' => $this->department->id, 'semester_id' => $this->offering->semester_id, 'is_active' => true]);
+    $this->sections->add($this->actor, $this->campus, $lookAlike, [$this->student->id]);
+    $review = ($this->review)("BSIT 3A\nID No.\n000123\n");
+    $comparison = $review->result['review']['comparison'];
+    expect($comparison['new'][0]['id'])->toBe('000123')->and($comparison['current'])->toBe(0)
+        ->and($comparison['elsewhere'][0]['section'])->toBe('BS IT 3A')
+        ->and($comparison['similar'][0]['in_file'])->toBe(1)
+        ->and($review->result['review']['nothing_new'])->toBeFalse();
+    Livewire::test(BackgroundProcessing::class)->mountTableAction('view', $review)->assertSee('Look-alike section')->assertSee('they will be in both sections');
+
+    $this->sections->add($this->actor, $this->campus, $this->section, [$this->student->id]);
+    $again = ($this->review)("BSIT 3A\nID No.\n000123\n");
+    expect($again->result['review']['nothing_new'])->toBeTrue()
+        ->and($again->result['message'])->toContain('Nothing new');
+    Livewire::test(BackgroundProcessing::class)->assertTableActionHidden('confirmImport', $again);
+    expect(fn () => $this->tasks->confirm($again, $this->actor, $this->campus))->toThrow(HttpException::class);
+});
+
+it('merges a duplicate section into the kept one after showing the comparison', function () {
+    $duplicate = $this->sections->save($this->actor, $this->campus, ['name' => 'BS IT 3-A', 'department_id' => $this->department->id, 'semester_id' => $this->offering->semester_id, 'is_active' => true]);
+    $this->sections->add($this->actor, $this->campus, $duplicate, [$this->student->id]);
+    $oldGroup = $duplicate->department_id.'~'.$duplicate->semester_id.'~'.rawurlencode($duplicate->name);
+    $this->offering->update(['evaluator_selection' => ['sections' => [$oldGroup]]]);
+
+    Livewire::test(ListSections::class)->mountTableAction('merge', $duplicate)
+        ->assertTableActionDataSet(['into' => $this->section->id])->assertSee('Only in BS IT 3A (will move)')
+        ->callMountedTableAction()->assertHasNoTableActionErrors();
+
+    expect(AcademicSection::find($duplicate->id))->toBeNull()
+        ->and($this->section->students()->pluck('users.id')->all())->toBe([$this->student->id])
+        ->and($this->offering->fresh()->evaluator_selection['sections'])->toBe([$this->section->department_id.'~'.$this->section->semester_id.'~'.rawurlencode($this->section->name)]);
+});

@@ -19,6 +19,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\HtmlString;
 
 class SectionResource extends Resource
 {
@@ -82,6 +83,49 @@ class SectionResource extends Resource
             ->using(fn (AcademicSection $record) => app(AcademicSections::class)->delete(auth()->user(), filament()->getTenant(), $record));
     }
 
+    /** Folds a duplicate section (BSCRIM 2B) into the one kept (BSCRM 2B) after showing how their students compare. */
+    public static function mergeAction(): Tables\Actions\Action
+    {
+        $sections = fn () => app(AcademicSections::class);
+
+        return Tables\Actions\Action::make('merge')->label('Merge')->icon('heroicon-o-arrows-pointing-in')->color('gray')->iconButton()->tooltip('Merge into another section')
+            ->visible(fn (AcademicSection $record) => static::canEdit($record))
+            ->modalHeading(fn (AcademicSection $record) => 'Merge '.$record->name.' into another section')
+            ->modalDescription('Its students move to the section you keep, classes that selected it now select the kept section, and it is deleted. Class rosters and evaluations are not changed.')
+            ->modalSubmitActionLabel('Merge')->form([
+                Forms\Components\Select::make('into')->label('Keep this section')->required()->live()
+                    ->options(function (AcademicSection $record) use ($sections) {
+                        return $sections()->mergeTargets(auth()->user(), filament()->getTenant(), $record)->orderBy('name')->get()
+                            ->sortBy(fn ($s) => AcademicSections::sameName($s->name, $record->name) ? 0 : 1)
+                            ->mapWithKeys(fn ($s) => [$s->id => $s->name.(AcademicSections::sameName($s->name, $record->name) ? ' (same name, different spelling)' : '')]);
+                    })
+                    ->default(fn (AcademicSection $record) => $sections()->mergeTargets(auth()->user(), filament()->getTenant(), $record)->get()
+                        ->first(fn ($s) => AcademicSections::sameName($s->name, $record->name))?->id),
+                Forms\Components\Placeholder::make('comparison')->label('Comparison')->visible(fn (Forms\Get $get) => filled($get('into')))
+                    ->content(function (AcademicSection $record, Forms\Get $get) use ($sections) {
+                        $into = $sections()->mergeTargets(auth()->user(), filament()->getTenant(), $record)->find($get('into'));
+                        if (! $into) {
+                            return '';
+                        }
+                        $ids = fn ($section) => $section->students()->pluck('student_id')->all();
+                        [$from, $kept] = [$ids($record), $ids($into)];
+                        $both = array_intersect($from, $kept);
+                        $onlyFrom = array_diff($from, $kept);
+                        $onlyKept = array_diff($kept, $from);
+                        $list = fn ($values) => $values ? implode(', ', array_slice(array_values($values), 0, 60)).(count($values) > 60 ? ' …' : '') : 'none';
+
+                        return new HtmlString(
+                            '<p><strong>'.count($both).'</strong> students are in both. '.($onlyFrom || $onlyKept ? '' : '<strong>The two sections are identical.</strong>').'</p>'
+                            .'<p class="mt-2">Only in '.e($record->name).' (will move): <strong>'.count($onlyFrom).'</strong><br><span class="text-gray-500">'.e($list($onlyFrom)).'</span></p>'
+                            .'<p class="mt-2">Only in '.e($into->name).' (stay): <strong>'.count($onlyKept).'</strong><br><span class="text-gray-500">'.e($list($onlyKept)).'</span></p>');
+                    }),
+            ])->action(function (AcademicSection $record, array $data) use ($sections) {
+                $into = AcademicSection::findOrFail($data['into']);
+                $added = $sections()->merge(auth()->user(), filament()->getTenant(), $record, $into);
+                Notification::make()->success()->title($record->name.' merged into '.$into->name)->body($added.' students were new to '.$into->name.'.')->send();
+            });
+    }
+
     public static function getEloquentQuery(): Builder
     {
         return app(AcademicSections::class)->query(auth()->user(), filament()->getTenant())->with(['department', 'semester.schoolYear'])->withCount('students');
@@ -116,6 +160,7 @@ class SectionResource extends Resource
             Tables\Actions\ViewAction::make()->label('Students')->icon('heroicon-o-user-group')
                 ->url(fn (AcademicSection $record) => static::getUrl('view', ['record' => $record, 'activeRelationManager' => '0'])),
             Tables\Actions\EditAction::make(),
+            static::mergeAction(),
             static::deleteAction(Tables\Actions\DeleteAction::class)->iconButton(),
         ])->bulkActions([
             Tables\Actions\BulkAction::make('deleteEmpty')->label('Delete empty sections')->icon('heroicon-o-trash')->color('danger')

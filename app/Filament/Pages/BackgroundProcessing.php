@@ -75,7 +75,7 @@ class BackgroundProcessing extends Page implements HasTable
                         default => 'Import the reviewed data in the background. Permissions, row validation and changes since review are checked again before saving.'
                     })
                     ->visible(fn ($record) => $record->status === 'completed' && in_array($record->kind, ['student-review', 'course-review', 'roster-review', 'section-review', 'offering-review'], true)
-                        && empty($record->result['confirmed_task_id']) && ($record->result['review']['error_count'] ?? 0) === 0)
+                        && empty($record->result['confirmed_task_id']) && ($record->result['review']['error_count'] ?? 0) === 0 && empty($record->result['review']['nothing_new']))
                     ->action(function (BackgroundTask $record) {
                         app(BackgroundTasks::class)->confirm($record, auth()->user(), filament()->getTenant());
                         Notification::make()->success()->title(match ($record->kind) {

@@ -113,6 +113,7 @@ class BackgroundTasks
         abort_unless($review->status === 'completed' && in_array($review->kind, ['student-review', 'course-review', 'roster-review', 'section-review', 'offering-review'], true), 422);
         abort_unless($review->completed_at->gt(now()->subDays(7)), 410, 'This review expired. Upload and review the data again.');
         abort_if(($review->result['review']['error_count'] ?? 0) > 0, 422, 'Correct the validation errors and upload the file again. No rows have been imported.');
+        abort_if(! empty($review->result['review']['nothing_new']), 422, 'Every student in this file is already in the section. Nothing was changed.');
         $kind = match ($review->kind) {
             'student-review' => 'student-import', 'roster-review' => 'roster-import', 'section-review' => 'section-import', 'offering-review' => 'offering-import', default => 'course-import'
         };
@@ -266,6 +267,10 @@ class BackgroundTasks
             });
             // Keep table/modal responses compact; the download retains every row.
             $review['details'] = array_slice($review['details'], 0, 100);
+
+            if (! empty($review['nothing_new'])) {
+                return ['review' => $review, 'message' => 'Nothing new: all '.$review['matched_students'].' students in this file are already in '.$review['class_label'].'. No changes are needed.'];
+            }
 
             return ['review' => $review, 'message' => $review['matched_students'].' students matched; '.$review['error_count'].' rows need correction. Review the student list before confirming. No assignments or section memberships have been changed.'];
         }
