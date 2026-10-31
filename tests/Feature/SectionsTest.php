@@ -27,6 +27,9 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -272,4 +275,48 @@ it('deletes only sections without students', function () {
     Livewire::test(ListSections::class)->callTableBulkAction('deleteEmpty', [$other, $this->section]);
     expect(AcademicSection::find($other->id))->toBeNull()->and(AcademicSection::find($this->section->id))->not->toBeNull();
     expect(fn () => $this->sections->delete($this->actor, $this->campus, $this->section))->toThrow(ValidationException::class);
+});
+
+it('uploads many section lists at once, matching each file to the section named in its first row', function () {
+    $crim = $this->sections->save($this->actor, $this->campus, ['name' => 'BSCRM 2B', 'department_id' => $this->department->id, 'semester_id' => $this->offering->semester_id, 'is_active' => true]);
+    $book = new Spreadsheet;
+    $book->getActiveSheet()->fromArray([['BS CRIM 2B'], ['ID No.']]);
+    $book->getActiveSheet()->setCellValueExplicit('A3', '000123', DataType::TYPE_STRING);
+    $xlsx = tempnam(sys_get_temp_dir(), 'roster');
+    (new Xlsx($book))->save($xlsx);
+
+    Livewire::test(ListSections::class)->assertActionVisible('bulkUploadStudents')->callAction('bulkUploadStudents', data: [
+        'semester_id' => $this->offering->semester_id,
+        'files' => [
+            UploadedFile::fake()->createWithContent('3a.csv', "BS IT - 3A\nID No.\n000123\n"),
+            UploadedFile::fake()->createWithContent('crim.xlsx', file_get_contents($xlsx)),
+            UploadedFile::fake()->createWithContent('unknown.csv', "BSIT 9Z\nID No.\n000123\n"),
+            UploadedFile::fake()->createWithContent('untitled.csv', "ID No.\n000123\n"),
+        ],
+    ])->assertHasNoActionErrors()->assertNotified('2 of 4 lists queued for review');
+
+    $reviews = BackgroundTask::where('kind', 'section-review')->get();
+    expect($reviews->map(fn ($task) => $task->payload['section_id'])->sort()->values()->all())->toBe([$this->section->id, $crim->id]);
+    foreach ($reviews as $review) {
+        $this->tasks->run($review->id);
+        expect($review->fresh()->status)->toBe('completed', $review->fresh()->error ?? '')
+            ->and($review->fresh()->result['review']['error_count'])->toBe(0);
+    }
+    expect($this->section->students()->count())->toBe(0);
+});
+
+it('matches section titles despite spacing and dropped vowels and prefers the students department on a tie', function () {
+    $other = Department::create(['campus_id' => $this->campus->id, 'name' => 'CCIS', 'code' => 'CCIS2', 'is_active' => true]);
+    $this->actor->assignRole('super_admin');
+    AcademicSection::create(['department_id' => $other->id, 'semester_id' => $this->offering->semester_id, 'name' => 'BSCRM 2C', 'is_active' => true]);
+    $mine = $this->sections->save($this->actor, $this->campus, ['name' => 'BSCRM 2C', 'department_id' => $this->department->id, 'semester_id' => $this->offering->semester_id, 'is_active' => true]);
+    expect(AcademicSections::sameName('BS CRIM 2B', 'BSCRM 2B'))->toBeTrue()
+        ->and(AcademicSections::sameName('BSCRIM 2B', 'BSCRIM 2C'))->toBeFalse()
+        ->and($this->sections->matchTitle($this->actor, $this->campus, $this->offering->semester_id, 'BS CRIM 2C', ['000123'])['section']?->id)->toBe($mine->id)
+        ->and($this->sections->matchTitle($this->actor, $this->campus, $this->offering->semester_id, 'BSCRIM 4F', [])['problem'])->toContain('No active section');
+});
+
+it('accepts a section list whose title spells the section differently', function () {
+    $review = ($this->review)("BS-IT 3A\nID No.\n000123\n");
+    expect($review->result['review']['error_count'])->toBe(0);
 });

@@ -66,13 +66,11 @@ class TeachingClassRosterImports
         return $header;
     }
 
-    /** Section uploads may list ID No. only; the masterlist supplies the names shown for review. */
-    public function read(string $source, string $defaultSection = '', bool $allowIdOnly = false): array
+    /** Raw sheet rows; $path may be an uploaded temporary file whose extension is given separately. */
+    private function rows(string $path, ?string $extension = null): array
     {
-        abort_unless((bool) preg_match('#^background-tasks/[a-f0-9-]{36}/source\.(csv|xlsx|xls)$#i', $source), 403);
-        $path = Storage::disk('local')->path($source);
         $rows = [];
-        if (strtolower(pathinfo($path, PATHINFO_EXTENSION)) === 'csv') {
+        if (strtolower($extension ?? pathinfo($path, PATHINFO_EXTENSION)) === 'csv') {
             $sample = file_get_contents($path, false, null, 0, 8192);
             $delimiter = ',';
             $scores = [];
@@ -97,7 +95,7 @@ class TeachingClassRosterImports
                 fclose($handle);
             }
         } else {
-            $reader = IOFactory::createReaderForFile($path);
+            $reader = $extension ? IOFactory::createReader(ucfirst(strtolower($extension))) : IOFactory::createReaderForFile($path);
             $reader->setReadDataOnly(true);
             $book = $reader->load($path);
             try {
@@ -110,6 +108,47 @@ class TeachingClassRosterImports
                 $book->disconnectWorksheets();
             }
         }
+
+        return $rows;
+    }
+
+    /** The section title written above the header (e.g. "BS CRIM 2B") and the listed IDs, without validating anything. */
+    public function peek(string $path, string $extension): array
+    {
+        $title = null;
+        $column = null;
+        $ids = [];
+        foreach ($this->rows($path, $extension) as $index => $row) {
+            $row = array_map(fn ($value) => trim(str_replace("\xEF\xBB\xBF", '', (string) $value)), $row);
+            $filled = array_values(array_filter($row, fn ($value) => $value !== ''));
+            if ($filled === []) {
+                continue;
+            }
+            if ($column === null) {
+                $header = $this->header($row);
+                if (isset($header['student_id'])) {
+                    $column = $header['student_id'];
+                } elseif ($index < 10 && count($filled) === 1) {
+                    $title = self::section($filled[0]);
+                } else {
+                    break;
+                }
+
+                continue;
+            }
+            if (($row[$column] ?? '') !== '') {
+                $ids[] = mb_strtoupper($row[$column]);
+            }
+        }
+
+        return ['title' => $title, 'ids' => array_values(array_unique($ids))];
+    }
+
+    /** Section uploads may list ID No. only; the masterlist supplies the names shown for review. */
+    public function read(string $source, string $defaultSection = '', bool $allowIdOnly = false): array
+    {
+        abort_unless((bool) preg_match('#^background-tasks/[a-f0-9-]{36}/source\.(csv|xlsx|xls)$#i', $source), 403);
+        $rows = $this->rows(Storage::disk('local')->path($source));
         $header = null;
         $result = [];
         $section = self::section($defaultSection);

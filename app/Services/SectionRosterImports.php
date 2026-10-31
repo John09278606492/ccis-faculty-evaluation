@@ -27,7 +27,9 @@ class SectionRosterImports
     {
         $section = $this->section($actor, $campus, $id);
         $reader = app(TeachingClassRosterImports::class);
-        $rows = $reader->read($source, $section->name, true);
+        // A title such as "BS CRIM 2B" above the list names this section in the file's own spelling.
+        $rows = array_map(fn ($row) => AcademicSections::sameName($row['section'], $section->name) ? [...$row, 'section' => $section->name] : $row,
+            $reader->read($source, $section->name, true));
         $analysis = $reader->analyzeRows($actor, $campus, $section->semester_id, $rows, $section->department_id, $section->name);
 
         return ['review' => [...$analysis['review'], 'target' => 'section', 'class_label' => $section->name,

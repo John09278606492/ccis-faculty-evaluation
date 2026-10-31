@@ -99,6 +99,52 @@ class AcademicSections
         });
     }
 
+    /** Spelling-tolerant keys: "BS CRIM 2B" and "BSCRIM 2B" share the first, "BSCRIM 2B" and "BSCRM 2B" the second. */
+    public static function nameKeys(string $name): array
+    {
+        $plain = preg_replace('/[^A-Z0-9]/', '', mb_strtoupper($name));
+
+        return [$plain, preg_replace('/[AEIOU]/', '', $plain)];
+    }
+
+    public static function sameName(string $a, string $b): bool
+    {
+        [$a1, $a2] = self::nameKeys($a);
+        [$b1, $b2] = self::nameKeys($b);
+
+        return $a1 !== '' && ($a1 === $b1 || $a2 === $b2);
+    }
+
+    /**
+     * The active section a file title refers to in this period, or a reason it needs a person.
+     * Exact spelling wins over the looser match; a tie goes to the department most listed students belong to.
+     *
+     * @return array{section: ?AcademicSection, problem: ?string}
+     */
+    public function matchTitle(User $actor, Campus $campus, int $semesterId, string $title, array $studentIds): array
+    {
+        $sections = $this->query($actor, $campus)->where('semester_id', $semesterId)->where('is_active', true)->with('department')->get();
+        [$plain, $loose] = self::nameKeys($title);
+        $candidates = $sections->filter(fn ($s) => self::nameKeys($s->name)[0] === $plain);
+        if ($candidates->isEmpty()) {
+            $candidates = $sections->filter(fn ($s) => self::nameKeys($s->name)[1] === $loose);
+        }
+        if ($candidates->count() > 1) {
+            $departments = app(AcademicStudents::class)->students($actor, $campus)->whereIn('student_id', array_slice($studentIds, 0, 2000))
+                ->whereNotNull('student_department_id')->pluck('student_department_id')->countBy();
+            $best = $candidates->sortByDesc(fn ($s) => $departments->get($s->department_id, 0))->values();
+            if ($departments->get($best[0]->department_id, 0) > $departments->get($best[1]->department_id, 0)) {
+                $candidates = collect([$best[0]]);
+            }
+        }
+
+        return match ($candidates->count()) {
+            1 => ['section' => $candidates->first(), 'problem' => null],
+            0 => ['section' => null, 'problem' => 'No active section named '.$title.' in this academic period. Add the section first.'],
+            default => ['section' => null, 'problem' => $title.' matches more than one section ('.$candidates->map(fn ($s) => $s->department->code.' '.$s->name)->join(', ').'). Upload it from the right section.'],
+        };
+    }
+
     /** True when no student belongs to the section, by link or by its department/period/name. */
     public function isEmpty(AcademicSection $section): bool
     {
