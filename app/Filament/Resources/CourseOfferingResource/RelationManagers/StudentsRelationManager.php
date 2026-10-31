@@ -8,9 +8,11 @@ use App\Filament\Resources\SectionResource;
 use App\Filament\Resources\TeachingClassResource\Pages\EditTeachingClass;
 use App\Models\User;
 use App\Services\AcademicStudents;
+use App\Services\ClassRosterVerification;
 use App\Services\EvaluationSections;
 use App\Services\FacultySupervisorEvaluators;
 use App\Services\StudentAcademicRecords;
+use App\Services\TeachingClassRosterImports;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
@@ -22,6 +24,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class StudentsRelationManager extends RelationManager
 {
@@ -113,6 +116,7 @@ class StudentsRelationManager extends RelationManager
             ])->filters([])->headerActions([
                 $this->matchEnrolledAction(),
                 $this->sectionAction(),
+                $this->verifyListAction(),
                 Tables\Actions\Action::make('setSupervisors')->label('Supervisors')->icon('heroicon-o-user-group')->color('gray')
                     ->visible(fn () => $this->canAttach() && ! $this->getOwnerRecord()->evaluationForm?->isSupervisorInstrument())
                     ->modalHeading('Select Supervisor Evaluators')->modalSubmitActionLabel('Save Supervisors')
@@ -365,5 +369,63 @@ class StudentsRelationManager extends RelationManager
                 $count = app(StudentAcademicRecords::class)->addEvaluators(auth()->user(), $this->getOwnerRecord()->fresh(), $data['subject_key'], $data['programs'] ?? [], $data['years'] ?? [], $data['exclude'] ?? []);
                 Notification::make()->success()->title("{$count} matching evaluators added or retained")->send();
             });
+    }
+
+    private function verifyListAction(): Tables\Actions\Action
+    {
+        return Tables\Actions\Action::make('verifyWithList')->label('Verify with Section List')->icon('heroicon-o-clipboard-document-check')->color('gray')
+            ->visible(fn () => $this->canAttach() && ! $this->getOwnerRecord()->evaluationForm?->isSupervisorInstrument())
+            ->modalHeading('Verify evaluators with section lists')->modalWidth('4xl')->modalSubmitActionLabel('Apply Selected Changes')
+            ->modalDescription('Upload the section lists for this class. Each list is compared with the evaluators below; nothing changes until you apply.')
+            ->form([
+                Forms\Components\FileUpload::make('files')->label('Section lists')->multiple()->maxFiles(10)->disk('local')->storeFiles(false)->maxSize(5120)->required()->live()
+                    ->acceptedFileTypes(['text/csv', 'text/plain', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'])
+                    ->helperText('One file per section, like the Upload Section Lists files. A class that covers several sections can take several files.'),
+                Forms\Components\Placeholder::make('verification')->hiddenLabel()->content(function (Forms\Get $get) {
+                    [$files, $error] = $this->readLists($get('files'));
+
+                    return view('filament.forms.class-roster-verification', ['error' => $error,
+                        'result' => $files ? app(ClassRosterVerification::class)->compare(auth()->user(), $this->getOwnerRecord()->fresh(), $files) : null]);
+                }),
+                Forms\Components\Checkbox::make('add_missing')->label('Add the listed students who are missing from this class')->default(true),
+                Forms\Components\Checkbox::make('remove_extra')->label('Remove evaluators who are not in any list (students who already submitted are kept)')->default(false),
+                Forms\Components\Checkbox::make('fill_sections')->label('Set each student\'s report section from the list title when it is still pending')->default(true),
+            ])->action(function (array $data) {
+                [$files, $error] = $this->readLists($data['files'] ?? []);
+                if (! $files) {
+                    Notification::make()->danger()->title('The lists could not be read')->body($error)->send();
+
+                    return;
+                }
+                $result = app(ClassRosterVerification::class)->apply(auth()->user(), $this->getOwnerRecord(), $files,
+                    (bool) ($data['add_missing'] ?? false), (bool) ($data['remove_extra'] ?? false), (bool) ($data['fill_sections'] ?? false));
+                $body = $result['added'].' added, '.$result['removed'].' removed, '.$result['sections'].' report sections set.'
+                    .($result['kept'] ? ' '.$result['kept'].' evaluators not in the lists were kept.' : '');
+                Notification::make()->success()->title('Evaluators checked against the lists')->body($body)->send();
+            });
+    }
+
+    /** @return array{0: array<int, array{name: string, title: ?string, ids: array<int, string>}>, 1: ?string} */
+    private function readLists(mixed $uploads): array
+    {
+        $files = [];
+        foreach (array_filter((array) $uploads, fn ($file) => is_object($file) && method_exists($file, 'getRealPath')) as $file) {
+            $name = $file->getClientOriginalName();
+            try {
+                $extension = strtolower($file->getClientOriginalExtension());
+                if (! in_array($extension, ['csv', 'xlsx', 'xls'], true)) {
+                    return [[], $name.': use a CSV or Excel file.'];
+                }
+                $peek = app(TeachingClassRosterImports::class)->peek($file->getRealPath(), $extension);
+                if (! $peek['ids']) {
+                    return [[], $name.': no ID No. column with student IDs was found.'];
+                }
+                $files[] = ['name' => $name, ...$peek];
+            } catch (Throwable $e) {
+                return [[], $name.': '.($e instanceof ValidationException ? collect($e->errors())->flatten()->first() : 'the file could not be read.')];
+            }
+        }
+
+        return [$files, null];
     }
 }
