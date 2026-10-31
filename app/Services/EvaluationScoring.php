@@ -18,22 +18,28 @@ class EvaluationScoring
         return $type === 'SEF' && ! $assignment->evaluationForm?->isSupervisorInstrument() ? 'OTHER' : $type;
     }
 
+    private static ?\WeakMap $forms = null;
+
     public function response(Form $form, FormSubmission $submission): ?array
     {
-        if ($submission->instrument_snapshot && class_exists(EvaluationInstrument::class)) {
+        if (filled($submission->getAttributes()['instrument_snapshot'] ?? null) && class_exists(EvaluationInstrument::class)) {
             $form = app(EvaluationInstrument::class)->forSubmission($submission);
         }
-        $form->loadMissing('fields');
-        $fields = $form->fields->whereIn('type', ['rating', 'likert_scale'])->values();
-        $scale = collect($form->rating_scale ?: [['value' => 5], ['value' => 1]]);
-        $max = (float) $scale->max('value');
-        $min = (float) $scale->min('value');
+        // Reports score thousands of submissions against a few forms: derive each form's rated fields and scale once.
+        self::$forms ??= new \WeakMap;
+        if (! isset(self::$forms[$form])) {
+            $form->loadMissing('fields');
+            $scale = collect($form->rating_scale ?: [['value' => 5], ['value' => 1]]);
+            self::$forms[$form] = [$form->fields->whereIn('type', ['rating', 'likert_scale'])->values(), (float) $scale->max('value'), (float) $scale->min('value'), $form->scoring_config ?? []];
+        }
+        [$fields, $max, $min, $config] = self::$forms[$form];
         if ($fields->isEmpty() || $max <= 0) {
             return null;
         }
         $values = [];
+        $data = $submission->data ?? [];
         foreach ($fields as $field) {
-            $value = $submission->data[$field->name] ?? null;
+            $value = $data[$field->name] ?? null;
             if (! is_numeric($value) || (float) $value < $min || (float) $value > $max) {
                 return null;
             }
@@ -42,7 +48,6 @@ class EvaluationScoring
         $raw = array_sum($values);
         $maximum = $max * $fields->count();
         $percentage = $raw / $maximum * 100;
-        $config = $form->scoring_config ?? [];
         if (($config['overall_method'] ?? null) === 'weighted_average' && ! empty($config['section_weights'])) {
             $weights = collect($config['section_weights'])->pluck('weight', 'section_name');
             $weighted = $weightTotal = 0;

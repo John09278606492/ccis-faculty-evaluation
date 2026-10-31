@@ -3,11 +3,13 @@
 namespace App\Filament\Pages;
 
 use App\Models\AcademicSection;
+use App\Models\CourseOffering;
 use App\Models\Department;
 use App\Models\Semester;
 use App\Models\User;
 use App\Services\AcademicPeriod;
 use App\Services\AssignedDataAccess;
+use App\Services\EvaluationSubmissionIdentity;
 use App\Services\StudentEvaluationProgress as Progress;
 use BezhanSalleh\FilamentShield\Traits\HasPageShield;
 use Filament\Actions\Action;
@@ -17,6 +19,7 @@ use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
+use Illuminate\Support\Facades\DB;
 
 class StudentEvaluationProgress extends Page implements HasTable
 {
@@ -46,6 +49,33 @@ class StudentEvaluationProgress extends Page implements HasTable
     private array $progressCache = [];
 
     private array $sectionCache = [];
+
+    private ?array $finishedCache = null;
+
+    /** [students who finished every assigned evaluation, students with at least one left] in the current scope. */
+    private function studentsByCompletion(): array
+    {
+        return $this->finishedCache ??= (function () {
+            $classes = $this->scopedAssignments(CourseOffering::query())->whereNotNull('form_id')->get(['id', 'form_id'])->keyBy('id');
+            $identity = app(EvaluationSubmissionIdentity::class);
+            $all = $pending = [];
+            foreach (array_chunk($classes->keys()->all(), 300) as $ids) {
+                $done = DB::table('form_submissions')->join('course_offerings', 'course_offerings.id', '=', 'form_submissions.course_offering_id')
+                    ->whereIn('course_offerings.id', $ids)->whereColumn('form_submissions.form_id', 'course_offerings.form_id')
+                    ->get(['form_submissions.submission_fingerprint', 'form_submissions.user_id', 'form_submissions.course_offering_id']);
+                $fingerprints = $done->pluck('submission_fingerprint')->filter()->flip();
+                $legacy = $done->filter(fn ($row) => $row->user_id)->mapWithKeys(fn ($row) => [$row->course_offering_id.':'.$row->user_id => true]);
+                foreach (DB::table('course_offering_student')->whereIn('course_offering_id', $ids)->get(['course_offering_id', 'user_id']) as $row) {
+                    $all[$row->user_id] = true;
+                    if (! $fingerprints->has($identity->forUser($classes[$row->course_offering_id], $row->user_id)) && ! $legacy->has($row->course_offering_id.':'.$row->user_id)) {
+                        $pending[$row->user_id] = true;
+                    }
+                }
+            }
+
+            return [array_keys(array_diff_key($all, $pending)), array_keys($pending)];
+        })();
+    }
 
     public string $viewMode = 'students';
 
@@ -215,10 +245,18 @@ class StudentEvaluationProgress extends Page implements HasTable
                     ->default(fn () => AcademicPeriod::current(filament()->getTenant()))->selectablePlaceholder(false)
                     ->options(fn () => Semester::whereHas('schoolYear', fn ($q) => $q->where('campus_id', filament()->getTenant()->id))->with('schoolYear')->get()->mapWithKeys(fn ($s) => [$s->id => $s->name.' / '.$s->schoolYear->name]))
                     ->query(fn ($query) => $query),
+                Tables\Filters\SelectFilter::make('completion')->label('Show')->placeholder('All students')
+                    ->visible(fn () => $this->viewMode !== 'sections')
+                    ->options(['pending' => 'Still has evaluations to do', 'finished' => 'Finished all evaluations'])
+                    ->query(fn ($query, array $data) => match ($this->viewMode === 'sections' ? null : ($data['value'] ?? null)) {
+                        'pending' => $query->whereKey($this->studentsByCompletion()[1]),
+                        'finished' => $query->whereKey($this->studentsByCompletion()[0]),
+                        default => $query,
+                    }),
                 Tables\Filters\SelectFilter::make('section')->label('Section')->searchable()->placeholder('All authorized sections')
                     ->options(fn () => $this->sectionQuery(false)->orderBy('name')->get()->mapWithKeys(fn ($s) => [$s->id => $s->department?->code.' · '.$s->name]))
                     ->query(fn ($query) => $query),
-            ], layout: FiltersLayout::AboveContent)->filtersFormColumns(['default' => 1, 'md' => 3])
+            ], layout: FiltersLayout::AboveContent)->filtersFormColumns(['default' => 1, 'md' => 2, 'xl' => 4])
             ->actions([
                 Tables\Actions\Action::make('students')->label('View Students')->icon('heroicon-o-users')->visible(fn () => $this->viewMode === 'sections')
                     ->action(fn (AcademicSection $record) => $this->showSectionStudents($record->id)),

@@ -122,3 +122,24 @@ it('uses an explicitly assigned teaching department before a faculty home depart
     expect(app(Progress::class)->counts($student, $offering->campus, null, [$homeId])['total'])->toBe(0);
     expect(app(Progress::class)->counts($student, $offering->campus, null, [$host->id])['total'])->toBe(1);
 });
+
+it('filters students who still have evaluations to do or finished them all', function () {
+    ['student' => $done, 'offering' => $offering] = evaluationFixture();
+    $pending = User::factory()->create(['is_student' => true]);
+    $pending->assignRole('student');
+    $pending->campuses()->attach($offering->campus);
+    $offering->students()->attach($pending);
+    FormSubmission::create(['form_id' => $offering->form_id, 'course_offering_id' => $offering->id,
+        'submission_fingerprint' => app(EvaluationSubmissionIdentity::class)->forUser($offering, $done->id), 'data' => ['teaching_quality' => 5]]);
+    $staff = User::factory()->create(['is_student' => false]);
+    $staff->campuses()->attach($offering->campus);
+    $staff->assignRole(Role::findOrCreate('chairperson', 'web'));
+    $offering->course->department->update(['chairperson_id' => $staff->id]);
+    $staff->givePermissionTo(Permission::findOrCreate('page_StudentEvaluationProgress', 'web'));
+    $this->actingAs($staff);
+    Filament::setTenant($offering->campus);
+
+    Livewire::test(StudentEvaluationProgress::class)
+        ->filterTable('completion', 'pending')->assertCanSeeTableRecords([$pending])->assertCanNotSeeTableRecords([$done])
+        ->filterTable('completion', 'finished')->assertCanSeeTableRecords([$done])->assertCanNotSeeTableRecords([$pending]);
+});
