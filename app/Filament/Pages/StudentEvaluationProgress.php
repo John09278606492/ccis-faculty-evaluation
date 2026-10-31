@@ -5,20 +5,28 @@ namespace App\Filament\Pages;
 use App\Models\AcademicSection;
 use App\Models\CourseOffering;
 use App\Models\Department;
+use App\Models\EvaluationReminder;
 use App\Models\Semester;
 use App\Models\User;
 use App\Services\AcademicPeriod;
+use App\Services\AcademicStudents;
 use App\Services\AssignedDataAccess;
+use App\Services\EvaluationReminders;
 use App\Services\EvaluationSubmissionIdentity;
 use App\Services\StudentEvaluationProgress as Progress;
+use App\Settings\EmailReminderSetting;
 use BezhanSalleh\FilamentShield\Traits\HasPageShield;
 use Filament\Actions\Action;
+use Filament\Forms;
+use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Tables;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Url;
 
@@ -86,7 +94,110 @@ class StudentEvaluationProgress extends Page implements HasTable
         return [
             Action::make('bySection')->label('By Section')->icon('heroicon-o-user-group')->visible(fn () => $this->viewMode !== 'sections')->action(fn () => $this->changeView('sections')),
             Action::make('byStudent')->label('By Student')->icon('heroicon-o-user')->visible(fn () => $this->viewMode !== 'students')->action(fn () => $this->changeView('students')),
+            Action::make('remindAll')->label('Remind students')->icon('heroicon-o-bell-alert')->color('warning')
+                ->modalHeading('Remind students who have not finished')
+                ->modalDescription(fn () => $this->reminderDescription($this->reminderTargets($this->allReminderStudents())))
+                ->form($this->reminderForm())->modalSubmitActionLabel('Send reminders')
+                ->action(fn (array $data) => $this->sendReminders($this->allReminderStudents(), $data)),
         ];
+    }
+
+    /** Every student in the current filters: all sections in scope (By Section) or the filtered student list (By Student). */
+    private function allReminderStudents(): array
+    {
+        if ($this->viewMode === 'sections') {
+            return $this->sectionStudents($this->sectionQuery()->pluck('academic_sections.id')->all());
+        }
+
+        return array_fill_keys($this->getFilteredTableQuery()->pluck('users.id')->all(), null);
+    }
+
+    /** @return array<int, int|null> student id => section id, only students this user may see */
+    private function sectionStudents(array $sectionIds): array
+    {
+        $allowed = $this->sectionQuery(false)->whereKey($sectionIds)->pluck('academic_sections.id')->all();
+        $rows = DB::table('student_section_memberships')->whereIn('academic_section_id', $allowed)
+            ->whereIn('user_id', app(AcademicStudents::class)->students(auth()->user(), filament()->getTenant())->select('users.id'))
+            ->get(['user_id', 'academic_section_id']);
+
+        return $rows->mapWithKeys(fn ($row) => [$row->user_id => $row->academic_section_id])->all();
+    }
+
+    private array $reminderCache = [];
+
+    /** @return array<int, int> student id => open evaluations left */
+    private function reminderTargets(array $students): array
+    {
+        $key = md5(json_encode([array_keys($students), $this->selectedSemester(), $this->selectedDepartments()]));
+
+        return $this->reminderCache[$key] ??= app(Progress::class)->openPendingCounts(filament()->getTenant(), array_keys($students),
+            $this->selectedSemester(), $this->selectedDepartments());
+    }
+
+    private function reminderDescription(array $targets): string
+    {
+        $count = count($targets);
+        $email = app(EvaluationReminders::class)->emailReady() ? '' : ' Email is not set up yet, so they will get a bell notice in the system only.';
+
+        return $count === 0 ? 'Everyone here has finished their open evaluations. There is no one to remind.'
+            : $count.' '.str('student')->plural($count).' still '.($count === 1 ? 'has' : 'have').' '.array_sum($targets).' open '.str('evaluation')->plural(array_sum($targets)).' to finish.'.$email;
+    }
+
+    private function reminderForm(): array
+    {
+        $templates = EvaluationReminders::TEMPLATES;
+        $emailReady = app(EvaluationReminders::class)->emailReady();
+
+        return [
+            Forms\Components\Select::make('template')->label('Reminder')->options(collect($templates)->map(fn ($t) => $t['label']))
+                ->default('grades')->selectablePlaceholder(false)->live()
+                ->afterStateUpdated(function ($state, Forms\Set $set) use ($templates) {
+                    $set('subject', $templates[$state]['subject'] ?? '');
+                    $set('message', $templates[$state]['message'] ?? '');
+                }),
+            Forms\Components\TextInput::make('subject')->label('Title')->required()->maxLength(150)->default($templates['grades']['subject'])
+                ->helperText('Shown as the email subject and the bell title. You can use {first_name} and {remaining}.'),
+            Forms\Components\Textarea::make('message')->label('Message')->rows(3)->maxLength(1000)->default($templates['grades']['message']),
+            Forms\Components\Grid::make(2)->schema([
+                Forms\Components\Toggle::make('bell')->label('Bell notice in the system')->default(true),
+                Forms\Components\Toggle::make('email')->label('Email to their school address')->default($emailReady)->disabled(! $emailReady)
+                    ->helperText($emailReady ? 'firstname.lastname@'.app(EmailReminderSetting::class)->student_domain : 'A super admin must set this up in Administration → Email Reminders.'),
+            ]),
+            Forms\Components\Select::make('skip_hours')->label('Skip students already reminded in the last')->selectablePlaceholder(false)
+                ->options([0 => 'Do not skip anyone', 6 => '6 hours', 12 => '12 hours', 24 => '24 hours', 72 => '3 days'])->default(12),
+        ];
+    }
+
+    private function sendReminders(array $students, array $data): void
+    {
+        abort_unless(static::canAccess(), 403);
+        $targets = $this->reminderTargets($students);
+        if ($targets === []) {
+            Notification::make()->info()->title('No one to remind')->body('These students have no open evaluations left.')->send();
+
+            return;
+        }
+        if (! ($data['bell'] ?? false) && ! ($data['email'] ?? false)) {
+            Notification::make()->warning()->title('Choose bell, email or both')->send();
+
+            return;
+        }
+        $service = app(EvaluationReminders::class);
+        $result = $service->send(auth()->user(), filament()->getTenant(), $targets, $data, array_filter($students));
+        $sent = $result['students'] - $result['skipped'];
+        Notification::make()->success()->title('Reminded '.$sent.' '.str('student')->plural($sent))->body($service->summary($result))->send();
+        $this->lastReminded = null;
+    }
+
+    private ?array $lastReminded = null;
+
+    private function lastReminded(AcademicSection $section): ?string
+    {
+        $this->lastReminded ??= EvaluationReminder::whereIn('academic_section_id', array_keys($this->allSectionProgress()))
+            ->selectRaw('academic_section_id, max(created_at) as last')->groupBy('academic_section_id')->pluck('last', 'academic_section_id')->all();
+        $last = $this->lastReminded[$section->id] ?? null;
+
+        return $last ? 'Reminded '.Carbon::parse($last)->diffForHumans() : null;
     }
 
     public function changeView(string $mode): void
@@ -157,6 +268,17 @@ class StudentEvaluationProgress extends Page implements HasTable
             .$order->map(fn ($id, $position) => 'WHEN '.(int) $id.' THEN '.(int) $position)->join(' ').' ELSE '.$order->count().' END'));
     }
 
+    private function selectedReminderStudents(Collection $records): array
+    {
+        if ($this->viewMode === 'sections') {
+            return $this->sectionStudents($records->modelKeys());
+        }
+        $ids = $this->getFilteredTableQuery()->whereKey($records->modelKeys())->pluck('users.id')->all();
+        $sections = $this->sectionStudents($this->sectionQuery(false)->pluck('academic_sections.id')->all());
+
+        return collect($ids)->mapWithKeys(fn ($id) => [$id => $sections[$id] ?? null])->all();
+    }
+
     public function showSectionStudents(int $sectionId): void
     {
         abort_unless(static::canAccess(), 403);
@@ -219,9 +341,9 @@ class StudentEvaluationProgress extends Page implements HasTable
                 ->when($this->tableFilters['section']['value'] ?? null, fn ($q, $id) => $q->whereHas('studentSectionMemberships', fn ($q) => $q->where('academic_section_id', $id)->whereIn('academic_section_id', $this->sectionQuery(false)->select('academic_sections.id'))))
                 ->with(['studentSectionMemberships' => fn ($q) => $q->whereIn('academic_section_id', $this->sectionQuery(false)->select('academic_sections.id'))]))
             ->columns($this->viewMode === 'sections' ? [
-                Tables\Columns\TextColumn::make('name')->label('Section')->description(fn (AcademicSection $record) => $record->department?->code)->searchable()->wrap(),
+                Tables\Columns\TextColumn::make('name')->label('Section')->description(fn (AcademicSection $record) => collect([$record->department?->code, $this->lastReminded($record)])->filter()->join(' · '))->searchable()->wrap(),
                 Tables\Columns\TextColumn::make('section_students')->label('Students')->state(fn (AcademicSection $record) => $this->sectionProgress($record)['students'])
-                    ->description(fn (AcademicSection $record) => $this->sectionProgress($record)['unassigned_students'].' without assignments'),
+                    ->description(fn (AcademicSection $record) => $this->sectionProgress($record)['unassigned_students'] ? $this->sectionProgress($record)['unassigned_students'].' without assignments' : null),
                 Tables\Columns\TextColumn::make('finished')->label('Students finished')->state(fn (AcademicSection $record) => $this->sectionProgress($record)['assigned_students'] ? $this->sectionProgress($record)['complete_students'].' / '.$this->sectionProgress($record)['assigned_students'] : 'Not assigned')
                     ->description(fn (AcademicSection $record) => $this->sectionProgress($record)['assigned_students'] ? round(100 * $this->sectionProgress($record)['complete_students'] / $this->sectionProgress($record)['assigned_students']).'% of students' : null)
                     ->badge()->color(fn (AcademicSection $record) => $this->sectionProgress($record)['assigned_students'] ? 'success' : 'gray'),
@@ -277,8 +399,21 @@ class StudentEvaluationProgress extends Page implements HasTable
                     ->query(fn ($query) => $query),
             ], layout: FiltersLayout::AboveContent)->filtersFormColumns(['default' => 1, 'md' => 2, 'xl' => 4])
             ->actions([
-                Tables\Actions\Action::make('students')->label('View Students')->icon('heroicon-o-users')->visible(fn () => $this->viewMode === 'sections')
+                Tables\Actions\Action::make('students')->label('Students')->tooltip('Open this section\'s student list')->icon('heroicon-o-users')->visible(fn () => $this->viewMode === 'sections')
                     ->action(fn (AcademicSection $record) => $this->showSectionStudents($record->id)),
+                Tables\Actions\Action::make('remind')->label('Remind')->icon('heroicon-o-bell-alert')->color('warning')
+                    ->visible(fn () => $this->viewMode === 'sections')
+                    ->disabled(fn (AcademicSection $record) => $this->sectionProgress($record)['assigned_students'] === $this->sectionProgress($record)['complete_students'])
+                    ->modalHeading(fn (AcademicSection $record) => 'Remind '.$record->name)
+                    ->modalDescription(fn (AcademicSection $record) => $this->reminderDescription($this->reminderTargets($this->sectionStudents([$record->id]))))
+                    ->form($this->reminderForm())->modalSubmitActionLabel('Send reminders')
+                    ->action(fn (AcademicSection $record, array $data) => $this->sendReminders($this->sectionStudents([$record->id]), $data)),
+            ])->bulkActions([
+                Tables\Actions\BulkAction::make('remindSelected')->label('Remind selected')->icon('heroicon-o-bell-alert')->color('warning')
+                    ->modalHeading('Remind the selected students')
+                    ->modalDescription(fn (Collection $records) => $this->reminderDescription($this->reminderTargets($this->selectedReminderStudents($records))))
+                    ->form($this->reminderForm())->modalSubmitActionLabel('Send reminders')->deselectRecordsAfterCompletion()
+                    ->action(fn (Collection $records, array $data) => $this->sendReminders($this->selectedReminderStudents($records), $data)),
             ])->emptyStateHeading(fn () => $this->viewMode === 'sections' ? 'No sections in this scope' : (($this->tableFilters['section']['value'] ?? null) ? 'No students in this section' : 'No students with evaluation assignments'))
             ->emptyStateDescription(fn () => $this->viewMode === 'sections' || ($this->tableFilters['section']['value'] ?? null)
                 ? 'Create sections and upload their student lists under Academic Management → Sections.'

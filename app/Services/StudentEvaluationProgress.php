@@ -116,6 +116,55 @@ class StudentEvaluationProgress
         return $result;
     }
 
+    /**
+     * How many evaluations each given student can still submit right now (open, not yet done), for reminders.
+     *
+     * @param  array<int, int>  $userIds
+     * @return array<int, int> user id => open evaluations left (students with none are left out)
+     */
+    public function openPendingCounts(Campus $campus, array $userIds, ?int $semesterId = null, ?array $departmentIds = null): array
+    {
+        $counts = [];
+        $students = User::whereKey($userIds)->with('roles')->get()->keyBy('id');
+        $identity = app(EvaluationSubmissionIdentity::class);
+        foreach (array_chunk($students->keys()->all(), 400) as $chunk) {
+            $classes = $this->scopeAssignments(CourseOffering::query(), $campus, $departmentIds)
+                ->when($semesterId, fn ($q) => $q->where('semester_id', $semesterId))
+                ->whereHas('students', fn ($q) => $q->whereIn('users.id', $chunk))
+                ->with(['evaluationForm.campuses', 'evaluationForm.departments', 'course', 'evaluationCycle', 'semester.schoolYear', 'evaluatee.instructorDepartment'])->get()
+                ->filter(function (CourseOffering $class) use ($campus) {
+                    $form = $class->evaluationForm;
+                    $department = $class->teaching_department_id ?? $class->course?->department_id ?? $class->evaluatee?->instructor_department_id;
+
+                    return $form && ! $form->isSupervisorInstrument() && $form->campuses->contains('id', $campus->id)
+                        && ($form->departments->isEmpty() || $form->departments->contains('id', $department))
+                        && $this->pendingState($class) === 'open_pending';
+                })->keyBy('id');
+            if ($classes->isEmpty()) {
+                continue;
+            }
+            foreach (array_chunk($classes->keys()->all(), 300) as $ids) {
+                $done = FormSubmission::whereIn('course_offering_id', $ids)->get(['course_offering_id', 'form_id', 'user_id', 'submission_fingerprint']);
+                $fingerprints = $done->pluck('submission_fingerprint')->filter()->flip();
+                $legacy = $done->filter(fn ($row) => $row->user_id && $row->form_id === $classes[$row->course_offering_id]->form_id)
+                    ->mapWithKeys(fn ($row) => [$row->course_offering_id.':'.$row->user_id => true]);
+                foreach (DB::table('course_offering_student')->whereIn('course_offering_id', $ids)->whereIn('user_id', $chunk)->get(['course_offering_id', 'user_id']) as $row) {
+                    $class = $classes[$row->course_offering_id];
+                    $student = $students[$row->user_id];
+                    $roles = $class->evaluationForm->evaluator_roles ?? [];
+                    if ($roles !== [] && ! $student->isSuperAdmin() && $student->getRoleNames()->intersect($roles)->isEmpty()) {
+                        continue;
+                    }
+                    if (! $fingerprints->has($identity->forUser($class, $row->user_id)) && ! $legacy->has($row->course_offering_id.':'.$row->user_id)) {
+                        $counts[$row->user_id] = ($counts[$row->user_id] ?? 0) + 1;
+                    }
+                }
+            }
+        }
+
+        return $counts;
+    }
+
     public function departmentIds(User $actor, Campus $campus): ?array
     {
         return app(AssignedDataAccess::class)->departmentIds($actor, $campus);
