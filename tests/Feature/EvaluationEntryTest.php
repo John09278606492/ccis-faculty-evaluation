@@ -1,6 +1,8 @@
 <?php
 
+use App\Models\Course;
 use App\Models\FormSubmission;
+use App\Models\User;
 
 it('gives different students separate entry limits on a shared campus network', function () {
     for ($i = 0; $i < 12; $i++) {
@@ -52,4 +54,20 @@ it('rejects unknown IDs and allows switching evaluation identities without signi
     $this->post(route('evaluation.leave'))->assertRedirect(route('evaluation.entry'));
     $this->get(route('evaluation.entry'))->assertSee('Continue to evaluations');
     $this->assertGuest();
+});
+
+it('lists instructors the student has not evaluated yet above completed ones', function () {
+    ['student' => $student, 'offering' => $done] = evaluationFixture();
+    $student->update(['student_id' => 'ORDER-ID']);
+    $pending = $done->replicate();
+    $pending->section = 'B';
+    $pending->course_id = Course::create(['department_id' => $done->course->department_id, 'code' => 'CS102', 'name' => 'Programming', 'is_active' => true])->id;
+    $pending->user_id = User::factory()->create(['is_instructor' => true, 'name' => 'Zed Pending'])->id;
+    $pending->save();
+    $pending->students()->attach($student, ['enrolled_at' => now()]);
+    $done->evaluatee->update(['name' => 'Abe Done']);
+    $this->post(route('evaluation.identify'), ['student_id' => 'ORDER-ID']);
+    $this->post(route('evaluate.store', $done), ['fields' => ['teaching_quality' => 5]]);
+
+    $this->get(route('evaluation.entry'))->assertSeeInOrder(['Zed Pending', 'Abe Done']);
 });

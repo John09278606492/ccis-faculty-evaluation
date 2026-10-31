@@ -32,7 +32,9 @@ class EvaluationEntryController extends Controller
                         ->where(fn ($query) => $query->where('submission_fingerprint', $fingerprint)->orWhere('user_id', $student->id))->exists();
 
                     return ['offering' => $offering, 'completed' => $completed, 'available' => $offering->isEvaluationAvailable()];
-                });
+                })
+                // Instructors still to evaluate first, then ones not open yet, completed last.
+                ->sortBy(fn ($a) => ($a['completed'] ? 2 : ($a['available'] ? 0 : 1)).'|'.mb_strtoupper((string) $a['offering']->evaluatee?->name))->values();
         }
 
         return view('evaluation.entry', compact('student', 'assignments'));
