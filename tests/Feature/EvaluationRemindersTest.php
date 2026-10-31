@@ -140,3 +140,18 @@ it('lets only a super admin manage the sending mailbox and keeps the saved app p
     $settings->refresh();
     expect($settings->smtp_password)->toBe('abcdefghijklmnop')->and($settings->sender_email)->toBe('super.admin@bisu.edu.ph')->and($settings->sender_name)->toBe('CCIS');
 });
+
+it('shows the latest reminder on the student ID page while evaluations are still waiting', function () {
+    Queue::fake();
+    Livewire::test(StudentEvaluationProgress::class)->callAction('bySection')
+        ->callTableAction('remind', $this->section, ['subject' => 'Complete your faculty evaluation to see your grades', 'message' => 'It only takes a few minutes.', 'bell' => true, 'email' => false, 'skip_hours' => 0]);
+    auth()->logout();
+    $this->pending->update(['student_id' => 'REM-0001']);
+    $this->student->update(['student_id' => 'REM-0002']);
+    $this->post(route('evaluation.identify'), ['student_id' => 'REM-0001']);
+    $this->get(route('evaluation.entry'))->assertOk()->assertSee('Complete your faculty evaluation to see your grades')
+        ->assertSee('Your Chairperson, '.$this->head->name.', is asking you', false)->assertSee('It only takes a few minutes.');
+    $this->post(route('evaluation.leave'));
+    $this->post(route('evaluation.identify'), ['student_id' => 'REM-0002']);
+    $this->get(route('evaluation.entry'))->assertOk()->assertDontSee('Complete your faculty evaluation to see your grades');
+});

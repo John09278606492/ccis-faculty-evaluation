@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\EvaluationReminder;
 use App\Models\User;
 use App\Services\EvaluationAccessService;
+use App\Services\EvaluationReminders;
 use App\Services\EvaluationSubmissionIdentity;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\Request;
@@ -37,7 +39,12 @@ class EvaluationEntryController extends Controller
                 ->sortBy(fn ($a) => ($a['completed'] ? 2 : ($a['available'] ? 0 : 1)).'|'.mb_strtoupper((string) $a['offering']->evaluatee?->name))->values();
         }
 
-        return view('evaluation.entry', compact('student', 'assignments'));
+        // Latest reminder from a dean/chairperson while evaluations that can be done now are still waiting.
+        $reminder = $student && $assignments->contains(fn ($a) => ! $a['completed'] && $a['available'])
+            ? EvaluationReminder::with(['sender', 'campus'])->where('user_id', $student->id)->where('created_at', '>=', now()->subDays(30))->latest('id')->first() : null;
+        $reminderLine = $reminder?->sender && $reminder->campus ? app(EvaluationReminders::class)->senderLine($reminder->sender, $reminder->campus) : null;
+
+        return view('evaluation.entry', compact('student', 'assignments', 'reminder', 'reminderLine'));
     }
 
     public function identify(Request $request)
