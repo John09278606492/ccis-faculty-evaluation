@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\SectionResource\Pages;
 
 use App\Filament\Resources\SectionResource;
+use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
 use Filament\Resources\Pages\ViewRecord;
 
@@ -22,6 +23,6 @@ class ViewSection extends ViewRecord
 
     protected function getHeaderActions(): array
     {
-        return [EditAction::make()];
+        return [EditAction::make(), SectionResource::deleteAction(DeleteAction::class)];
     }
 }

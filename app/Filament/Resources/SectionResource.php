@@ -8,13 +8,16 @@ use App\Models\AcademicSection;
 use App\Services\AcademicPeriod;
 use App\Services\AcademicSections;
 use App\Services\AcademicStudents;
+use Filament\Actions\DeleteAction;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 
 class SectionResource extends Resource
@@ -64,12 +67,19 @@ class SectionResource extends Resource
 
     public static function canDelete(Model $record): bool
     {
-        return false;
+        return static::canEdit($record) && app(AcademicSections::class)->isEmpty($record);
     }
 
     public static function canDeleteAny(): bool
     {
-        return false;
+        return static::canCreate();
+    }
+
+    public static function deleteAction(string $class): Tables\Actions\DeleteAction|DeleteAction
+    {
+        return $class::make()->modalHeading('Delete this empty section?')
+            ->modalDescription('It has no students. Classes keep their own rosters and responses keep their recorded section.')
+            ->using(fn (AcademicSection $record) => app(AcademicSections::class)->delete(auth()->user(), filament()->getTenant(), $record));
     }
 
     public static function getEloquentQuery(): Builder
@@ -106,6 +116,22 @@ class SectionResource extends Resource
             Tables\Actions\ViewAction::make()->label('Students')->icon('heroicon-o-user-group')
                 ->url(fn (AcademicSection $record) => static::getUrl('view', ['record' => $record, 'activeRelationManager' => '0'])),
             Tables\Actions\EditAction::make(),
+            static::deleteAction(Tables\Actions\DeleteAction::class)->iconButton(),
+        ])->bulkActions([
+            Tables\Actions\BulkAction::make('deleteEmpty')->label('Delete empty sections')->icon('heroicon-o-trash')->color('danger')
+                ->visible(fn () => static::canDeleteAny())->requiresConfirmation()->modalHeading('Delete empty sections?')
+                ->modalDescription('Only selected sections with no students are deleted. Others are skipped.')
+                ->deselectRecordsAfterCompletion()
+                ->action(function (Collection $records) {
+                    $deleted = 0;
+                    foreach ($records as $record) {
+                        if (static::canDelete($record)) {
+                            app(AcademicSections::class)->delete(auth()->user(), filament()->getTenant(), $record);
+                            $deleted++;
+                        }
+                    }
+                    Notification::make()->success()->title($deleted.' sections deleted')->body(($records->count() - $deleted).' skipped because they have students.')->send();
+                }),
         ])->defaultSort('name');
     }
 

@@ -99,6 +99,26 @@ class AcademicSections
         });
     }
 
+    /** True when no student belongs to the section, by link or by its department/period/name. */
+    public function isEmpty(AcademicSection $section): bool
+    {
+        return ! StudentSectionMembership::where('academic_section_id', $section->id)
+            ->orWhere(fn ($q) => $q->where('department_id', $section->department_id)->where('semester_id', $section->semester_id)->where('section', $section->name))
+            ->exists();
+    }
+
+    /** Empty sections only: a leftover duplicate makes uploads and section matching ambiguous. */
+    public function delete(User $actor, Campus $campus, AcademicSection $section): void
+    {
+        DB::transaction(function () use ($actor, $campus, $section) {
+            $section = $this->section($actor, $campus, $section->id, true);
+            if (! $this->isEmpty($section)) {
+                throw ValidationException::withMessages(['section' => 'Remove the students from '.$section->name.' before deleting it.']);
+            }
+            $section->delete();
+        });
+    }
+
     public function remove(User $actor, Campus $campus, AcademicSection $section, array $ids): void
     {
         $section = $this->section($actor, $campus, $section->id, true);

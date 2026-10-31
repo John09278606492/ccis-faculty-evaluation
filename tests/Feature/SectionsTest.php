@@ -260,3 +260,16 @@ it('lets a viewer read a section without exposing upload or roster-edit actions'
         ->assertTableActionHidden('uploadStudents')->assertTableActionHidden('addStudents');
     expect(fn () => $this->sections->add($this->actor, $this->campus, $this->section, [$this->student->id]))->toThrow(HttpException::class);
 });
+
+it('deletes only sections without students', function () {
+    $empty = $this->sections->save($this->actor, $this->campus, ['name' => 'BSIT 3Z', 'department_id' => $this->department->id, 'semester_id' => $this->offering->semester_id, 'is_active' => true]);
+    $other = $this->sections->save($this->actor, $this->campus, ['name' => 'BSIT 3Y', 'department_id' => $this->department->id, 'semester_id' => $this->offering->semester_id, 'is_active' => true]);
+    StudentSectionMembership::create(['academic_section_id' => $this->section->id, 'department_id' => $this->department->id, 'semester_id' => $this->section->semester_id, 'section' => $this->section->name, 'user_id' => $this->student->id]);
+
+    Livewire::test(ListSections::class)->assertTableActionVisible('delete', $empty)->assertTableActionHidden('delete', $this->section)
+        ->callTableAction('delete', $empty);
+    expect(AcademicSection::find($empty->id))->toBeNull();
+    Livewire::test(ListSections::class)->callTableBulkAction('deleteEmpty', [$other, $this->section]);
+    expect(AcademicSection::find($other->id))->toBeNull()->and(AcademicSection::find($this->section->id))->not->toBeNull();
+    expect(fn () => $this->sections->delete($this->actor, $this->campus, $this->section))->toThrow(ValidationException::class);
+});
