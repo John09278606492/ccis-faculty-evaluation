@@ -144,3 +144,9 @@ it('loads section summaries in batches without one query set for every student',
     expect($summary)->toMatchArray(['students' => 103, 'assigned_students' => 102, 'followup_students' => 101, 'completed' => 1, 'total' => 102])
         ->and($large)->toBeLessThanOrEqual($small + 5);
 });
+
+it('opens straight to the section view from a link and lists the sections furthest behind first', function () {
+    Livewire::withQueryParams(['view' => 'sections'])->test(StudentEvaluationProgress::class)->assertSet('viewMode', 'sections')
+        ->assertCanSeeTableRecords([$this->section, $this->otherSection], inOrder: true)
+        ->assertTableFilterExists('section')->assertSee('Students not finished');
+});

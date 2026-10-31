@@ -20,6 +20,7 @@ use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
 use Illuminate\Support\Facades\DB;
+use Livewire\Attributes\Url;
 
 class StudentEvaluationProgress extends Page implements HasTable
 {
@@ -77,6 +78,7 @@ class StudentEvaluationProgress extends Page implements HasTable
         })();
     }
 
+    #[Url(as: 'view')]
     public string $viewMode = 'students';
 
     protected function getHeaderActions(): array
@@ -129,15 +131,30 @@ class StudentEvaluationProgress extends Page implements HasTable
             ->with('department');
     }
 
-    private function sectionProgress(AcademicSection $section): array
+    /** Every section in scope, so the list can open with the sections furthest behind. */
+    private function allSectionProgress(): array
     {
         if ($this->sectionCache === []) {
-            $records = $this->getTableRecords();
-            $ids = collect(method_exists($records, 'items') ? $records->items() : $records)->pluck('id')->all();
-            $this->sectionCache = app(Progress::class)->sectionSummaries(auth()->user(), filament()->getTenant(), $ids, $this->selectedDepartments());
+            $ids = $this->sectionQuery()->pluck('academic_sections.id')->all();
+            $this->sectionCache = $ids ? app(Progress::class)->sectionSummaries(auth()->user(), filament()->getTenant(), $ids, $this->selectedDepartments()) : [];
         }
 
-        return $this->sectionCache[$section->id];
+        return $this->sectionCache;
+    }
+
+    private function sectionProgress(AcademicSection $section): array
+    {
+        return $this->allSectionProgress()[$section->id] ?? ['students' => 0, 'assigned_students' => 0, 'complete_students' => 0, 'followup_students' => 0,
+            'unassigned_students' => 0, 'total' => 0, 'completed' => 0, 'remaining' => 0, 'completion_rate' => null];
+    }
+
+    private function sectionsBehindFirst()
+    {
+        $order = collect($this->allSectionProgress())
+            ->sortBy(fn ($p, $id) => sprintf('%d|%08.3f|%s', $p['completion_rate'] === null ? 1 : 0, $p['completion_rate'] ?? 0, $id))->keys();
+
+        return $this->sectionQuery()->when($order->isNotEmpty(), fn ($q) => $q->orderByRaw('CASE academic_sections.id '
+            .$order->map(fn ($id, $position) => 'WHEN '.(int) $id.' THEN '.(int) $position)->join(' ').' ELSE '.$order->count().' END'));
     }
 
     public function showSectionStudents(int $sectionId): void
@@ -196,7 +213,7 @@ class StudentEvaluationProgress extends Page implements HasTable
     public function table(Table $table): Table
     {
         return $table->heading(fn () => $this->viewMode === 'sections' ? 'Progress by section' : 'Progress by student')
-            ->query(fn () => $this->viewMode === 'sections' ? $this->sectionQuery() : User::query()->where('is_student', true)
+            ->query(fn () => $this->viewMode === 'sections' ? $this->sectionsBehindFirst() : User::query()->where('is_student', true)
                 ->whereHas('campuses', fn ($q) => $q->whereKey(filament()->getTenant()->id))
                 ->when(! ($this->tableFilters['section']['value'] ?? null), fn ($q) => $q->whereHas('courseOfferings', fn ($q) => $this->scopedAssignments($q)))
                 ->when($this->tableFilters['section']['value'] ?? null, fn ($q, $id) => $q->whereHas('studentSectionMemberships', fn ($q) => $q->where('academic_section_id', $id)->whereIn('academic_section_id', $this->sectionQuery(false)->select('academic_sections.id'))))
@@ -205,10 +222,13 @@ class StudentEvaluationProgress extends Page implements HasTable
                 Tables\Columns\TextColumn::make('name')->label('Section')->description(fn (AcademicSection $record) => $record->department?->code)->searchable()->wrap(),
                 Tables\Columns\TextColumn::make('section_students')->label('Students')->state(fn (AcademicSection $record) => $this->sectionProgress($record)['students'])
                     ->description(fn (AcademicSection $record) => $this->sectionProgress($record)['unassigned_students'].' without assignments'),
-                Tables\Columns\TextColumn::make('finished')->label('Finished all')->state(fn (AcademicSection $record) => $this->sectionProgress($record)['assigned_students'] ? $this->sectionProgress($record)['complete_students'].' / '.$this->sectionProgress($record)['assigned_students'] : 'Not assigned')
+                Tables\Columns\TextColumn::make('finished')->label('Students finished')->state(fn (AcademicSection $record) => $this->sectionProgress($record)['assigned_students'] ? $this->sectionProgress($record)['complete_students'].' / '.$this->sectionProgress($record)['assigned_students'] : 'Not assigned')
+                    ->description(fn (AcademicSection $record) => $this->sectionProgress($record)['assigned_students'] ? round(100 * $this->sectionProgress($record)['complete_students'] / $this->sectionProgress($record)['assigned_students']).'% of students' : null)
                     ->badge()->color(fn (AcademicSection $record) => $this->sectionProgress($record)['assigned_students'] ? 'success' : 'gray'),
-                Tables\Columns\TextColumn::make('followup')->label('Needs follow-up')->state(fn (AcademicSection $record) => $this->sectionProgress($record)['followup_students'])->badge()
-                    ->color(fn (AcademicSection $record) => $this->sectionProgress($record)['followup_students'] ? 'warning' : 'gray'),
+                Tables\Columns\TextColumn::make('followup')->label('Students not finished')
+                    ->state(fn (AcademicSection $record) => $this->sectionProgress($record)['assigned_students'] - $this->sectionProgress($record)['complete_students'])->badge()
+                    ->color(fn (AcademicSection $record) => $this->sectionProgress($record)['assigned_students'] > $this->sectionProgress($record)['complete_students'] ? 'warning' : 'gray')
+                    ->description(fn (AcademicSection $record) => $this->sectionProgress($record)['followup_students'] ? $this->sectionProgress($record)['followup_students'].' can still evaluate now' : null),
                 Tables\Columns\TextColumn::make('completion')->label('Evaluations completed')->state(fn (AcademicSection $record) => $this->sectionProgress($record)['total'] ? $this->sectionProgress($record)['completed'].' / '.$this->sectionProgress($record)['total'] : 'No evaluation assignments')
                     ->description(fn (AcademicSection $record) => $this->sectionProgress($record)['completion_rate'] !== null ? $this->sectionProgress($record)['completion_rate'].'% complete · '.$this->sectionProgress($record)['remaining'].' remaining' : 'No completion rate yet'),
             ] : [
@@ -245,14 +265,13 @@ class StudentEvaluationProgress extends Page implements HasTable
                     ->default(fn () => AcademicPeriod::current(filament()->getTenant()))->selectablePlaceholder(false)
                     ->options(fn () => Semester::whereHas('schoolYear', fn ($q) => $q->where('campus_id', filament()->getTenant()->id))->with('schoolYear')->get()->mapWithKeys(fn ($s) => [$s->id => $s->name.' / '.$s->schoolYear->name]))
                     ->query(fn ($query) => $query),
-                Tables\Filters\SelectFilter::make('completion')->label('Show')->placeholder('All students')
-                    ->visible(fn () => $this->viewMode !== 'sections')
+                ...($this->viewMode === 'sections' ? [] : [Tables\Filters\SelectFilter::make('completion')->label('Show')->placeholder('All students')
                     ->options(['pending' => 'Still has evaluations to do', 'finished' => 'Finished all evaluations'])
                     ->query(fn ($query, array $data) => match ($this->viewMode === 'sections' ? null : ($data['value'] ?? null)) {
                         'pending' => $query->whereKey($this->studentsByCompletion()[1]),
                         'finished' => $query->whereKey($this->studentsByCompletion()[0]),
                         default => $query,
-                    }),
+                    })]),
                 Tables\Filters\SelectFilter::make('section')->label('Section')->searchable()->placeholder('All authorized sections')
                     ->options(fn () => $this->sectionQuery(false)->orderBy('name')->get()->mapWithKeys(fn ($s) => [$s->id => $s->department?->code.' · '.$s->name]))
                     ->query(fn ($query) => $query),

@@ -24,6 +24,11 @@
                     </a>
                 @endforeach
             </div>
+            @if(\App\Filament\Pages\StudentEvaluationProgress::canAccess())
+                <div class="mt-3 border-t border-gray-100 pt-3 text-sm dark:border-white/10">
+                    <a href="{{ \App\Filament\Pages\StudentEvaluationProgress::getUrl(['view' => 'sections']) }}" class="font-medium text-primary-600 hover:underline dark:text-primary-400">See which sections are behind →</a>
+                </div>
+            @endif
         </x-filament::section>
     @endif
     @foreach($workspace['warnings'] as $warning)<x-filament::section><p class="text-warning-700">{{ $warning }}</p></x-filament::section>@endforeach
