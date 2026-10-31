@@ -38,13 +38,14 @@ class EvaluationClassAdditions
         // Do not reuse a request-cached draft plan after a roster or assignment changes.
         $plan = (new EvaluationSetupAutomation)->plan($actor, $campus, $cycle->department_id, $cycle->semester_id, $cycle);
         $existing = $plan['classes']->whereNotNull('evaluation_cycle_id')->modelKeys();
-        $excluded = collect($plan['excluded'])->reject(fn ($row) => in_array($row['id'], $existing, true))->map(function ($row) use ($plan) {
+        $evaluating = $this->evaluatingBySubject($cycle->semester_id);
+        $excluded = collect($plan['excluded'])->reject(fn ($row) => in_array($row['id'], $existing, true))->map(function ($row) use ($plan, $evaluating) {
             $class = $plan['classes']->firstWhere('id', $row['id']);
 
-            return [...$row, 'label' => ($class?->evaluatee?->name ?? 'Faculty needs correction').' — '.$row['label']];
+            return [...$row, 'label' => ($class?->evaluatee?->name ?? 'Faculty needs correction').' — '.$row['label'],
+                'covered' => $class ? $this->covered($class, $plan['classes'], $evaluating) : false];
         })->values()->all();
         $rows = [];
-        $evaluating = $this->evaluatingBySubject($cycle->semester_id);
         foreach ($plan['prepared']->whereNull('evaluation_cycle_id')->sortBy('id') as $class) {
             $ids = DB::table('course_offering_supervisor')->where('course_offering_id', $class->id)->orderBy('user_id')->pluck('user_id')->map(fn ($id) => (int) $id)->all();
             $usesDefault = ! $ids;
@@ -95,6 +96,25 @@ class EvaluationClassAdditions
             });
 
         return $result;
+    }
+
+    /**
+     * A left-behind copy needs no action: every student already rates this subject in an evaluation, or it is an
+     * empty section copy of a subject whose only teacher already has a class in the evaluation (rosters are grouped).
+     */
+    private function covered(CourseOffering $class, $classes, array $evaluating): bool
+    {
+        if (! $class->course) {
+            return false;
+        }
+        $key = $this->subjectKey($class->course);
+        if ($class->students->isNotEmpty()) {
+            return ! array_diff($class->students->modelKeys(), $evaluating[$key] ?? []);
+        }
+        $same = $classes->filter(fn ($other) => $other->course && $this->subjectKey($other->course) === $key);
+
+        return $same->pluck('user_id')->unique()->count() === 1
+            && $same->contains(fn ($other) => $other->evaluation_cycle_id && $other->students->isNotEmpty());
     }
 
     public function preview(User $actor, Campus $campus, int $cycleId): array

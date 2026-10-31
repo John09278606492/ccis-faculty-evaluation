@@ -251,3 +251,18 @@ it('flags late classes whose students already rate the subject in the evaluation
     Livewire::test(EditEvaluationCycle::class, ['record' => $this->cycle->id])->mountAction('addPreparedClasses')
         ->assertActionDataSet(['class_ids' => [$this->late->id]]);
 });
+
+it('separates leftover copies whose students already rate the subject from classes that need action', function () {
+    $copy = $this->original->replicate();
+    $copy->evaluation_cycle_id = null;
+    $copy->form_id = null;
+    $copy->section = 'Another section';
+    $copy->save();
+    $copy->students()->attach($this->student);
+    $this->late->students()->detach();
+    $plan = $this->service->plan($this->actor, $this->campus, $this->cycle->id);
+    $rows = collect($plan['excluded'])->keyBy('id');
+    expect($rows[$copy->id]['covered'])->toBeTrue()->and($rows[$this->late->id]['covered'])->toBeFalse();
+    Livewire::test(EditEvaluationCycle::class, ['record' => $this->cycle->id])->mountAction('addPreparedClasses')
+        ->assertSee('1 classes need action')->assertSee('1 leftover copies need no action');
+});
