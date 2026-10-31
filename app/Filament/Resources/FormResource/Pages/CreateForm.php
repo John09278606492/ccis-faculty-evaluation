@@ -2,8 +2,8 @@
 
 namespace App\Filament\Resources\FormResource\Pages;
 
+use App\Filament\Pages\DraftCreateRecord as CreateRecord;
 use App\Filament\Resources\FormResource;
-use Filament\Resources\Pages\CreateRecord;
 
 class CreateForm extends CreateRecord
 {

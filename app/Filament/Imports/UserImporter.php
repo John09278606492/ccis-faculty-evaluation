@@ -4,15 +4,17 @@ namespace App\Filament\Imports;
 
 use App\Models\Department;
 use App\Models\User;
+use App\Services\ScopedAccountImport;
 use Filament\Actions\Imports\ImportColumn;
 use Filament\Actions\Imports\Importer;
 use Filament\Actions\Imports\Models\Import;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Get;
-use Illuminate\Support\Facades\Hash;
 
 class UserImporter extends Importer
 {
+    use QueuesBulkFiles;
+
     protected static ?string $model = User::class;
 
     public static function getColumns(): array
@@ -108,57 +110,17 @@ class UserImporter extends Importer
 
     public function resolveRecord(): ?User
     {
-        // Check if user already exists by email
-        $existingUser = User::where('email', $this->data['email'])->first();
-
-        if ($existingUser) {
-            return $existingUser; // Update existing user
-        }
-
-        return new User;
+        return app(ScopedAccountImport::class)->resolve($this->import->user, $this->options, $this->options['profile_type'] ?? 'student', $this->data);
     }
 
-    /**
-     * Prepare the record before it is saved.
-     */
     protected function beforeSave(): void
     {
-        $profileType = $this->options['profile_type'] ?? null;
-        $departmentId = $this->options['department_id'] ?? null;
-
-        // Set common fields
-        if (! $this->record->password) {
-            // Set a default password for new users (they should reset it)
-            $this->record->password = Hash::make('password123');
-        }
-
-        // Set profile-specific fields
-        if ($profileType === 'student') {
-            $this->record->is_student = true;
-            $this->record->is_instructor = false;
-            $this->record->instructor_department_id = null;
-            $this->record->employee_id = null;
-            $this->record->position = null;
-            // student_id is mapped from Excel
-        } elseif ($profileType === 'instructor') {
-            $this->record->is_instructor = true;
-            $this->record->is_student = false;
-            $this->record->instructor_department_id = $departmentId;
-            $this->record->student_id = null;
-            // employee_id, position, phone are mapped from Excel
-        }
+        app(ScopedAccountImport::class)->prepare($this->import->user, $this->record, $this->options, $this->options['profile_type'] ?? 'student');
     }
 
-    /**
-     * After saving, attach user to campus.
-     */
     protected function afterSave(): void
     {
-        $campusId = filament()->getTenant()?->id;
-
-        if ($campusId && ! $this->record->campuses()->where('campus_id', $campusId)->exists()) {
-            $this->record->campuses()->attach($campusId);
-        }
+        app(ScopedAccountImport::class)->finish($this->import->user, $this->record, $this->options, $this->options['profile_type'] ?? 'student');
     }
 
     public static function getCompletedNotificationBody(Import $import): string

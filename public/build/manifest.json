@@ -1,0 +1,45 @@
+{
+  "_vendor-DDVNtie3.js": {
+    "file": "assets/js/vendor-DDVNtie3.js",
+    "name": "vendor"
+  },
+  "resources/css/app.css": {
+    "file": "assets/css/app-FDGyGsNt.css",
+    "src": "resources/css/app.css",
+    "isEntry": true,
+    "name": "app",
+    "names": [
+      "app.css"
+    ]
+  },
+  "resources/css/filament/admin/theme.css": {
+    "file": "assets/css/theme-MApM0JRr.css",
+    "src": "resources/css/filament/admin/theme.css",
+    "isEntry": true,
+    "name": "theme",
+    "names": [
+      "theme.css"
+    ]
+  },
+  "resources/js/evaluation-entry-live.js": {
+    "file": "assets/js/evaluation-entry-live-D8nZSnHs.js",
+    "name": "evaluation-entry-live",
+    "src": "resources/js/evaluation-entry-live.js",
+    "isEntry": true
+  },
+  "resources/js/live-updates.js": {
+    "file": "assets/js/live-updates-Btu4OOXd.js",
+    "name": "live-updates",
+    "src": "resources/js/live-updates.js",
+    "isEntry": true,
+    "imports": [
+      "_vendor-DDVNtie3.js"
+    ]
+  },
+  "resources/js/workspace-drafts.js": {
+    "file": "assets/js/workspace-drafts-zZHDXaWA.js",
+    "name": "workspace-drafts",
+    "src": "resources/js/workspace-drafts.js",
+    "isEntry": true
+  }
+}

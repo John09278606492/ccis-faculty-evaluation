@@ -21,6 +21,7 @@
         "filament/spatie-laravel-settings-plugin": "^3.2",
         "hasnayeen/themes": "^3.0",
         "jeffgreco13/filament-breezy": "^2.4",
+        "jibaymcs/filament-tour": "~3.1",
         "kenepa/banner": "^0.1.0",
         "laravel/framework": "^12.0",
         "laravel/reverb": "^1.12",
@@ -71,7 +72,7 @@
         ],
         "post-create-project-cmd": [
             "@php artisan key:generate --ansi",
-            "@php -r \"file_exists('database/database.sqlite') || touch('database/database.sqlite');\"",
+            "@php -r \"file_exists('database/campus.sqlite') || touch('database/campus.sqlite');\"",
             "@php artisan migrate --graceful --ansi",
             "@php artisan storage:link"
         ],

@@ -3,6 +3,8 @@
 namespace App\Filament\Resources\RoleResource\Pages;
 
 use App\Filament\Resources\RoleResource;
+use App\Services\ClassroomUpdates;
+use App\Services\UserAccessAdministration;
 use BezhanSalleh\FilamentShield\Support\Utils;
 use Filament\Actions;
 use Filament\Resources\Pages\EditRecord;
@@ -26,11 +28,13 @@ class EditRole extends EditRecord
     {
         $this->permissions = collect($data)
             ->filter(function ($permission, $key) {
-                return ! in_array($key, ['name', 'guard_name', 'select_all', Utils::getTenantModelForeignKey()]);
+                return ! in_array($key, ['name', 'guard_name', 'select_all', 'team_id', Utils::getTenantModelForeignKey()]);
             })
             ->values()
             ->flatten()
             ->unique();
+
+        app(UserAccessAdministration::class)->validateRolePermissions(auth()->user(), filament()->getTenant(), $this->permissions->all());
 
         if (Arr::has($data, Utils::getTenantModelForeignKey())) {
             return Arr::only($data, ['name', 'guard_name', Utils::getTenantModelForeignKey()]);
@@ -50,5 +54,6 @@ class EditRole extends EditRecord
         });
 
         $this->record->syncPermissions($permissionModels);
+        ClassroomUpdates::panel('access', true);
     }
 }

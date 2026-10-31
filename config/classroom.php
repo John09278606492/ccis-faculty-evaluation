@@ -1,6 +1,9 @@
 <?php
 
 return [
+    // Shared hosting can refresh automatically without a persistent WebSocket server.
+    'live_transport' => env('CLASSROOM_LIVE_TRANSPORT', 'reverb'),
+
     // Empty host uses the page hostname so other LAN devices never connect to their own localhost.
     'websocket_host' => env('CLASSROOM_WEBSOCKET_HOST'),
     'websocket_port' => (int) env('CLASSROOM_WEBSOCKET_PORT', env('REVERB_PORT', 8085)),

@@ -1,0 +1,68 @@
+name: Tested campus update
+
+on:
+  push:
+    branches: [claude/project-thread-zjbov2]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: campus-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  tested-release:
+    if: github.ref == 'refs/heads/claude/project-thread-zjbov2'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, pdo_sqlite, sqlite3, intl, gd, zip, curl, exif, dom, xml, fileinfo
+          coverage: none
+          tools: composer:v2
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Prepare an isolated build environment
+        run: |
+          cp .env.example .env
+          touch database/campus.sqlite
+          composer install --no-interaction --prefer-dist --no-progress
+          php artisan key:generate --force
+          npm ci
+      - name: Test application and update routing
+        run: |
+          php artisan test --compact
+          node --test tests/js/*.test.cjs tests/js/*.test.mjs scripts/tests/*.test.cjs
+      - name: Build browser assets
+        run: npm run build
+      - name: Package production dependencies and code only
+        run: |
+          sed -i 's/^APP_ENV=.*/APP_ENV=production/' .env
+          sed -i 's/^APP_DEBUG=.*/APP_DEBUG=false/' .env
+          composer install --no-dev --no-interaction --prefer-dist --no-progress --optimize-autoloader
+          python scripts/build-campus-release.py --sha "$GITHUB_SHA" --output /tmp/campus-release
+      - name: Publish the complete tested package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          tag="campus-$GITHUB_SHA"
+          if gh release view "$tag" --json isDraft --jq '.isDraft' > /tmp/campus-draft 2>/dev/null; then
+            if [ "$(cat /tmp/campus-draft)" = "false" ]; then
+              echo 'This tested commit already has an immutable published package.'
+              exit 0
+            fi
+          else
+            gh release create "$tag" --draft --target "$GITHUB_SHA" --title "Campus update ${GITHUB_SHA:0:8}" --notes 'CI-tested application code. Campus databases, keys and uploaded records are never included.'
+          fi
+          gh release upload "$tag" /tmp/campus-release/campus-code.zip /tmp/campus-release/campus-update.json --clobber
+          gh release edit "$tag" --draft=false --prerelease --latest=false

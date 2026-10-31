@@ -4,11 +4,25 @@ namespace App\Policies;
 
 use App\Models\CourseOffering;
 use App\Models\User;
+use App\Services\AssignedDataAccess;
 use Illuminate\Auth\Access\HandlesAuthorization;
 
 class CourseOfferingPolicy
 {
     use HandlesAuthorization;
+
+    public function manageEvaluators(User $user, CourseOffering $offering): bool
+    {
+        $offering->loadMissing('semester.schoolYear.campus');
+        $campus = $offering->campus;
+        $selected = filament()->getTenant();
+
+        return ! $user->is_student
+            && $user->can('manage_evaluators_course::offering')
+            && $this->update($user, $offering)
+            && $campus !== null && $user->canAccessTenant($campus)
+            && (! $selected || $selected->getKey() === $campus->getKey());
+    }
 
     /**
      * Determine whether the user can view any models.
@@ -39,7 +53,7 @@ class CourseOfferingPolicy
      */
     public function update(User $user, CourseOffering $courseOffering): bool
     {
-        return $user->can('update_course::offering');
+        return $user->can('update_course::offering') && app(AssignedDataAccess::class)->managesOffering($user, $courseOffering);
     }
 
     /**
@@ -47,7 +61,7 @@ class CourseOfferingPolicy
      */
     public function delete(User $user, CourseOffering $courseOffering): bool
     {
-        return $user->can('delete_course::offering');
+        return $user->can('delete_course::offering') && app(AssignedDataAccess::class)->managesOffering($user, $courseOffering);
     }
 
     /**

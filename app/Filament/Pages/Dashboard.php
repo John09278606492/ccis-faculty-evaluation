@@ -10,6 +10,7 @@ use App\Filament\Widgets\LatestUsersWidget;
 use App\Filament\Widgets\StatsOverviewWidget;
 use App\Filament\Widgets\StudentPendingEvaluationsWidget;
 use App\Filament\Widgets\UserRegistrationChart;
+use App\Services\WorkspaceSummary;
 use Filament\Pages\Dashboard as BaseDashboard;
 use Livewire\Attributes\On;
 
@@ -20,6 +21,11 @@ class Dashboard extends BaseDashboard
     /**
      * Default widget order: stats cards first, then charts/tables.
      */
+    public function getWorkspaceData(): array
+    {
+        return app(WorkspaceSummary::class)->for(auth()->user(), filament()->getTenant());
+    }
+
     protected function getDefaultWidgetOrder(): array
     {
         return [

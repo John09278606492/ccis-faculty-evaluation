@@ -1,0 +1,8 @@
+{
+  "enabled": true,
+  "owner": "John09278606492",
+  "repository": "ccis-faculty-evaluation",
+  "branch": "claude/project-thread-zjbov2",
+  "intervalSeconds": 300,
+  "tokenFile": "storage/app/private/campus-github-token.txt"
+}

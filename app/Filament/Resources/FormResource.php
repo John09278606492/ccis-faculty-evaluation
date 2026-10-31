@@ -4,8 +4,10 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\FormResource\Pages;
 use App\Filament\Resources\FormResource\RelationManagers;
+use App\Models\CourseOffering;
 use App\Models\Department;
 use App\Models\Form;
+use App\Services\EvaluationTemplates;
 use BezhanSalleh\FilamentShield\Contracts\HasShieldPermissions;
 use Filament\Forms;
 use Filament\Forms\Form as FilamentForm;
@@ -14,6 +16,8 @@ use Filament\Tables;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
 
@@ -23,11 +27,15 @@ class FormResource extends Resource implements HasShieldPermissions
 
     protected static ?string $navigationIcon = 'heroicon-o-document-text';
 
-    protected static ?string $navigationGroup = 'Forms';
+    protected static ?string $navigationGroup = 'Administration';
 
-    protected static ?int $navigationSort = 1;
+    protected static ?int $navigationSort = 8;
 
-    protected static ?string $navigationLabel = 'Form Builder';
+    protected static ?string $navigationLabel = 'Form Templates';
+
+    protected static ?string $modelLabel = 'Evaluation Form';
+
+    protected static ?string $pluralModelLabel = 'Form Templates';
 
     // Disable built-in tenant scoping — we use custom scoping via pivot table
     protected static bool $isScopedToTenant = false;
@@ -35,6 +43,16 @@ class FormResource extends Resource implements HasShieldPermissions
     /**
      * Define permission prefixes for Shield.
      */
+    public static function canDelete(Model $record): bool
+    {
+        return ! $record->isLocked() && ! CourseOffering::where('form_id', $record->id)->exists() && parent::canDelete($record);
+    }
+
+    public static function canDeleteAny(): bool
+    {
+        return false;
+    }
+
     public static function getPermissionPrefixes(): array
     {
         return [
@@ -44,6 +62,7 @@ class FormResource extends Resource implements HasShieldPermissions
             'update',
             'delete',
             'delete_any',
+            'view_evaluator_identity',
         ];
     }
 
@@ -85,8 +104,23 @@ class FormResource extends Resource implements HasShieldPermissions
         $isSuperAdmin = auth()->user()?->can('update_form') ?? false;
 
         return $form
+            ->disabled(fn (?Form $record) => $record?->isLocked() ?? false)
             ->schema([
                 // Campus selector - multi-select, only visible to super_admin
+                Forms\Components\Section::make('Overall comments')
+                    ->description(fn (?Form $record) => $record?->isLocked()
+                        ? 'Use the Overall comments button above to change the requirement for new submissions.'
+                        : 'Choose whether an overall comment is required before submitting this form.')
+                    ->schema([
+                        Forms\Components\Select::make('scoring_config.overall_comment')
+                            ->label('Overall comments')
+                            ->options(['required' => 'Required', 'optional' => 'Optional', 'hidden' => 'Hidden'])
+                            ->default('optional')
+                            ->required()
+                            ->in(['required', 'optional', 'hidden']),
+                    ])
+                    ->visible($isSuperAdmin),
+
                 Forms\Components\Section::make('Campus Assignment')
                     ->schema([
                         Forms\Components\Select::make('campuses')
@@ -130,9 +164,9 @@ class FormResource extends Resource implements HasShieldPermissions
                             ->disabled(! $isSuperAdmin),
 
                         Forms\Components\Toggle::make('requires_login')
-                            ->label('Require Login')
+                            ->label('Require evaluator identification')
                             ->default(false)
-                            ->helperText('Users must be logged in to submit')
+                            ->helperText('Students enter their student ID only. Staff accounts must have an allowed evaluator role.')
                             ->disabled(! $isSuperAdmin),
                     ])->columns(2)
                     ->description(! $isSuperAdmin ? 'Only super admins can edit form details.' : null),
@@ -165,7 +199,9 @@ class FormResource extends Resource implements HasShieldPermissions
                                     ->toArray();
                             })
                             ->columns(3)
-                            ->helperText('Select which roles can evaluate using this form. Leave empty to allow all roles.')
+                            ->helperText(fn (?Form $record) => $record?->isSupervisorInstrument()
+                                ? 'Annex B ignores roles. Only supervisors explicitly selected for each faculty under Teaching Classes can answer it.'
+                                : 'Select which roles can evaluate using this form. Leave empty to allow all roles.')
                             ->disabled(! $isSuperAdmin),
                     ])
                     ->visible($isSuperAdmin),
@@ -214,6 +250,15 @@ class FormResource extends Resource implements HasShieldPermissions
                     ->collapsed()
                     ->visible($isSuperAdmin),
 
+                Forms\Components\Section::make('Instrument & Report Format')
+                    ->description('Choose where this form appears in the Annex D summary. Copies retain this setting; adjust it when creating a different instrument.')
+                    ->schema([
+                        Forms\Components\Select::make('settings.instrument')->label('Summary report category')
+                            ->options(['SET' => 'Student Evaluation of Teachers (SET)', 'SEF' => 'Supervisor’s Evaluation of Faculty (SEF)', 'Other' => 'Other evaluation'])->default('Other'),
+                        Forms\Components\TextInput::make('settings.program_level')->label('Program Level / Year')->maxLength(255),
+                        Forms\Components\TextInput::make('settings.academic_rank')->label('Academic Rank')->maxLength(255),
+                    ])->columns(3)->disabled(! $isSuperAdmin),
+
                 Forms\Components\Section::make('Scoring & Calculation')
                     ->description('Configure how section and overall scores are calculated.')
                     ->schema([
@@ -259,33 +304,6 @@ class FormResource extends Resource implements HasShieldPermissions
                             ->addActionLabel('Add Section Weight')
                             ->visible(fn ($get) => $get('scoring_config.overall_method') === 'weighted_average')
                             ->helperText('Define weights for each section. Total should equal 100%.'),
-                    ])
-                    ->collapsible()
-                    ->collapsed()
-                    ->visible(fn (Forms\Get $get): bool => $isSuperAdmin && (bool) $get('use_custom_scale')),
-
-                Forms\Components\Section::make('Comments Configuration')
-                    ->description('Configure whether evaluators can or must leave comments.')
-                    ->schema([
-                        Forms\Components\Select::make('scoring_config.field_comments')
-                            ->label('Field Comments')
-                            ->options([
-                                'hidden' => 'Hidden — No comment fields per question',
-                                'optional' => 'Optional — Evaluators may leave comments per question',
-                                'required' => 'Required — Evaluators must comment on each question',
-                            ])
-                            ->default('optional')
-                            ->helperText('Controls the comment field shown below each individual question/criteria'),
-
-                        Forms\Components\Select::make('scoring_config.overall_comment')
-                            ->label('Overall Comment')
-                            ->options([
-                                'hidden' => 'Hidden — No overall comment field',
-                                'optional' => 'Optional — Evaluators may leave an overall comment',
-                                'required' => 'Required — Evaluators must leave an overall comment',
-                            ])
-                            ->default('optional')
-                            ->helperText('Controls the overall comment field shown before the submit button'),
                     ])
                     ->collapsible()
                     ->collapsed()
@@ -352,7 +370,7 @@ class FormResource extends Resource implements HasShieldPermissions
 
                 Tables\Columns\IconColumn::make('requires_login')
                     ->boolean()
-                    ->label('Login Required'),
+                    ->label('Identification required'),
 
                 Tables\Columns\TextColumn::make('starts_at')
                     ->dateTime('M j, Y')
@@ -371,11 +389,24 @@ class FormResource extends Resource implements HasShieldPermissions
             ])
             ->filters([
                 Tables\Filters\TernaryFilter::make('is_active'),
-                Tables\Filters\TernaryFilter::make('requires_login'),
+                Tables\Filters\TernaryFilter::make('requires_login')->label('Identification required'),
                 Tables\Filters\SelectFilter::make('departments')
                     ->relationship('departments', 'name'),
             ], layout: FiltersLayout::AboveContent)
             ->actions([
+                Tables\Actions\Action::make('annexPreview')->label('Print Instrument')->icon('heroicon-o-printer')
+                    ->modalHeading('Print Instrument')->modalWidth('7xl')->modalSubmitAction(false)->modalCancelActionLabel('Close')
+                    ->modalContent(fn ($record) => view('reports.preview-frame', ['url' => route('form.preview', ['form' => $record, 'print' => 1]), 'title' => 'Instrument print preview', 'hint' => 'Review the instrument and use Print / Save PDF inside the preview.'])),
+                Tables\Actions\Action::make('duplicate')->label('Duplicate')->icon('heroicon-o-document-duplicate')
+                    ->visible(fn ($record) => auth()->user()->can('create', Form::class) && auth()->user()->can('view', $record))
+                    ->form([Forms\Components\TextInput::make('name')->label('New form name')->required()->maxLength(255)->default(fn ($record) => $record->name.' (Copy)')])
+                    ->action(function ($record, array $data) {
+                        Gate::authorize('create', Form::class);
+                        Gate::authorize('view', $record);
+                        $copy = app(EvaluationTemplates::class)->duplicate($record, filament()->getTenant(), $data['name']);
+
+                        return redirect(static::getUrl('edit', ['record' => $copy]));
+                    }),
                 Tables\Actions\Action::make('build')
                     ->label('Build')
                     ->icon('heroicon-o-squares-plus')
@@ -388,8 +419,8 @@ class FormResource extends Resource implements HasShieldPermissions
                     ->label('Preview')
                     ->icon('heroicon-o-eye')
                     ->color('warning')
-                    ->url(fn ($record) => route('form.preview', $record))
-                    ->openUrlInNewTab(),
+                    ->modalHeading('Form Preview')->modalWidth('7xl')->modalSubmitAction(false)->modalCancelActionLabel('Close')
+                    ->modalContent(fn ($record) => view('reports.preview-frame', ['url' => route('form.preview', $record), 'title' => 'Evaluation form preview', 'hint' => 'Preview the evaluator form. Submissions are disabled.'])),
                 Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make(),

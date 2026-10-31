@@ -21,7 +21,7 @@ class CourseResource extends Resource
 
     protected static ?string $navigationGroup = 'Academic Management';
 
-    protected static ?int $navigationSort = 4;
+    protected static ?int $navigationSort = 3;
 
     // Disable automatic tenancy scoping - we'll handle it manually
     protected static bool $isScopedToTenant = false;
@@ -53,10 +53,8 @@ class CourseResource extends Resource
                             ->required()
                             ->maxLength(20)
                             ->placeholder('e.g., CS101')
-                            ->unique(ignoreRecord: true, modifyRuleUsing: fn ($rule) => $rule->whereIn(
-                                'department_id',
-                                Department::where('campus_id', filament()->getTenant()?->id)->pluck('id')
-                            )),
+                            ->unique(ignoreRecord: true, modifyRuleUsing: fn ($rule, Forms\Get $get) => $rule->where('department_id', $get('department_id'))->where('name', $get('name')))
+                            ->validationMessages(['unique' => 'This department already has a subject with this code and title.']),
 
                         Forms\Components\TextInput::make('name')
                             ->required()
@@ -70,9 +68,9 @@ class CourseResource extends Resource
                             ->numeric()
                             ->required()
                             ->default(3.0)
-                            ->step(0.5)
-                            ->minValue(0.5)
-                            ->maxValue(12),
+                            ->step(0.1)
+                            ->minValue(0)
+                            ->maxValue(99.9),
 
                         Forms\Components\Toggle::make('is_active')
                             ->default(true),

@@ -83,6 +83,16 @@ error page. Answers autosave as they're entered, so a dropped WiFi connection do
 auto-submitted, and this is also enforced server-side (checked on page load / autosave) in case the
 student's browser tab was closed, since there's no background queue worker running in this setup.
 
+## Exam Supervision
+
+On assessments of type **Exam**, the page logs three things during an attempt, measured by the server, and students see a line saying so:
+
+- **Leaving the page:** switching to another tab or minimizing the browser, and for how long. A student's own phpMyAdmin tab for a database question does not count, unless they move on from it to something else.
+- **Another window:** a window placed beside the exam taking focus while the exam stays visible. Clicking into the code preview, a file picker or a confirm box does not count.
+- **Pasting from outside the exam:** pastes of 40 characters or more that were not copied from the exam itself, with their size. Moving code between the exam's own files is not logged.
+
+The instructor gets a notification the 1st, 3rd, 5th and 10th time a student leaves or pastes, and the **Attempts & Submissions** tab shows **Left page** and **Pasted** columns, with the times on hover. Quizzes and activities are not tracked. Nothing is blocked and no screenshots are taken: treat it as a prompt to walk over, not proof of cheating. The app cannot see other tabs or a phone; running exams on Wi-Fi without internet access is what keeps AI sites out of reach.
+
 ## Grading
 
 Multiple choice / true-false / short-answer (the answer key set in the builder) are graded
@@ -97,10 +107,36 @@ points) above the essay/file grading fields, so you see the full score breakdown
 just the essays in isolation. Enter points and optional feedback per answer; the attempt's total
 score recomputes automatically and its status flips from partial to final.
 
+### Automatic checking of code answers
+
+PHP, web page (HTML/CSS/JS) and SQL code questions can be checked against your reference
+solution. Turn on **Check answers automatically** under the reference solution and add test cases:
+
+| Language | Test case input | What is compared |
+|---|---|---|
+| PHP | The page to open, such as `index.php?n=5`; `name=value` lines below it are sent as a POST | The text of the page it returns (tags and spacing ignored) |
+| SQL | A query run after the student's SQL, such as `SELECT name FROM products ORDER BY name` | The rows it returns (column names ignored) |
+| Web page | JavaScript run on the loaded page, such as `document.querySelector('#total').textContent` | Its result |
+
+An empty input runs the code as it is (PHP: the first page; SQL: the student's own queries; web: the
+page's text and console output). Students may write the code their own way: only the output counts.
+
+The score suggested is the question's points times the share of test cases that match. In the
+**Attempts** tab, **Auto-check code** checks every submitted answer and fills in that score where you
+have not graded the answer yet; scores you set by hand are never replaced. The **Grade** form also
+checks the answer, shows which tests failed with both outputs side by side, and fills the points
+field when it is empty. The code runs in your own browser with the same runners students use, never
+on the server. Questions with a student MySQL database are not checked automatically.
+
 ## Signing in with a Student ID
 
-The login page now accepts either an email or a student ID number in the same field. Bulk-imported
-students get the default password `password123` (set by `StudentImporter`) unless changed.
+Students sign in with their ID number and a 6-digit PIN. Imported students have no usable PIN until
+their instructor issues one: open the course offering, go to **Evaluators**, and use **Sign-in PINs**
+to download a CSV of new PINs to print or share (PINs are stored hashed and cannot be shown again).
+**New PIN** on a student's row, or in **Users**, replaces one forgotten PIN.
+
+Staff sign in with their email and password. Staff imported with the shared starting password
+(`password123`) must choose their own the first time they sign in.
 
 ## Running It Offline on a Classroom WiFi/LAN
 

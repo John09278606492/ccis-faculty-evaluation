@@ -3,13 +3,25 @@
 namespace App\Filament\Resources\CourseOfferingResource\RelationManagers;
 
 use App\Models\FormSubmission;
+use App\Services\EvaluationResultsRelease;
+use App\Services\ReportService;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Model;
 
 class EvaluationsRelationManager extends RelationManager
 {
+    /**
+     * The person being evaluated sees these scores only once the results are released.
+     */
+    public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
+    {
+        return parent::canViewForRecord($ownerRecord, $pageClass)
+            && EvaluationResultsRelease::canSeeScores(auth()->user(), $ownerRecord);
+    }
+
     protected static string $relationship = 'formSubmissions';
 
     protected static ?string $title = 'Evaluation Submissions';
@@ -21,11 +33,7 @@ class EvaluationsRelationManager extends RelationManager
         return $table
             ->recordTitleAttribute('id')
             ->columns([
-                Tables\Columns\TextColumn::make('user.name')
-                    ->label('Evaluator')
-                    ->default('Anonymous')
-                    ->searchable()
-                    ->sortable(),
+                Tables\Columns\TextColumn::make('anonymous_evaluator')->label('Evaluator')->state(fn () => $this->getOwnerRecord()->evaluationForm?->isSupervisorInstrument() ? 'Supervisor' : 'Student'),
 
                 Tables\Columns\TextColumn::make('form.name')
                     ->label('Form')
@@ -34,7 +42,7 @@ class EvaluationsRelationManager extends RelationManager
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('score')
-                    ->label('Overall Score')
+                    ->label('Mean / 5')
                     ->getStateUsing(function (FormSubmission $record) {
                         return $this->calculateOverallScore($record);
                     })
@@ -78,12 +86,9 @@ class EvaluationsRelationManager extends RelationManager
                         };
                     }),
 
-                Tables\Columns\TextColumn::make('submitted_at')
-                    ->label('Submitted')
-                    ->dateTime('M j, Y g:i A')
-                    ->sortable(),
             ])
-            ->defaultSort('submitted_at', 'desc')
+            ->modifyQueryUsing(fn ($query) => $query->where('form_id', $this->getOwnerRecord()->form_id))
+            ->defaultSort('data')
             ->filters([
                 //
             ], layout: FiltersLayout::AboveContent)
@@ -113,58 +118,13 @@ class EvaluationsRelationManager extends RelationManager
      */
     private function calculateOverallScore(FormSubmission $record): ?string
     {
-        $form = $record->form;
-        if (! $form) {
-            return null;
-        }
+        $score = app(ReportService::class)->calculateSubmissionScore($record);
 
-        $data = $record->data ?? [];
-        $fields = $form->fields()->whereIn('type', ['likert_scale', 'rating'])->get();
-
-        $ratings = [];
-        foreach ($fields as $field) {
-            $val = $data[$field->name] ?? null;
-            if ($val !== null && is_numeric($val)) {
-                $ratings[] = (float) $val;
-            }
-        }
-
-        if (empty($ratings)) {
-            return null;
-        }
-
-        $scoringConfig = $form->scoring_config ?? [];
-        $overallMethod = $scoringConfig['overall_method'] ?? 'average';
-
-        return match ($overallMethod) {
-            'sum' => number_format(array_sum($ratings), 2),
-            default => number_format(array_sum($ratings) / count($ratings), 2),
-        };
+        return $score !== null ? number_format($score, 2) : null;
     }
 
-    /**
-     * Get the rating label for a given score.
-     */
     private function getRatingLabel(FormSubmission $record, string $score): string
     {
-        $form = $record->form;
-        $ratingScale = $form?->rating_scale ?? [
-            ['value' => 5, 'label' => 'Outstanding'],
-            ['value' => 4, 'label' => 'Very Satisfactory'],
-            ['value' => 3, 'label' => 'Satisfactory'],
-            ['value' => 2, 'label' => 'Fair'],
-            ['value' => 1, 'label' => 'Poor'],
-        ];
-
-        $ratingScale = collect($ratingScale)->sortByDesc('value');
-        $numericScore = (float) $score;
-
-        foreach ($ratingScale as $scale) {
-            if ($numericScore >= ($scale['value'] - 0.5)) {
-                return $scale['label'];
-            }
-        }
-
-        return $ratingScale->last()['label'] ?? '—';
+        return app(ReportService::class)->getRatingLabel((float) $score);
     }
 }

@@ -1,5 +1,9 @@
 # CCIS Classroom Server
 
+**Current deployment:** use the web launcher `Start-Campus.cmd` in the current project folder. The main application now uses SQLite. See [campus access](../docs/CAMPUS-NETWORK.md) and [SQLite/server verification](../docs/SQLITE-DEPLOYMENT-AND-LOAD-TEST.md). The desktop installer and external D-drive/MySQL paths described below are legacy deployment instructions, not the current session setup.
+
+For the new self-contained installer with bundled PHP/MySQL, first-run setup and portable backup/restore, use [standalone/README.md](standalone/README.md). The instructions below describe the older host that requires an external project and database.
+
 Open `nativephp/electron/dist/win-unpacked/ccis-classroom-server.exe` on the main computer, or install `nativephp/electron/dist/CCIS Classroom Server-1.0.0-setup.exe`. Keep the entire win-unpacked folder together when using the runnable app. This installer is unsigned.
 
 The server starts automatically. Wait for **Live · ready**, then **Copy link**. Other devices open that link in their browser and use their existing accounts. **Open system** opens the system on the host computer.
@@ -8,15 +12,21 @@ Keep the desktop app open, the computer awake, and MySQL running. A wired host c
 
 ## Existing records
 
-This controller uses the existing classroom project at `C:\dev\laravel projects\ccis-faculty-evaluation`, PHP at `C:\php\php.exe`, and that project's MySQL database and workbook storage. It does not transfer those records or install MySQL on another computer. Stop the server before changing paths, the sharing port or automatic startup under **Server settings**.
+This controller uses the existing classroom project at `D:\lenovo's drive c old files\dev\laravel projects\ccis-faculty-evaluation`, PHP at `C:\php\php.exe`, and that project's MySQL database and workbook storage. It does not transfer those records or install MySQL on another computer. Stop the server before changing paths, the sharing port or automatic startup under **Server settings**.
 
 ## Student databases
 
 Code questions can give each student their own MySQL database, used through phpMyAdmin. Set it up once in the classroom project with `php artisan classroom:student-db install`; it uses the MySQL and phpMyAdmin from Laragon and keeps its data in `storage/app/student-db`. From then on the desktop host starts that separate MySQL server (127.0.0.1:3307, never the classroom database) and serves phpMyAdmin at `/phpmyadmin` on the sharing port. Students reach it only through one-time sign-on links from their quiz. After grading, `php artisan classroom:student-db prune` drops graded workspaces; their SQL exports stay with the answers.
 
+## Backups
+
+While the server is open it makes one backup a day of the classroom database and uploaded files (class-record workbooks, student files) and keeps the last 14 days. Set `BACKUP_PATH` in the classroom project's `.env` to a second drive or USB stick, for example `BACKUP_PATH=E:\ccis-backups`; without it, backups go to `storage/app/backups` on the same disk. Each backup is a zip named `ccis-backup-<date>-<time>.zip` holding `database.sql` and a `files` folder. Make one by hand with `php artisan classroom:backup`. If a backup fails, super admins get a notification in the app.
+
+To restore, stop the server, import `database.sql` into an empty classroom database (for example with HeidiSQL or `mysql ccis < database.sql`), and copy `files/private` and `files/public` back into `storage/app`.
+
 ## Operation
 
-The public gateway shares HTTP and WebSockets on port 8088. Four PHP workers and Reverb run on loopback behind it. NativePHP's desktop controls stay private to the host. Closing the desktop app stops its managed process tree. Startup checks the database and ports without killing unrelated applications. NativePHP's environment is stripped before launching the classroom workers so its SQLite settings and encryption key cannot override the classroom configuration.
+The public gateway shares HTTP and WebSockets on port 8088. Four to eight PHP workers (one per CPU core) and Reverb run on loopback behind it; each request goes to the least busy worker. The gateway sends files from `public/` itself, gzip-compressed and cached by browsers, so the 18 MB PHP runtime for code questions never ties up a PHP worker, and exam pages download it in the background before students press Start. It passes each device's address to Laravel (`TRUSTED_PROXIES`), so sign-in limits apply per device rather than to the whole class. Workers keep compiled PHP in OPcache and recheck files every two seconds. Route, event, icon and Filament caches are rebuilt at every start and cleared at stop; if the app was force-closed, run `php artisan optimize:clear` before developing. NativePHP's desktop controls stay private to the host. Closing the desktop app stops its managed process tree. Startup checks the database and ports without killing unrelated applications. NativePHP's environment is stripped before launching the classroom workers so its SQLite settings and encryption key cannot override the classroom configuration.
 
 The classroom installation requires its Composer dependencies, Vite build, `.env` and Reverb credentials. Leave its configuration uncached because the desktop host supplies runtime ports. The local process-status indicator checks every five seconds; classroom data updates through WebSocket events.
 
@@ -38,6 +48,6 @@ php -d opcache.enable_cli=0 vendor/bin/phpunit
 
 ## Verification
 
-Packaged startup, stop, restart and exit cleanup were checked. Two authenticated browser sessions received push events through the same LAN port. Main-project tests: 44 tests, 252 assertions. Desktop tests: 2 tests, 5 assertions. A separate physical phone was not available for testing; router/firewall configuration may affect its access.
+Packaged startup, stop, restart and exit cleanup were checked. Two authenticated browser sessions received push events through the same LAN port. Main-project tests: 44 tests, 252 assertions. Desktop tests: 2 tests, 5 assertions. Load test (2026-10-18, 4-core Linux, MariaDB): 60 students signed in from separate addresses, started a three-question coding exam and autosaved code every 1.5 s for a minute; autosaves took 41 ms (median) and 78 ms (95th percentile), with no errors. A separate physical phone was not available for testing; router/firewall configuration may affect its access.
 
 [NativePHP documentation](https://nativephp.com/docs/desktop/2/getting-started/installation)

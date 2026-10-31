@@ -106,9 +106,10 @@
                     description="No data available to chart."
                 />
             @else
-                <div x-data="{
+                <div x-load-js="[@js(\Filament\Support\Facades\FilamentAsset::getScriptSrc('chart-js'))]" x-data="{
                     chart: null,
-                    init() {
+                    async init() {
+                        while (! window.Chart) await new Promise((resolve) => setTimeout(resolve, 50));
                         const ctx = this.$refs.radarChart.getContext('2d');
                         this.chart = new Chart(ctx, {
                             type: 'radar',

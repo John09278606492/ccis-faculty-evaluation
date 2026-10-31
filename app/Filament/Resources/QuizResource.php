@@ -10,6 +10,7 @@ use App\Models\ClassRecordSheet;
 use App\Models\ClassRecordUpload;
 use App\Models\CourseOffering;
 use App\Models\Quiz;
+use App\Services\AssessmentReadiness;
 use App\Services\ClassRecordSyncService;
 use App\Services\WorkbookPreviewService;
 use BezhanSalleh\FilamentShield\Contracts\HasShieldPermissions;
@@ -22,6 +23,7 @@ use Filament\Tables;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\HtmlString;
 
 class QuizResource extends Resource implements HasShieldPermissions
 {
@@ -317,6 +319,44 @@ class QuizResource extends Resource implements HasShieldPermissions
         return static::buildSyncClassRecordAction(Action::class);
     }
 
+    public static function releaseResultsAction(): Tables\Actions\Action
+    {
+        return static::buildReleaseResultsAction(Tables\Actions\Action::class);
+    }
+
+    public static function releaseResultsHeaderAction(): Action
+    {
+        return static::buildReleaseResultsAction(Action::class);
+    }
+
+    /**
+     * Shows held-back scores to students now, or hides them again.
+     *
+     * @param  class-string<Action|Tables\Actions\Action>  $actionClass
+     */
+    protected static function buildReleaseResultsAction(string $actionClass): Action|Tables\Actions\Action
+    {
+        return $actionClass::make('releaseResults')
+            ->label(fn (Quiz $record) => $record->results_released_at ? 'Hide results' : 'Release results')
+            ->icon(fn (Quiz $record) => $record->results_released_at ? 'heroicon-o-eye-slash' : 'heroicon-o-eye')
+            ->color('gray')
+            ->visible(fn (Quiz $record) => $record->holdsResults() && auth()->user()?->can('update', $record))
+            ->requiresConfirmation()
+            ->modalDescription(fn (Quiz $record) => $record->results_released_at
+                ? 'Students will no longer see their scores until you release them again.'
+                : 'Every student who submitted will see their score and the points for each question.')
+            ->action(function (Quiz $record, $livewire) {
+                $record->update(['results_released_at' => $record->results_released_at ? null : now()]);
+                if (property_exists($livewire, 'loadedRevision')) {
+                    $livewire->loadedRevision = hash('sha256', json_encode($record->fresh()->except(['updated_at', 'class_record_synced_at', 'class_record_sync_error'])));
+                }
+                Notification::make()
+                    ->title($record->results_released_at ? 'Results released to students' : 'Results hidden from students')
+                    ->success()
+                    ->send();
+            });
+    }
+
     /**
      * Clones the quiz and its questions into a fresh, unpublished draft in the
      * same course offering. Filament's ReplicateAction only copies the quiz's
@@ -336,6 +376,8 @@ class QuizResource extends Resource implements HasShieldPermissions
                 'notify_minutes_before',
                 'notified_at',
                 'assign_to_all',
+                'class_record_synced_at',
+                'class_record_sync_error',
             ])
             ->beforeReplicaSaved(function (Quiz $replica) {
                 $replica->title = "{$replica->title} (Copy)";
@@ -375,6 +417,12 @@ class QuizResource extends Resource implements HasShieldPermissions
     {
         return $form
             ->schema([
+                Forms\Components\Section::make('Ready to conduct?')
+                    ->visible(fn (?Quiz $record) => $record !== null)
+                    ->schema([
+                        Forms\Components\Placeholder::make('assessment_readiness')->hiddenLabel()
+                            ->content(fn (?Quiz $record) => $record ? new HtmlString(view('filament.partials.assessment-readiness', ['checks' => app(AssessmentReadiness::class)->forQuiz($record)])->render()) : ''),
+                    ]),
                 Forms\Components\Section::make('Assessment Details')
                     ->schema([
                         Forms\Components\Select::make('course_offering_id')
@@ -389,9 +437,16 @@ class QuizResource extends Resource implements HasShieldPermissions
                             ->maxLength(255),
 
                         Forms\Components\Radio::make('type')
+                            ->helperText('Quizzes and activities can sync to a mapped class record. Exam scores use Export results under Grade & results.')
                             ->options(Quiz::TYPES)
                             ->default('quiz')
                             ->live()
+                            // Exams hold scores back until they close, unless the instructor chose otherwise.
+                            ->afterStateUpdated(function (?string $state, Forms\Set $set, ?Quiz $record) {
+                                if (! $record) {
+                                    $set('results_visibility', $state === 'exam' ? 'after_close' : 'immediately');
+                                }
+                            })
                             ->required()
                             ->columnSpanFull(),
 
@@ -479,6 +534,20 @@ class QuizResource extends Resource implements HasShieldPermissions
                         Forms\Components\Toggle::make('shuffle_questions')
                             ->label('Shuffle question order per student'),
 
+                        Forms\Components\Select::make('results_visibility')
+                            ->label('Students see their scores')
+                            ->options(Quiz::RESULTS_VISIBILITY)
+                            ->default('immediately')
+                            ->native(false)
+                            ->required()
+                            ->helperText(fn (Forms\Get $get) => match ($get('results_visibility')) {
+                                'after_close' => blank($get('available_until'))
+                                    ? 'Set "Available Until", or use Release results when everyone has finished.'
+                                    : 'Scores appear once "Available Until" passes. You can also release them earlier.',
+                                'manual' => 'Use Release results on this assessment when you are ready.',
+                                default => 'Early finishers can share answers with classmates who are still taking it.',
+                            }),
+
                         Forms\Components\Toggle::make('is_published')
                             ->label('Published (visible to students)')
                             ->disabled(fn (?Quiz $record) => ! $record)
@@ -521,9 +590,7 @@ class QuizResource extends Resource implements HasShieldPermissions
                     ->label('Timing')
                     ->badge()
                     ->color(fn (string $state) => $state === 'scheduled' ? 'warning' : 'gray')
-                    ->formatStateUsing(fn (string $state, Quiz $record) => $state === 'scheduled'
-                        ? 'Scheduled'
-                        : ($record->duration_minutes ? "{$record->duration_minutes} min" : 'Untimed')),
+                    ->formatStateUsing(fn (string $state, Quiz $record) => $record->timingLabel()),
 
                 Tables\Columns\TextColumn::make('is_published')
                     ->label('Visibility')->badge()
@@ -544,17 +611,19 @@ class QuizResource extends Resource implements HasShieldPermissions
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                Tables\Filters\SelectFilter::make('type')
-                    ->options(Quiz::TYPES),
                 Tables\Filters\TernaryFilter::make('is_published'),
             ], layout: FiltersLayout::AboveContent)
             ->actions([
+                Tables\Actions\Action::make('studentAccess')->label('Students & sign-in')->icon('heroicon-o-user-group')
+                    ->visible(fn (Quiz $record) => auth()->user()->can('update', $record))
+                    ->url(fn (Quiz $record) => static::getUrl('edit', ['record' => $record, 'activeRelationManager' => '1'])),
                 static::buildAction(),
                 Tables\Actions\EditAction::make()->label('Settings & results'),
                 Tables\Actions\ActionGroup::make([
                     static::previewAction(),
                     static::copyLinkAction(),
                     static::syncClassRecordAction(),
+                    static::releaseResultsAction(),
                     static::duplicateAction(),
                     Tables\Actions\DeleteAction::make(),
                 ])->label('More')->button(),

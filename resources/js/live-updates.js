@@ -1,9 +1,25 @@
 import Echo from 'laravel-echo';
 import Pusher from 'pusher-js';
+import { PanelRefreshQueue } from './live-panel-refresh';
 
 let echo;
 let activeChannel;
 let booted = false;
+let staff = false;
+let liveReady = false;
+let subscribedChannels = new Set();
+let checkingFallback = false;
+let pollingOnly = false;
+const panelRefresh = new PanelRefreshQueue({
+    components: () => window.Livewire?.all() || [],
+    focused: () => document.activeElement,
+    visible: () => !document.hidden && navigator.onLine,
+    refreshed: component => {
+        component.el.querySelectorAll('iframe[data-live-report]').forEach(frame => {
+            frame.contentWindow?.postMessage({ type: 'campus-report-refresh' }, window.location.origin);
+        });
+    },
+});
 window.Pusher = Pusher;
 
 function status(message, connected = false) {
@@ -15,41 +31,87 @@ function status(message, connected = false) {
 }
 
 function refreshRelatedViews(event = { kind: 'reconnected', quizId: null, courseId: null }) {
+    // Exam progress, tab-leave and attempt updates only matter to instructors watching attempts.
+    // A student's own attempt changes arrive on their private channel instead.
+    if (!staff && ['focus', 'progress', 'attempt'].includes(event.kind)) return;
     if (window.Livewire) window.Livewire.dispatch('classroom-push', event);
+    if (!['focus', 'progress'].includes(event.kind)) panelRefresh.mark({ skipPushHandlers: true, kind: event.kind });
 }
+
+const schedulePanelRefresh = event => panelRefresh.mark({ kind: event?.kind });
 
 function connect() {
     const configElement = document.getElementById('classroom-live-config');
     if (!configElement) {
+        panelRefresh.reset();
         echo?.disconnect();
         echo = null;
+        window.Echo = undefined;
         activeChannel = null;
+        liveReady = false;
         return;
     }
     const config = JSON.parse(configElement.textContent);
+    staff = Boolean(config.staff);
+    pollingOnly = config.transport === 'polling';
+    if (pollingOnly) {
+        echo?.disconnect();
+        echo = null;
+        window.Echo = undefined;
+        liveReady = false;
+        activeChannel = config.channel;
+        status('Automatic updates active');
+        return;
+    }
     if (echo && activeChannel === config.channel) {
-        status(echo.connector.pusher.connection.state === 'connected' ? 'Live updates connected' : 'Live updates reconnecting…', echo.connector.pusher.connection.state === 'connected');
-        refreshRelatedViews();
+        // A page change (also fired once on the first load) brings fresh data from the server,
+        // so nothing to refresh. Refreshing here re-rendered tables before their scripts loaded.
+        status(liveReady ? 'Live updates connected' : 'Live updates reconnecting…', liveReady);
         return;
     }
     echo?.disconnect();
+    liveReady = false;
+    subscribedChannels = new Set();
     activeChannel = config.channel;
     echo = new Echo({
         broadcaster: 'reverb', key: config.key,
         wsHost: config.host || window.location.hostname,
         wsPort: config.port, wssPort: config.port,
         forceTLS: (config.scheme || window.location.protocol.replace(':', '')) === 'https',
-        enabledTransports: ['ws', 'wss'],
+        // Pusher's "ws" transport already uses wss when forceTLS is true.
+        // A separate wss fallback on the campus HTTP port cannot complete TLS.
+        enabledTransports: ['ws'],
         authEndpoint: '/broadcasting/auth',
         auth: { headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '' } },
     });
     echo.connector.pusher.connection.bind('state_change', ({ current }) => {
-        if (current !== 'connected') status('Live updates disconnected — reconnecting…');
+        if (current !== 'connected') {
+            subscribedChannels.clear();
+            liveReady = false;
+            status('Live updates disconnected — reconnecting…');
+        }
     });
+    const channelReady = channel => {
+        subscribedChannels.add(channel);
+        liveReady = [config.channel, ...(config.panelChannels || [])].every(name => subscribedChannels.has(name));
+        status(liveReady ? 'Live updates connected' : 'Connecting live updates…', liveReady);
+    };
     echo.private(config.channel)
-        .subscribed(() => { status('Live updates connected', true); refreshRelatedViews(); })
-        .error(() => status('Live updates unavailable — check your connection or sign in again'))
+        .subscribed(() => { channelReady(config.channel); refreshRelatedViews(); })
+        .error(() => { liveReady = false; status('Live updates unavailable — retrying automatically'); })
         .listen('.classroom.changed', refreshRelatedViews);
+    for (const channel of config.panelChannels || []) {
+        echo.private(channel)
+            .subscribed(() => { channelReady(channel); schedulePanelRefresh(); })
+            .error(() => { subscribedChannels.delete(channel); liveReady = false; status('Live updates unavailable — retrying automatically'); })
+            .listen('.panel.changed', event => {
+                if (event?.kind === 'attempt' && window.Livewire) window.Livewire.dispatch('classroom-push', event);
+                schedulePanelRefresh(event);
+            });
+    }
+    // Filament's notification bell listens on window.Echo once it announces itself.
+    window.Echo = echo;
+    window.dispatchEvent(new CustomEvent('EchoLoaded'));
 }
 
 function boot() {
@@ -59,8 +121,29 @@ function boot() {
         if (echo?.socketId()) options.headers['X-Socket-ID'] = echo.socketId();
     });
     connect();
-    document.addEventListener('livewire:navigated', connect);
-    window.addEventListener('online', () => echo?.connector.pusher.connect());
+    document.addEventListener('livewire:navigated', () => { panelRefresh.resume(); connect(); });
+    document.addEventListener('livewire:navigating', () => panelRefresh.pause());
+    document.addEventListener('focusout', () => panelRefresh.schedule(300));
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshRelatedViews(); });
+    window.addEventListener('online', () => { echo?.connector.pusher.connect(); refreshRelatedViews(); });
+    window.addEventListener('offline', () => status('Connection lost — check your Wi-Fi or campus address.'));
+    // Reverb is primary; a temporary socket outage still catches up automatically.
+    setInterval(async () => {
+        if (document.hidden || !navigator.onLine || !activeChannel || liveReady || checkingFallback) return;
+        checkingFallback = true;
+        try {
+            // An old campus IP may still look "online" to the browser. Probe first
+            // rather than queueing more component refreshes against an unreachable server.
+            const response = await fetch('/up', { cache: 'no-store', signal: AbortSignal.timeout(3000) });
+            if (!response.ok) throw new Error('Server unavailable');
+            status(pollingOnly ? 'Automatic updates active' : 'Auto updates active — reconnecting live connection…');
+            if (!liveReady) refreshRelatedViews();
+        } catch {
+            status('Connection lost — check your Wi-Fi or campus address.');
+        } finally {
+            checkingFallback = false;
+        }
+    }, 20000);
 }
 document.addEventListener('livewire:initialized', boot);
 boot();

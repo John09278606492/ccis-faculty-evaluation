@@ -263,12 +263,12 @@ class RoleResource extends Resource implements HasShieldPermissions
 
     public static function getNavigationGroup(): ?string
     {
-        return 'User Management';
+        return 'Administration';
     }
 
     public static function getNavigationLabel(): string
     {
-        return __('filament-shield::filament-shield.nav.role.label');
+        return 'Roles & Permissions';
     }
 
     public static function getNavigationIcon(): string

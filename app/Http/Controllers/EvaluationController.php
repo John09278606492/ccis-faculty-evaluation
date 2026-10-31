@@ -6,7 +6,10 @@ use App\Models\CourseOffering;
 use App\Models\Form;
 use App\Models\FormField;
 use App\Models\FormSubmission;
+use App\Services\AssignedDataAccess;
+use App\Services\ClassroomUpdates;
 use App\Services\EvaluationAccessService;
+use App\Services\EvaluationSections;
 use App\Services\EvaluationSubmissionIdentity;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -29,15 +32,14 @@ class EvaluationController extends Controller
         $form = $this->evaluationForm($courseOffering);
 
         if ($form->requires_login && ! $request->user()) {
-            $request->session()->put('url.intended', $request->fullUrl());
+            $request->session()->put('evaluation.intended_offering', $courseOffering->id);
 
-            return redirect()->route('filament.admin.auth.login')
-                ->with('warning', 'You must log in to access this evaluation form.');
+            return redirect()->route('evaluation.entry');
         }
 
         $form = $this->access->authorize($courseOffering, $request->user());
 
-        if (! $form->isAvailable()) {
+        if (! $courseOffering->isEvaluationAvailable()) {
             return view('evaluation.unavailable', compact('courseOffering', 'form'));
         }
 
@@ -47,7 +49,7 @@ class EvaluationController extends Controller
             'courseOffering' => $courseOffering,
             'form' => $form,
             'fields' => $form->fields()->where('type', '!=', 'section_header')->orderBy('order')->get(),
-            'alreadySubmitted' => FormSubmission::query()
+            'alreadySubmitted' => FormSubmission::withoutGlobalScope('assigned_data')
                 ->where('form_id', $form->id)
                 ->where('course_offering_id', $courseOffering->id)
                 ->where(function ($query) use ($fingerprint, $request): void {
@@ -72,20 +74,18 @@ class EvaluationController extends Controller
         $form = $this->evaluationForm($courseOffering);
 
         if ($form->requires_login && ! $request->user()) {
-            return redirect()->route('filament.admin.auth.login')
-                ->with('warning', 'You must log in to submit this evaluation.');
+            return redirect()->route('evaluation.entry');
         }
 
         $form = $this->access->authorize($courseOffering, $request->user());
         $formFields = $form->fields()->where('type', '!=', 'section_header')->orderBy('order')->get();
         $validated = $request->validate($this->validationRules($form, $formFields), [
-            'field_comments.*.required' => 'A comment is required for each question.',
             'overall_comment.required' => 'An overall comment is required.',
         ]);
 
         $fingerprint = $this->identity->fingerprint($courseOffering, $request, $request->user());
 
-        $legacySubmissionExists = FormSubmission::query()
+        $legacySubmissionExists = FormSubmission::withoutGlobalScope('assigned_data')
             ->where('form_id', $form->id)
             ->where('course_offering_id', $courseOffering->id)
             ->when(
@@ -102,24 +102,23 @@ class EvaluationController extends Controller
         }
 
         $fieldData = $validated['fields'] ?? [];
-        $fieldComments = array_filter(
-            $validated['field_comments'] ?? [],
-            static fn (mixed $value): bool => is_string($value) && trim($value) !== '',
-        );
-
-        if ($fieldComments !== []) {
-            $fieldData['_field_comments'] = $fieldComments;
-        }
-
         if (! empty($validated['overall_comment'])) {
             $fieldData['_overall_comment'] = $validated['overall_comment'];
         }
 
         try {
-            DB::transaction(function () use ($form, $courseOffering, $fingerprint, $fieldData): void {
+            DB::transaction(function () use ($form, $courseOffering, $fingerprint, $fieldData, $request): void {
+                // PHP 8.3's PDO does not support Laravel's BEGIN IMMEDIATE mode.
+                // Take the SQLite writer reservation before reads to avoid a
+                // deferred read-to-write upgrade racing another submission.
+                if (DB::getDriverName() === 'sqlite') {
+                    DB::table('forms')->where('id', $form->id)->update(['id' => $form->id]);
+                }
                 $lockedForm = Form::query()->lockForUpdate()->findOrFail($form->id);
 
-                if (! $lockedForm->isAvailable()) {
+                $currentAssignment = CourseOffering::query()->lockForUpdate()->findOrFail($courseOffering->id);
+                $this->access->authorize($currentAssignment, $request->user());
+                if (! $currentAssignment->isEvaluationAvailable()) {
                     throw new AuthorizationException('This evaluation form is no longer available.');
                 }
 
@@ -128,14 +127,22 @@ class EvaluationController extends Controller
                     'course_offering_id' => $courseOffering->id,
                     'submission_fingerprint' => $fingerprint,
                     'user_id' => null,
-                    'data' => $fieldData,
+                    'evaluator_identity' => $request->user() ? ['name' => $request->user()->name, 'student_id' => $request->user()->student_id] : null,
+                    'data' => $request->user()?->isStudent() ? [...$fieldData, '_evaluation_context' => [
+                        'section' => app(EvaluationSections::class)->forStudent($currentAssignment, $request->user()),
+                        'recorded_at' => now()->toIso8601String(),
+                    ]] : $fieldData,
                     'ip_address' => null,
                     'user_agent' => null,
                     'submitted_at' => now(),
                 ]);
-            });
+            }, 5);
         } catch (UniqueConstraintViolationException) {
             return back()->withInput()->with('error', 'You have already submitted this evaluation.');
+        }
+
+        if ($request->user()) {
+            ClassroomUpdates::viewer($request->user()->id, 'evaluation');
         }
 
         return redirect()->route('evaluate.success', $courseOffering);
@@ -146,7 +153,7 @@ class EvaluationController extends Controller
         $form = $this->evaluationForm($courseOffering);
 
         if ($form->requires_login && ! $request->user()) {
-            return redirect()->route('filament.admin.auth.login');
+            return redirect()->route('evaluation.entry');
         }
 
         $this->access->authorize($courseOffering, $request->user());
@@ -156,14 +163,16 @@ class EvaluationController extends Controller
 
     public function preview(Request $request, Form $form): View
     {
+        abort_if($request->user()->isStudent(), 403);
         Gate::forUser($request->user())->authorize('view', $form);
 
-        if (! $request->user()->isSuperAdmin()
-            && ! $form->campuses()->whereIn('campuses.id', $request->user()->campuses()->select('campuses.id'))->exists()) {
-            abort(403, 'You do not have access to a campus assigned to this form.');
+        if (! $request->user()->isSuperAdmin()) {
+            $allowed = $form->campuses()->whereIn('campuses.id', $request->user()->campuses()->select('campuses.id'))->get()
+                ->contains(fn ($campus) => app(AssignedDataAccess::class)->apply(Form::query(), $request->user(), $campus)->whereKey($form->id)->exists());
+            abort_unless($allowed, 403, 'This form is outside your assigned campus or departments.');
         }
 
-        return view('evaluation.preview', [
+        return view($request->boolean('print') ? 'evaluation.instrument' : 'evaluation.preview', [
             'form' => $form,
             'fields' => $form->fields()->where('type', '!=', 'section_header')->orderBy('order')->get(),
         ]);
@@ -184,26 +193,19 @@ class EvaluationController extends Controller
         $allowedKeys = $fieldNames === [] ? 'array' : 'array:'.implode(',', $fieldNames);
         $rules = [
             'fields' => ['sometimes', $allowedKeys],
-            'field_comments' => ['sometimes', $allowedKeys],
             'overall_comment' => ['nullable', 'string', 'max:5000'],
         ];
 
         $scoringConfig = $form->scoring_config ?? [];
-        $commentsRequired = ($scoringConfig['field_comments'] ?? 'optional') === 'required';
 
         foreach ($fields as $field) {
-            $rules["fields.{$field->name}"] = $this->fieldRules($field);
+            $rules["fields.{$field->name}"] = $this->fieldRules($field, $form->rating_scale ?? []);
             if (in_array($field->type, ['multiselect', 'checkboxlist'], true)) {
                 $options = collect($field->options ?? [])->map(
                     static fn (mixed $option): mixed => is_array($option) ? ($option['value'] ?? null) : $option,
                 )->filter(static fn (mixed $value): bool => $value !== null)->values()->all();
                 $rules["fields.{$field->name}.*"] = [Rule::in($options)];
             }
-            $rules["field_comments.{$field->name}"] = [
-                $commentsRequired ? 'required' : 'nullable',
-                'string',
-                'max:2000',
-            ];
         }
 
         if (($scoringConfig['overall_comment'] ?? 'optional') === 'required') {
@@ -213,13 +215,15 @@ class EvaluationController extends Controller
         return $rules;
     }
 
-    private function fieldRules(FormField $field): array
+    private function fieldRules(FormField $field, array $ratingScale = []): array
     {
         $presence = $field->is_required ? 'required' : 'nullable';
         $options = collect($field->options ?? [])->map(
             static fn (mixed $option): mixed => is_array($option) ? ($option['value'] ?? null) : $option,
         )->filter(static fn (mixed $value): bool => $value !== null)->values()->all();
-        $scale = collect($field->form->rating_scale ?? [])->pluck('value')->all();
+        // The scale belongs to the form, which is already loaded: reading it from
+        // the field's relation would lazy-load it once per field.
+        $scale = collect($ratingScale)->pluck('value')->all();
 
         $rules = match ($field->type) {
             'text', 'textarea', 'tel' => [$presence, 'string', 'max:5000'],

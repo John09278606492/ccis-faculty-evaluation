@@ -1,0 +1,88 @@
+# Hostinger deployment
+
+Target: `https://faculty-evaluation.bisubalilihan.com`, Business Web Hosting.
+The user confirmed the current computer is the authoritative source of records.
+
+## Verified hosting capabilities
+
+The protected server preflight returned PHP 8.3.36, pdo_sqlite, sqlite3, intl,
+mbstring, ZIP, GD, DOM, curl, XML and fileinfo. SQLite in-memory queries succeeded;
+symlink and flock are available. On-disk database locking and actual workload
+capacity still require validation after staging. No database conversion is needed
+solely because hPanel offers MariaDB databases.
+
+## Files and records
+
+Keep Laravel code, `.env`, SQLite and private uploads in a sibling `evaluation-app`
+directory outside `public_html`. Only Laravel's public assets and an index pointing
+to that sibling belong in `public_html`. Use the original application and evaluator
+fingerprint keys. Verify snapshot record counts and encrypted payload compatibility.
+Never upload the private migration archive into a public web directory. Never run
+`key:generate`, `migrate:fresh` or demonstration seeders on the transferred data.
+
+The Windows runtime ZIP and Windows automatic update controller do not run here.
+Changes after the snapshot are not synchronized between separate installations.
+Retain the old application and select one installation for new work at cutover.
+
+## Hosting settings
+
+Use production environment, HTTPS, debug off, secure session cookies, SQLite with
+an absolute private database path, file cache/sessions and database queues.
+Set `CLASSROOM_LIVE_TRANSPORT=polling` and `BROADCAST_CONNECTION=null` for this shared
+hosting deployment. Open panel pages check for updates every 20 seconds without
+opening unavailable WebSocket connections or forcing a page reload. This is not
+instant server push. Default campus/Reverb behavior remains unchanged elsewhere.
+
+Add three once-per-minute PHP cron commands in hPanel after staging, using the
+account's PHP CLI executable (the installed lockfile requires PHP >=8.3):
+
+```
+evaluation-app/scripts/hostinger-maintain.php queue
+evaluation-app/scripts/hostinger-maintain.php bulk
+evaluation-app/scripts/hostinger-maintain.php schedule
+```
+
+The server's verified PHP 8.3 CLI is `/opt/alt/php83/usr/bin/php`; the default
+`/usr/bin/php` is PHP 8.2 and must not be used with this lockfile.
+
+Paths in the hPanel command must include `domains/<domain>/` relative to the
+displayed account home prefix. Workers exit when idle and use separate locks so
+a long import does not create overlapping bulk workers. Bulk jobs keep their
+existing 900-second job timeout; the hosting account's resource/process limits
+still apply. A queue job may wait until the next minute's cron invocation.
+
+## Before publishing
+
+Back up the existing target contents, test the staged Laravel boot, login, assets,
+evaluation access, reports, uploads, queues, notifications and permissions, then
+obtain approval for replacing the default site. Public student access currently
+identifies students by ID only; decide on stronger verification before using it
+for unrestricted public submissions. Configure email delivery separately if used.
+Do not claim the site is deployed until the actual HTTPS domain passes checks.
+
+## Publication verified — 28 October 2026
+
+Published after the user's explicit approval to retain the current student-ID-only
+entry. The original default public folder is retained as `public_html-before-20261028`
+and a separate private rollback ZIP exists. The application and SQLite file remain
+in `evaluation-app`, outside the served directory. Temporary protected diagnostic
+scripts are in the retained old folder and are no longer served by the live site.
+
+The restored snapshot was created at 13:20:37 Asia/Manila: 2,313 students, 54 sections,
+420 teaching classes and the existing two submissions. Source record counts and
+original encryption/fingerprint keys matched; no migrations, key generation or
+seeders ran. Both staged entry pages rendered on Hostinger. The two queue modes
+exited successfully under PHP 8.3.36, and hPanel lists three every-minute jobs.
+Actual scheduler output reported evaluation maintenance and notification sync DONE.
+
+The HTTPS login, student ID entry and health pages returned 200. A real browser
+switched the Faculty & Staff tab through Livewire and reached the student entry
+form without console errors. Fourteen same-origin assets returned 200. Signed-out
+staff report requests redirected to login. Private configuration/database requests
+were denied or missing; old diagnostic URLs now resolve through the normal login
+route instead of executing their former scripts. Actual student submissions and
+staff password authentication were not exercised against the live records.
+
+Use Hostinger for new records after cutover; separate laptop/campus copies do not
+synchronize their databases. Hostinger Git auto-deployment is not configured, and
+the Windows campus update controller is not part of this PHP hosting runtime.

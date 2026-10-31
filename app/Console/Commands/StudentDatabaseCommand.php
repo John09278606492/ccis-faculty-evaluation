@@ -76,6 +76,12 @@ class StudentDatabaseCommand extends Command
                 ? $attempt->where('quiz_id', $this->option('quiz'))->where('status', '!=', 'in_progress')
                 : $attempt->where('status', 'graded'))
             ->get();
+        $unprotected = $answers->filter(fn ($answer) => ! $answer->hasVerifiedDatabaseSnapshot());
+        if ($unprotected->isNotEmpty()) {
+            $this->error('No databases were deleted. '.$unprotected->count().' workspace(s) have no verified submission snapshot. Run classroom:assessments-maintain and resolve failed snapshots first.');
+
+            return self::FAILURE;
+        }
         foreach ($answers as $answer) {
             $databases->drop($answer->database_name);
             $answer->update(['database_name' => null]);
@@ -90,8 +96,15 @@ class StudentDatabaseCommand extends Command
      */
     protected function hostConfig(StudentDbServer $server): int
     {
+        $installed = $server->isInstalled();
+        $running = $installed && $server->isRunning();
+        if ($running) {
+            // Do not mistake an unrelated process on this port for this classroom's database.
+            $server->connect()->query('SELECT 1');
+        }
         $this->line(json_encode([
-            'installed' => $server->isInstalled(),
+            'installed' => $installed,
+            'running' => $running,
             'mysql_port' => $server->port(),
             'phpmyadmin_arguments' => $server->phpMyAdminServerArguments(0),
         ], JSON_UNESCAPED_SLASHES));

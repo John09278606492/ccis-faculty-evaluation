@@ -106,13 +106,15 @@ class QuestionsRelationManager extends RelationManager
 
                 Forms\Components\Toggle::make('allow_student_files')
                     ->label('Students can create files and folders')
-                    ->helperText('Like a VS Code workspace: students add, rename and delete files and folders. Otherwise they edit exactly your starter files.')
+                    ->default(true)
+                    ->helperText('Like a VS Code workspace: students add, rename and delete files and folders. Turn off to keep students to exactly your starter files.')
                     ->columnSpanFull()
                     ->visible(fn (Forms\Get $get) => $get('type') === 'code'),
 
                 Forms\Components\Toggle::make('autocomplete')
                     ->label('Code suggestions (autocomplete)')
-                    ->helperText('Shows keyword and tag suggestions while typing. Leave off when the exam tests what students remember.')
+                    ->helperText('Shows keyword and tag suggestions while typing. On by default; turn it off when the exam tests what students remember.')
+                    ->default(true)
                     ->columnSpanFull()
                     ->visible(fn (Forms\Get $get) => $get('type') === 'code'),
 
@@ -147,6 +149,46 @@ class QuestionsRelationManager extends RelationManager
                     ->canRun()
                     ->columnSpanFull()
                     ->visible(fn (Forms\Get $get) => $get('type') === 'code'),
+
+                Forms\Components\Toggle::make('auto_check')
+                    ->label('Check answers automatically')
+                    ->helperText("Runs each student's code and your reference solution on the same test cases and suggests a score from how many outputs match. Only the output is compared, so students may write the code their own way. Works for PHP, web page and SQL questions.")
+                    ->live()
+                    ->columnSpanFull()
+                    ->visible(fn (Forms\Get $get) => $get('type') === 'code' && ! $get('database_enabled')),
+
+                Forms\Components\Repeater::make('check_cases')
+                    ->label('Test cases')
+                    ->helperText('The score is the share of test cases whose output matches your reference solution; spacing never counts. With no test cases, the code is run once as it is.')
+                    ->schema([
+                        Forms\Components\TextInput::make('label')
+                            ->label('Name')
+                            ->placeholder('Optional, for example "Total for 3 items"')
+                            ->maxLength(80),
+                        Forms\Components\Textarea::make('input')
+                            ->label('Input')
+                            ->rows(2)
+                            ->maxLength(QuizQuestion::MAX_CHECK_INPUT)
+                            ->extraInputAttributes(['class' => 'font-mono'])
+                            ->helperText(fn (Forms\Get $get) => match (CodeProject::runner(CodeProject::decode($get('../../starter_files'), []))) {
+                                'php' => 'Optional. The page to open, with a query string if needed, such as index.php?n=5. Add form fields on the next lines as name=value to send them as a POST. Leave empty to open the first page.',
+                                'sql' => "Optional. A query run after the student's SQL, such as SELECT * FROM products ORDER BY id. Leave empty to compare the rows the student's own queries return.",
+                                'web' => "Optional. JavaScript run on the page once it loads; its result is compared, for example document.querySelector('#total').textContent. Leave empty to compare the page's text and console output.",
+                                default => 'Automatic checking works for PHP, web page and SQL questions.',
+                            }),
+                    ])
+                    ->defaultItems(0)
+                    ->maxItems(QuizQuestion::MAX_CHECK_CASES)
+                    ->addActionLabel('Add test case')
+                    ->collapsible()
+                    ->itemLabel(fn (array $state) => $state['label'] ?? null)
+                    ->columnSpanFull()
+                    ->visible(fn (Forms\Get $get) => $get('type') === 'code' && $get('auto_check') && ! $get('database_enabled')),
+
+                Forms\Components\Toggle::make('check_ignore_case')
+                    ->label('Ignore upper and lower case when comparing')
+                    ->columnSpanFull()
+                    ->visible(fn (Forms\Get $get) => $get('type') === 'code' && $get('auto_check') && ! $get('database_enabled')),
 
                 Forms\Components\Hidden::make('order')
                     ->default(fn () => $this->ownerRecord->questions()->max('order') + 1),
@@ -187,11 +229,19 @@ class QuestionsRelationManager extends RelationManager
                 'files' => CodeProject::decode($data['starter_files'] ?? null, []),
                 'folders' => CodeProject::decodeFolders($data['starter_files'] ?? null),
                 'allow_run' => (bool) ($data['allow_run'] ?? true),
-                'allow_student_files' => (bool) ($data['allow_student_files'] ?? false),
+                'allow_student_files' => (bool) ($data['allow_student_files'] ?? true),
                 'autocomplete' => (bool) ($data['autocomplete'] ?? false),
                 'database' => [
                     'enabled' => (bool) ($data['database_enabled'] ?? false),
                     'starter_sql' => CodeProject::decode($data['database_starter'] ?? null, [['name' => 'setup.sql', 'content' => '']])[0]['content'],
+                ],
+                'checks' => [
+                    'enabled' => (bool) ($data['auto_check'] ?? false) && ! ($data['database_enabled'] ?? false),
+                    'cases' => collect($data['check_cases'] ?? [])
+                        ->map(fn (array $case) => ['label' => trim((string) ($case['label'] ?? '')), 'input' => (string) ($case['input'] ?? '')])
+                        ->values()
+                        ->all(),
+                    'ignore_case' => (bool) ($data['check_ignore_case'] ?? false),
                 ],
             ];
             $reference = filled($data['reference_files'] ?? null) ? CodeProject::decode($data['reference_files'], []) : [];
@@ -207,7 +257,7 @@ class QuestionsRelationManager extends RelationManager
         if ($issues = (new QuizQuestion($data))->validationIssues()) {
             throw ValidationException::withMessages(['mountedTableActionsData.0.options' => implode(' ', $issues)]);
         }
-        unset($data['true_false_correct'], $data['code_language'], $data['allow_run'], $data['starter_files'], $data['reference_files'], $data['database_enabled'], $data['database_starter'], $data['allow_student_files'], $data['autocomplete']);
+        unset($data['true_false_correct'], $data['code_language'], $data['allow_run'], $data['starter_files'], $data['reference_files'], $data['database_enabled'], $data['database_starter'], $data['allow_student_files'], $data['autocomplete'], $data['auto_check'], $data['check_cases'], $data['check_ignore_case']);
 
         return $data;
     }
@@ -242,6 +292,9 @@ class QuestionsRelationManager extends RelationManager
             $data['allow_student_files'] = $question->studentsCanManageFiles();
             $data['autocomplete'] = $question->allowsAutocomplete();
             $data['reference_files'] = $question->referenceFiles() ? CodeProject::encode($question->referenceFiles()) : null;
+            $data['auto_check'] = (bool) ($question->options['checks']['enabled'] ?? false);
+            $data['check_cases'] = $question->options['checks']['cases'] ?? [];
+            $data['check_ignore_case'] = $question->checkIgnoresCase();
         }
 
         return $data;

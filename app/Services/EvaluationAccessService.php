@@ -12,16 +12,24 @@ class EvaluationAccessService
     /**
      * @throws AuthorizationException
      */
-    public function authorize(CourseOffering $courseOffering, ?User $user): Form
+    public function authorize(CourseOffering $courseOffering, ?User $user, bool $includeClosed = false): Form
     {
-        $courseOffering->loadMissing(
+        if ($user && ($user->trashed() || ! User::withoutGlobalScope('assigned_data')->whereKey($user->id)->exists())) {
+            throw new AuthorizationException('This account is no longer active.');
+        }
+        $courseOffering->loadMissing([
             'evaluationForm.campuses',
-            'evaluationForm.departments',
+            'evaluationCycle',
             'semester.schoolYear',
             'course',
-            'evaluatee',
-        );
+            'evaluatee' => fn ($q) => $q->withoutGlobalScope('assigned_data'),
+            'evaluatee.instructorDepartment',
+        ]);
         $form = $courseOffering->evaluationForm;
+        $form?->loadMissing(['departments' => fn ($q) => $q->withoutGlobalScope('assigned_data')]);
+        if (! $includeClosed && $courseOffering->evaluation_cycle_id && $courseOffering->evaluationCycle?->status !== 'published') {
+            throw new AuthorizationException('This evaluation cycle is not open.');
+        }
 
         if (! $courseOffering->is_active || ! $form) {
             throw new AuthorizationException('This course offering is not available for evaluation.');
@@ -32,11 +40,30 @@ class EvaluationAccessService
             throw new AuthorizationException('This evaluation form is not assigned to the course offering campus.');
         }
 
-        $departmentId = $courseOffering->course?->department_id
+        $departmentId = $courseOffering->teaching_department_id ?? $courseOffering->course?->department_id
             ?? $courseOffering->evaluatee?->instructor_department_id;
         if ($form->departments->isNotEmpty()
             && (! $departmentId || ! $form->departments->contains('id', $departmentId))) {
             throw new AuthorizationException('This evaluation form is not assigned to the course offering department.');
+        }
+
+        if ($form->isSupervisorInstrument() && (! $user || $user->isStudent())) {
+            throw new AuthorizationException('Annex B must be completed by a signed-in supervisor.');
+        }
+
+        if ($form->isSupervisorInstrument()) {
+            $assigned = app(FacultySupervisorEvaluators::class)->taskIds($user, $courseOffering->campus)->where('task.id', $courseOffering->id)->exists();
+            if (! $assigned || $courseOffering->user_id === $user->id
+                || ! $user->campuses()->whereKey($campusId)->exists()) {
+                throw new AuthorizationException('Only supervisor evaluators explicitly assigned to this faculty may complete Annex B. Self-evaluation is not allowed.');
+            }
+
+            return $form;
+        }
+
+        // A role such as dean or chairperson never confers supervisor evaluator authority.
+        if ($courseOffering->evaluation_type_code === 'SEF') {
+            throw new AuthorizationException('Supervisor evaluations require an Annex B instrument and supervisors explicitly selected for this faculty.');
         }
 
         if (! $user) {
@@ -57,6 +84,10 @@ class EvaluationAccessService
 
         if ($user->isStudent() && ! $courseOffering->students()->whereKey($user->getKey())->exists()) {
             throw new AuthorizationException('You are not enrolled in this course offering.');
+        }
+        if ($user->isStudent() && app(EvaluationSections::class)->requiresSection($courseOffering)
+            && ! app(EvaluationSections::class)->forStudent($courseOffering, $user, true)) {
+            throw new AuthorizationException('This subject has multiple instructors. Your section must be assigned before evaluating. Please contact your department coordinator.');
         }
 
         $allowedRoles = $form->evaluator_roles ?? [];

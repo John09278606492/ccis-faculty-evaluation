@@ -32,7 +32,17 @@ class MyEvaluations extends Page implements HasTable
 
     protected static ?int $navigationSort = 1;
 
-    protected static ?string $navigationGroup = 'Student';
+    protected static ?string $navigationGroup = 'My Learning';
+
+    public static function shouldRegisterNavigation(): bool
+    {
+        return auth()->user()?->is_student && static::canAccess();
+    }
+
+    public function getSubheading(): ?string
+    {
+        return 'Complete the faculty evaluations assigned to you. Completed evaluations remain listed with their submission status.';
+    }
 
     protected function getHeaderWidgets(): array
     {
@@ -168,12 +178,16 @@ class MyEvaluations extends Page implements HasTable
 
     protected function getTableQuery(): Builder
     {
-        // Get course offerings the student is enrolled in
-        return CourseOffering::query()
+        // Get course offerings the student is enrolled in; instructors not yet evaluated come first.
+        $query = CourseOffering::query()
             ->whereHas('students', function ($query) {
                 $query->where('user_id', Auth::id());
             })
             ->with(['course', 'instructor', 'semester.schoolYear', 'evaluationForm']);
+        $done = app(EvaluationSubmissionIdentity::class)->completedClassIds(Auth::user(), (clone $query)->without(['course', 'instructor', 'semester.schoolYear', 'evaluationForm'])->get(['id']));
+
+        return $query->orderByRaw('CASE WHEN form_id IS NULL THEN 2 '.($done ? 'WHEN id IN ('.implode(',', $done).') THEN 1 ' : '').'ELSE 0 END')
+            ->orderByDesc('semester_id')->orderBy('id');
     }
 
     private function fingerprint(CourseOffering $courseOffering): string
