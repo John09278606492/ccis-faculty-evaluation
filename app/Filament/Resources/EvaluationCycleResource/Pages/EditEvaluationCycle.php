@@ -113,7 +113,7 @@ class EditEvaluationCycle extends EditRecord
             ActionGroup::make([
                 Action::make('monitor')->label('Student Progress')->visible(fn () => StudentEvaluationProgress::canAccess())->url(fn () => StudentEvaluationProgress::getUrl(['tableFilters' => ['department' => ['value' => $this->record->department_id], 'semester' => ['value' => $this->record->semester_id]]])),
                 Action::make('assignments')->label('Teaching Classes')->visible(fn () => TeachingClassResource::canViewAny())->url(fn () => TeachingClassResource::getUrl('index', ['tableFilters' => ['semester_id' => ['value' => $this->record->semester_id], 'department' => ['value' => $this->record->department_id]]])),
-                Action::make('results')->label('Results & Reports')->visible(fn () => EvaluationResults::canAccess())->url(fn () => EvaluationResults::getUrl(['tableFilters' => ['semester' => ['value' => $this->record->semester_id], 'cycle' => ['value' => $this->record->id]]])),
+                Action::make('results')->label('Faculty Results')->visible(fn () => EvaluationResults::canAccess())->url(fn () => EvaluationResults::getUrl(['tableFilters' => ['semester' => ['value' => $this->record->semester_id], 'cycle' => ['value' => $this->record->id]]])),
             ])->label('Related pages')->icon('heroicon-o-ellipsis-horizontal')->button()->color('gray'),
             Action::make('close')->label('Close Evaluation')->visible(fn () => $this->record->status === 'published')->requiresConfirmation()->modalDescription('Stop accepting new evaluations. Existing responses remain available in reports.')
                 ->action(function () {

@@ -8,6 +8,24 @@
             <x-filament::section><div class="text-sm text-gray-500">{{ $card['label'] }}</div><div class="my-2 text-3xl font-semibold">{{ $card['value'] }}</div><div class="text-sm text-gray-500">{{ $card['hint'] }}</div></x-filament::section>
         @endforeach
     </div>
+    @if(! empty($workspace['progress']))
+        <x-filament::section heading="Evaluation progress" description="Student ratings received so far, one expected per student per class.">
+            <div class="space-y-4">
+                @foreach($workspace['progress'] as $row)
+                    @php
+                        $percent = $row['expected'] ? round($row['received'] / $row['expected'] * 100) : 0;
+                    @endphp
+                    <a href="{{ $row['url'] }}" class="block rounded-lg p-2 hover:bg-gray-50 dark:hover:bg-white/5">
+                        <div class="flex flex-wrap items-baseline justify-between gap-2 text-sm">
+                            <span class="font-medium text-gray-900 dark:text-white">{{ $row['name'] }}</span>
+                            <span class="text-gray-600 dark:text-gray-300">{{ number_format($row['received']) }} of {{ number_format($row['expected']) }} · <strong>{{ $percent }}%</strong></span>
+                        </div>
+                        <div style="margin-top:.5rem;height:10px;border-radius:9999px;overflow:hidden;background:rgba(var(--gray-400),.25)"><div style="height:100%;border-radius:9999px;background:rgb(var(--primary-600));width: {{ $percent }}%"></div></div>
+                    </a>
+                @endforeach
+            </div>
+        </x-filament::section>
+    @endif
     @foreach($workspace['warnings'] as $warning)<x-filament::section><p class="text-warning-700">{{ $warning }}</p></x-filament::section>@endforeach
     @if (method_exists($this, 'filtersForm'))
         {{ $this->filtersForm }}

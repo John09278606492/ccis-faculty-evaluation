@@ -7,11 +7,13 @@ use App\Models\Campus;
 use App\Models\Course;
 use App\Models\CourseOffering;
 use App\Models\Department;
+use App\Models\EvaluationCycle;
 use App\Models\FormSubmission;
 use App\Models\SchoolYear;
 use App\Models\Semester;
 use App\Models\User;
 use App\Services\AssignedDataAccess;
+use App\Services\EvaluationCycles;
 use App\Services\EvaluationTemplates;
 use App\Services\TeachingClasses;
 use Filament\Facades\Filament;
@@ -156,4 +158,17 @@ it('deletes only unused classes without students or faculty and keeps classes wi
 
     Livewire::test(ListTeachingClasses::class)->callTableBulkAction('deleteEmpty', [$noFaculty, $answered]);
     expect(CourseOffering::find($noFaculty->id))->toBeNull()->and(CourseOffering::find($answered->id))->not->toBeNull();
+});
+
+it('filters teaching classes by evaluation status and counts student responses per evaluation', function () {
+    $empty = CourseOffering::create([...$this->data, 'section' => 'BSIT 3Z']);
+    $cycle = EvaluationCycle::create(['name' => 'CCIS', 'campus_id' => $this->campus->id, 'department_id' => $this->department->id, 'semester_id' => $this->offering->semester_id, 'status' => 'published']);
+    $this->offering->update(['evaluation_cycle_id' => $cycle->id]);
+    FormSubmission::create(['form_id' => $this->offering->form_id, 'course_offering_id' => $this->offering->id, 'data' => ['teaching_quality' => 5], 'submission_fingerprint' => 'fp-1']);
+
+    Livewire::test(ListTeachingClasses::class)
+        ->filterTable('evaluation_status', 'not_in_evaluation')->assertCanSeeTableRecords([$empty])->assertCanNotSeeTableRecords([$this->offering])
+        ->filterTable('evaluation_status', 'in_evaluation')->assertCanSeeTableRecords([$this->offering])->assertCanNotSeeTableRecords([$empty])
+        ->filterTable('evaluation_status', 'no_students')->assertCanSeeTableRecords([$empty])->assertCanNotSeeTableRecords([$this->offering]);
+    expect(app(EvaluationCycles::class)->responseCounts($cycle))->toBe(['received' => 1, 'expected' => 1]);
 });

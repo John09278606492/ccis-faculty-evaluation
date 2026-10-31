@@ -14,7 +14,7 @@
         frame = null;
         const table = tables.find(table => {
             const head = table.tHead?.getBoundingClientRect();
-            return head && head.top <= 44 && table.getBoundingClientRect().bottom > 0;
+            return head && head.height > 0 && head.top <= 44 && table.getBoundingClientRect().bottom > 0;
         });
         if (!table) { guide.hidden = true; active = null; return; }
         const scroller = table.parentElement;

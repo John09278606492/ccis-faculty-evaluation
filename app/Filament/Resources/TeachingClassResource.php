@@ -92,13 +92,23 @@ class TeachingClassResource extends CourseOfferingResource
                     ->state(fn (CourseOffering $record) => $record->students_count ?: static::sharedCountLabel($record))
                     ->description(fn (CourseOffering $record) => static::evaluatorStatus($record))
                     ->color(fn (CourseOffering $record) => $record->is_active && $record->students_count ? 'success' : 'warning'),
-                Tables\Columns\TextColumn::make('semester.name')->label('Academic period')->description(fn (CourseOffering $record) => $record->semester?->schoolYear?->name),
+                Tables\Columns\TextColumn::make('semester.name')->label('Academic period')->description(fn (CourseOffering $record) => $record->semester?->schoolYear?->name)->toggleable(isToggledHiddenByDefault: true),
             ])->filters([
                 Tables\Filters\SelectFilter::make('semester_id')->label('Academic period')->options(fn () => AcademicPeriod::options(filament()->getTenant()))->default(fn () => AcademicPeriod::current(filament()->getTenant())),
                 Tables\Filters\SelectFilter::make('department')->label('Department')->options(fn () => app(AcademicStudents::class)->departments(auth()->user(), filament()->getTenant())->pluck('code', 'id'))
                     ->query(fn ($query, array $data) => $query->when($data['value'] ?? null, fn ($q, $id) => $q->whereHas('course', fn ($c) => $c->where('department_id', $id)))),
+                Tables\Filters\SelectFilter::make('user_id')->label('Faculty')->searchable()
+                    ->options(fn () => User::whereIn('id', CourseOffering::query()->select('user_id'))->orderBy('name')->pluck('name', 'id')),
+                Tables\Filters\SelectFilter::make('evaluation_status')->label('Evaluation status')->options([
+                    'not_in_evaluation' => 'Not in any evaluation yet', 'in_evaluation' => 'Already in an evaluation', 'no_students' => 'No evaluators (students) yet',
+                ])->query(fn (Builder $query, array $data) => match ($data['value'] ?? null) {
+                    'not_in_evaluation' => $query->whereNull('evaluation_cycle_id'),
+                    'in_evaluation' => $query->whereNotNull('evaluation_cycle_id'),
+                    'no_students' => $query->whereDoesntHave('students'),
+                    default => $query,
+                }),
                 Tables\Filters\TernaryFilter::make('is_active')->label('Active'),
-            ], layout: FiltersLayout::AboveContent)->filtersFormColumns(3)->actions([
+            ], layout: FiltersLayout::AboveContent)->filtersFormColumns(['md' => 2, 'xl' => 5])->actions([
                 Tables\Actions\Action::make('sectionStudents')->label('Section students')->icon('heroicon-o-rectangle-stack')
                     ->visible(fn (CourseOffering $record) => app(FacultySectioning::class)->allowed(auth()->user(), filament()->getTenant()) && auth()->user()->can('manageEvaluators', $record))
                     ->modalHeading('Student Sectioning')->modalWidth('5xl')->modalSubmitAction(false)->modalCancelActionLabel('Close')

@@ -134,11 +134,16 @@ class EvaluationCycleResource extends Resource
         return $table->columns([
             Tables\Columns\TextColumn::make('name')->label('Evaluation')->searchable(),
             Tables\Columns\TextColumn::make('department.code')->label('Department')->badge(),
-            Tables\Columns\TextColumn::make('semester.name')->label('Academic Period')->description(fn ($record) => $record->semester->schoolYear->name),
+            Tables\Columns\TextColumn::make('semester.name')->label('Academic Period')->description(fn ($record) => $record->semester->schoolYear->name)->toggleable(isToggledHiddenByDefault: true),
             Tables\Columns\TextColumn::make('status')->badge()->color(fn ($state) => match ($state) {
                 'published' => 'success', 'draft' => 'warning', default => 'gray'
             }),
             Tables\Columns\TextColumn::make('assignments_count')->counts('assignments')->label('Classes'),
+            Tables\Columns\TextColumn::make('responses')->label('Student responses')->state(function (EvaluationCycle $record) {
+                ['received' => $received, 'expected' => $expected] = app(EvaluationCycles::class)->responseCounts($record);
+
+                return number_format($received).' of '.number_format($expected).($expected ? ' ('.round($received / $expected * 100).'%)' : '');
+            })->tooltip('Each student rates each of their classes once'),
             Tables\Columns\TextColumn::make('ends_at')->label('Closes')->dateTime()->placeholder('Manual closing'),
         ])->filters([
             Tables\Filters\SelectFilter::make('semester_id')->label('Academic Period')->options(fn () => AcademicPeriod::options(filament()->getTenant()))->default(fn () => AcademicPeriod::current(filament()->getTenant())),

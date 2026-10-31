@@ -33,13 +33,13 @@ class EvaluationResults extends Page implements HasTable
 
     protected static string $view = 'filament.pages.evaluation-results';
 
-    protected static ?string $navigationLabel = 'Results & Reports';
+    protected static ?string $navigationLabel = 'Faculty Results';
 
-    protected static ?string $title = 'Results & Reports';
+    protected static ?string $title = 'Faculty Results';
 
-    protected static ?int $navigationSort = 5;
+    protected static ?int $navigationSort = 1;
 
-    protected static ?string $navigationGroup = 'Faculty Evaluation';
+    protected static ?string $navigationGroup = 'Evaluation Reports';
 
     public static function canAccess(): bool
     {
@@ -96,13 +96,13 @@ class EvaluationResults extends Page implements HasTable
     {
         return $table->query(fn () => $this->getTableQuery())->columns([
             Tables\Columns\TextColumn::make('name')->label('Faculty')->searchable(['name', 'first_name', 'last_name'])->sortable(),
-            Tables\Columns\TextColumn::make('instructorDepartment.code')->label('Home Department')->badge()->default('Not assigned'),
+            Tables\Columns\TextColumn::make('instructorDepartment.code')->label('Home Department')->badge()->default('Not assigned')->toggleable(isToggledHiddenByDefault: true),
             Tables\Columns\TextColumn::make('courses_count')->label('Assignments')->state(fn ($record) => $this->facultySummary($record)['total_courses']),
             Tables\Columns\TextColumn::make('evaluations_count')->label('Responses')->state(fn ($record) => $this->facultySummary($record)['total_submissions'])
                 ->description(fn ($record) => $this->facultySummary($record)['complete_responses'].' complete · '.$this->facultySummary($record)['incomplete_responses'].' incomplete'),
             Tables\Columns\TextColumn::make('set_rating')->label('SET / 5')->state(fn ($record) => $this->score($record, 'SET'))->numeric(2)->placeholder('Pending')
                 ->description(fn ($record) => isset($this->facultySummary($record)['instruments']['SET']['percentage']) ? number_format($this->facultySummary($record)['instruments']['SET']['percentage'], 2).' / 100' : null),
-            Tables\Columns\TextColumn::make('sef_rating')->label('SEF / 5')->state(fn ($record) => $this->score($record, 'SEF'))->numeric(2)->placeholder('Pending supervisor evaluation')
+            Tables\Columns\TextColumn::make('sef_rating')->label('SEF / 5')->state(fn ($record) => $this->score($record, 'SEF'))->numeric(2)->placeholder('Pending')
                 ->description(fn ($record) => isset($this->facultySummary($record)['instruments']['SEF']['percentage']) ? number_format($this->facultySummary($record)['instruments']['SEF']['percentage'], 2).' / 100' : null),
             Tables\Columns\TextColumn::make('other_rating')->label('Selected Type / 5')
                 ->state(fn ($record) => $this->facultySummary($record)['instruments'][$this->reportContext()['evaluation_type']]['mean_5'] ?? null)->numeric(2)->placeholder('Pending')

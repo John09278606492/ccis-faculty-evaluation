@@ -151,7 +151,7 @@
                 @if($sectionHasLikert)
                     <div class="overflow-x-auto" data-rating-scroll tabindex="0" role="region" aria-label="Rating criteria table">
                         @php $colCount = count($form->field_columns ?? []); @endphp
-                        <table data-rating-guide class="w-full eval-table" @if($colCount) style="--col-width: {{ floor(40 / $colCount) }}%" @endif>
+                        <table data-rating-guide class="w-full eval-table" style="--scale-count: {{ count($ratingScale) }};@if($colCount) --col-width: {{ floor(40 / $colCount) }}%@endif">
                             <thead>
                                 <tr class="bg-gray-50 border-b-2 border-gray-200">
                                     <th class="text-left py-3 px-4 font-semibold text-gray-700" @if(!$colCount) style="width:50%" @endif>Criteria</th>
@@ -194,6 +194,7 @@
                                                         class="rating-circle w-9 h-9 flex items-center justify-center rounded-full border-2 border-gray-300 font-semibold text-sm text-gray-500 transition-all duration-150 opacity-75">
                                                         {{ $scale['value'] }}
                                                     </span>
+                                                <span class="rating-mini-label">{{ $scale['label'] }}</span>
                                                 </label>
                                             </td>
                                         @endforeach

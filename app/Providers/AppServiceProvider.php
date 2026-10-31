@@ -40,6 +40,7 @@ use Filament\Support\Assets\AlpineComponent;
 use Filament\Support\Assets\Js;
 use Filament\Support\Facades\FilamentAsset;
 use Filament\Tables\Columns\Column;
+use Filament\Tables\Table;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -135,6 +136,9 @@ class AppServiceProvider extends ServiceProvider
                 'data-mobile-label' => trim(strip_tags((string) $column->getLabel())),
             ], merge: true);
         }, isImportant: true);
+
+        // Long campus lists: fewer page clicks than Filament's default of 10 rows.
+        Table::configureUsing(fn (Table $table) => $table->paginationPageOptions([10, 25, 50, 100])->defaultPaginationPageOption(25));
 
         foreach (['saved', 'deleted'] as $action) {
             Event::listen('eloquent.'.$action.': '.Quiz::class, fn ($quiz) => ClassroomUpdates::course($quiz->course_offering_id, 'quiz', $quiz->id));

@@ -206,7 +206,7 @@ class GuidedHelp
                 ['.fi-header-actions', 'Prepare departments or resolve exceptions in bulk', 'Prepare Department Evaluations creates drafts for selected departments in the background. Inside a draft, Use Department Supervisor fills missing defaults. Resolve Missing Supervisors groups any remaining choices by faculty.'],
                 [null, 'Review & Open before opening', 'Check the current class counts and any exclusions, then confirm opening. Automatic draft selection refreshes when saved or reviewed. After opening, use Add Newly Prepared Classes to preview and add later offerings in bulk. Existing responses are preserved.'],
                 [null, 'Students and supervisors have different entry points', 'Students enter their student ID. Selected supervisors use their staff account and My Supervisor Tasks. No evaluation PIN or sign-on approval is needed.'],
-                [null, 'Monitor and close', 'Student Progress shows completion; Results & Reports shows submitted ratings. A configured closing date is enforced automatically. With Closes empty, use Close Evaluation when finished. Existing results are kept.'],
+                [null, 'Monitor and close', 'Student Progress shows completion; Faculty Results (under Evaluation Reports) shows submitted ratings. A configured closing date is enforced automatically. With Closes empty, use Close Evaluation when finished. Existing results are kept.'],
             ],
             'background' => [
                 [$table, 'Check operation status', 'Queued means waiting; Processing means work is running; Completed means this operation finished. A completed review still needs confirmation before an import begins.'],

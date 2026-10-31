@@ -42,7 +42,7 @@ class EvaluationWorkflow
         }
         $reports = [];
         if (EvaluationResults::canAccess()) {
-            $reports[] = ['label' => 'Results & Reports', 'url' => EvaluationResults::getUrl()];
+            $reports[] = ['label' => 'Faculty Results', 'url' => EvaluationResults::getUrl()];
         }
         if (StudentEvaluationProgress::canAccess()) {
             $reports[] = ['label' => 'Student Progress', 'url' => StudentEvaluationProgress::getUrl()];

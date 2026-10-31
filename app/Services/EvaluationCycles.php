@@ -171,4 +171,16 @@ class EvaluationCycles
         }
         $cycle->update($archive ? ['status' => 'archived', 'archived_at' => now()] : ['status' => 'closed', 'closed_at' => now()]);
     }
+
+    /** Student ratings received against the number expected (one per student per class), supervisor forms excluded. */
+    public function responseCounts(EvaluationCycle $cycle): array
+    {
+        $classes = DB::table('course_offerings')->where('evaluation_cycle_id', $cycle->id)
+            ->when($cycle->supervisor_form_id, fn ($q) => $q->where(fn ($q) => $q->whereNull('form_id')->orWhere('form_id', '!=', $cycle->supervisor_form_id)))->select('id');
+        $expected = DB::table('course_offering_student')->whereIn('course_offering_id', $classes)->count();
+        $received = DB::table('form_submissions')->join('course_offerings', 'course_offerings.id', '=', 'form_submissions.course_offering_id')
+            ->whereIn('course_offerings.id', $classes)->whereColumn('form_submissions.form_id', 'course_offerings.form_id')->count();
+
+        return ['received' => $received, 'expected' => $expected];
+    }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Filament\Resources\EvaluationCycleResource;
 use App\Models\Campus;
 use App\Models\Department;
 use App\Models\User;
@@ -34,7 +35,10 @@ class WorkspaceSummary
             ['label' => 'My supervisor tasks', 'value' => $pending, 'hint' => 'Annex B evaluations waiting for you'],
             ['label' => 'Published evaluations', 'value' => $published, 'hint' => 'Scheduled or collecting responses this academic period'],
             ['label' => 'Evaluations being prepared', 'value' => $draft, 'hint' => 'Open Evaluation Setup to review and publish'],
-        ], 'warnings' => array_values(array_filter([
+        ], 'progress' => (clone $cycles)->where('status', 'published')->with('department')->orderBy('name')->get()->map(fn ($cycle) => [
+            'name' => $cycle->name, 'department' => $cycle->department?->code, ...app(EvaluationCycles::class)->responseCounts($cycle),
+            'url' => EvaluationCycleResource::getUrl('edit', ['record' => $cycle]),
+        ])->all(), 'warnings' => array_values(array_filter([
             $departments->isEmpty() ? 'No department access is assigned. Ask an administrator to review Access & Assignments.' : null,
         ]))];
     }

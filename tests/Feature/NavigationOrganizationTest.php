@@ -2,6 +2,9 @@
 
 use App\Filament\Pages\AccessAssignments;
 use App\Filament\Pages\BackgroundProcessing;
+use App\Filament\Pages\DepartmentReport;
+use App\Filament\Pages\EvaluationResults;
+use App\Filament\Pages\IndividualEvaluationCopies;
 use App\Filament\Pages\ManageSetting;
 use App\Filament\Pages\MyEvaluationResults;
 use App\Filament\Pages\SupervisorEvaluations;
@@ -43,4 +46,11 @@ it('registers every navigation group the panel uses', function () {
     foreach ([SupervisorEvaluations::class, RoleResource::class, UserResource::class, SchoolYearResource::class] as $item) {
         expect($registered)->toContain($item::getNavigationGroup());
     }
+});
+
+it('keeps every evaluation report in the Evaluation Reports group, faculty results first', function () {
+    expect(EvaluationResults::getNavigationGroup())->toBe('Evaluation Reports')
+        ->and(EvaluationResults::getNavigationSort())->toBe(1)
+        ->and(IndividualEvaluationCopies::getNavigationGroup())->toBe('Evaluation Reports')
+        ->and(DepartmentReport::getNavigationGroup())->toBe('Evaluation Reports');
 });
