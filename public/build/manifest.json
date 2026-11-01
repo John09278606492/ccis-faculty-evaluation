@@ -4,7 +4,7 @@
     "name": "vendor"
   },
   "resources/css/app.css": {
-    "file": "assets/css/app-CcJlwG3i.css",
+    "file": "assets/css/app-BaEHTocv.css",
     "src": "resources/css/app.css",
     "isEntry": true,
     "name": "app",
@@ -13,7 +13,7 @@
     ]
   },
   "resources/css/filament/admin/theme.css": {
-    "file": "assets/css/theme-MOgJ_Pvj.css",
+    "file": "assets/css/theme-yHuGB8Sn.css",
     "src": "resources/css/filament/admin/theme.css",
     "isEntry": true,
     "name": "theme",
@@ -28,7 +28,7 @@
     "isEntry": true
   },
   "resources/js/live-updates.js": {
-    "file": "assets/js/live-updates-BOsEfOpc.js",
+    "file": "assets/js/live-updates-bzyW-2z4.js",
     "name": "live-updates",
     "src": "resources/js/live-updates.js",
     "isEntry": true,
