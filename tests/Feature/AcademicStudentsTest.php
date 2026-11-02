@@ -15,7 +15,6 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Permission;
-use Symfony\Component\HttpKernel\Exception\HttpException;
 
 beforeEach(function () {
     ['offering' => $this->offering] = evaluationFixture();
@@ -75,7 +74,7 @@ it('adds multiple sections with individual inclusions and exclusions without dup
 it('rejects forged departments and section selections even with account permissions', function () {
     $other = Department::create(['name' => 'Other', 'code' => 'OTHER', 'campus_id' => $this->campus->id, 'is_active' => true]);
     expect(fn () => $this->service->save($this->actor, $this->campus, array_merge($this->profile, ['student_department_id' => $other->id])))->toThrow(ValidationException::class);
-    expect(fn () => $this->service->assign($this->actor, $this->offering, ['forged-group']))->toThrow(\Illuminate\Validation\ValidationException::class);
+    expect(fn () => $this->service->assign($this->actor, $this->offering, ['forged-group']))->toThrow(ValidationException::class);
 });
 
 it('provides the example download and processes the CSV upload action', function () {

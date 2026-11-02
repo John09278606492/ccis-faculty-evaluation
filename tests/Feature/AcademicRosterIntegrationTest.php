@@ -8,7 +8,6 @@ use App\Services\AcademicStudents;
 use Filament\Facades\Filament;
 use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Permission;
-use Symfony\Component\HttpKernel\Exception\HttpException;
 
 beforeEach(function () {
     ['offering' => $this->offering, 'student' => $this->originalStudent] = evaluationFixture();
@@ -86,7 +85,7 @@ it('uses only the teaching class period when selecting section groups', function
     $nextClass = $this->offering->replicate()->fill(['semester_id' => $next->id]);
     $nextClass->save();
     expect(fn () => $this->service->selection($this->actor, $nextClass, $oldGroups))
-        ->toThrow(HttpException::class);
+        ->toThrow(ValidationException::class);
     $nextGroups = array_keys($this->service->sectionOptions($this->actor, $this->campus, $next->id));
     $this->service->assign($this->actor, $nextClass, $nextGroups);
     expect($nextClass->students()->pluck('users.id')->all())->toBe([$student->id]);
