@@ -224,11 +224,15 @@ class AcademicStudents
         abort_unless(in_array($mode, ['add', 'replace'], true), 422);
         $eligible = $this->students($actor, $campus);
         $options = $this->sectionOptions($actor, $campus, $offering->semester_id);
-        abort_unless(array_diff($groups, array_keys($options)) === [], 403);
+        if (array_diff($groups, array_keys($options)) !== []) {
+            throw ValidationException::withMessages(['sections' => 'A selected section is no longer available in this academic period or your assigned departments. Remove it and choose an available section.']);
+        }
         $include = array_map('intval', $include);
         $exclude = array_map('intval', $exclude);
         $custom = array_values(array_unique(array_merge($include, $exclude)));
-        abort_unless((clone $eligible)->whereKey($custom)->count() === count($custom), 403);
+        if ((clone $eligible)->whereKey($custom)->count() !== count($custom)) {
+            throw ValidationException::withMessages(['include' => 'An added or excluded student is no longer available in your authorized master list. Review the individual student selections.']);
+        }
         $selected = collect($include);
         foreach ($groups as $group) {
             [$department, $semester, $section] = explode('~', $group, 3);

@@ -151,6 +151,31 @@ it('keeps section assignment available alongside enrolled matching and supports 
         ->and($response->fresh()->data)->toBe(['teaching_quality' => 5]);
 });
 
+it('opens section assignment with a recoverable warning for an unavailable saved section', function () {
+    $group = $this->section->department_id.'~'.$this->section->semester_id.'~'.rawurlencode($this->section->name);
+    $this->offering->students()->attach($this->student);
+    $saved = ['source' => 'sections_v1', 'sections' => [$group], 'include' => [], 'exclude' => []];
+    $this->offering->update(['evaluator_selection' => $saved]);
+    $this->section->update(['is_active' => false]);
+    Livewire::test(App\Filament\Resources\CourseOfferingResource\RelationManagers\StudentsRelationManager::class, [
+        'ownerRecord' => $this->offering, 'pageClass' => EditTeachingClass::class,
+    ])->mountTableAction('assignSections')->assertSuccessful()->assertSee('A selected section is no longer available');
+    expect(fn () => app(AcademicStudents::class)->assignSections($this->actor, $this->offering, [$group]))->toThrow(ValidationException::class);
+    expect($this->offering->fresh()->evaluator_selection)->toBe($saved)
+        ->and($this->offering->students()->pluck('users.id')->all())->toBe([$this->student->id]);
+});
+
+it('opens section assignment when a saved student exception is no longer available', function () {
+    $this->sections->add($this->actor, $this->campus, $this->section, [$this->student->id]);
+    $group = $this->section->department_id.'~'.$this->section->semester_id.'~'.rawurlencode($this->section->name);
+    $saved = ['source' => 'sections_v1', 'sections' => [$group], 'include' => [999999], 'exclude' => []];
+    $this->offering->update(['evaluator_selection' => $saved]);
+    Livewire::test(App\Filament\Resources\CourseOfferingResource\RelationManagers\StudentsRelationManager::class, [
+        'ownerRecord' => $this->offering, 'pageClass' => EditTeachingClass::class,
+    ])->mountTableAction('assignSections')->assertSuccessful()->assertSee('An added or excluded student is no longer available');
+    expect($this->offering->fresh()->evaluator_selection)->toBe($saved);
+});
+
 it('blocks empty sections and never restores unverified bulk selections as individual exceptions', function () {
     $group = $this->section->department_id.'~'.$this->section->semester_id.'~'.rawurlencode($this->section->name);
     $saved = ['sections' => [$group], 'include' => range(10001, 10179), 'exclude' => [], 'mode' => 'add'];
