@@ -72,6 +72,15 @@ class Login extends BaseLogin
             if (! $student) {
                 $this->throwFailureValidationException();
             }
+            if (! $student->pin_issued_at && $student->auto_approve_sign_in && $student->canAccessPanel(Filament::getCurrentPanel())) {
+                // Staff switched approval off for this student in the master list.
+                StudentSignIns::cancel();
+                Filament::auth()->login($student);
+                session()->regenerate();
+                $this->redirect('/');
+
+                return null;
+            }
             if (! $student->pin_issued_at) {
                 StudentSignIns::request($student);
                 $this->redirect(route('student.pin-pending'));

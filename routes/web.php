@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AcknowledgementPrintController;
 use App\Http\Controllers\BackgroundTaskDownloadController;
 use App\Http\Controllers\ChangePasswordController;
 use App\Http\Controllers\EvaluationController;
@@ -10,6 +11,7 @@ use App\Http\Controllers\FacultyReportController;
 use App\Http\Controllers\QuizSubmissionController;
 use App\Http\Controllers\SectionStudentTemplateController;
 use App\Http\Controllers\StudentDatabaseController;
+use App\Http\Controllers\StudentPinSetupController;
 use App\Http\Controllers\StudentSignInController;
 use App\Http\Middleware\ResolveEvaluationStudent;
 use Illuminate\Support\Facades\Route;
@@ -26,6 +28,9 @@ Route::post('/student/sign-in/check', [StudentSignInController::class, 'check'])
 Route::middleware(['auth', 'throttle:10,1'])->group(function () {
     Route::get('/change-password', [ChangePasswordController::class, 'edit'])->name('password.change');
     Route::post('/change-password', [ChangePasswordController::class, 'update']);
+    Route::get('/student/create-pin', [StudentPinSetupController::class, 'edit'])->name('student.create-pin');
+    Route::post('/student/create-pin', [StudentPinSetupController::class, 'update']);
+    Route::post('/student/create-pin/skip', [StudentPinSetupController::class, 'skip'])->name('student.create-pin.skip');
 });
 
 /*
@@ -55,6 +60,7 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/background-downloads/{task}', BackgroundTaskDownloadController::class)->name('background.download');
     Route::get('/section-student-template/{section}', SectionStudentTemplateController::class)->name('sections.template');
+    Route::get('/acknowledgement-receipts/print', AcknowledgementPrintController::class)->middleware('throttle:60,1')->name('acknowledgements.print');
 });
 
 /*

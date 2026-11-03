@@ -18,6 +18,7 @@
         <h1>Your sign-in PIN has not been assigned yet</h1>
         <p>Please wait for your instructor, admin or super-admin to generate and assign your PIN. Contact them if you need access to your account.</p>
         <p>Once you receive your PIN, enter your student ID again to continue signing in.</p>
+        <p><strong>You only need to wait once.</strong> After your instructor approves this browser, you can create your own PIN, and next time you sign in right away with your ID and PIN.</p>
         @include('auth.approval-poll')
         <a href="{{ route('filament.admin.auth.login') }}">Back to sign in</a>
     </main>

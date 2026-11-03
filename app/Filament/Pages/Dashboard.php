@@ -31,7 +31,8 @@ class Dashboard extends BaseDashboard
         return [
             // 1. Stats overview (full width)
             StatsOverviewWidget::class,
-            // 2-3. Role-specific tables (full width, shown based on role)
+            // 2-3. Role-specific tables (full width, shown based on role).
+            // Receipts to sign are in the student's "To do now" card at the top instead.
             StudentPendingEvaluationsWidget::class,
             InstructorEvaluationSummaryWidget::class,
             // 4-5. Evaluation charts (side-by-side, half width each)

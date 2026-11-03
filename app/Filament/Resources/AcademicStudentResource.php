@@ -12,6 +12,7 @@ use App\Services\AcademicStudents;
 use App\Services\StudentDeletion;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Enums\FiltersLayout;
@@ -123,6 +124,18 @@ class AcademicStudentResource extends Resource
                     return $data ? ($data->reported_year_level ? 'Reported year '.$data->reported_year_level.' · ' : '').($data->total_units !== null ? $data->total_units.' units' : '') : null;
                 }),
             Tables\Columns\TextColumn::make('period_sections')->label('Sections in selected period')->badge()->state(fn (User $record, $livewire) => app(AcademicStudents::class)->sections($record, static::selectedPeriod($livewire))),
+            // Students without a PIN otherwise wait for staff to approve each sign-in, e.g. to sign receipts from home.
+            Tables\Columns\ToggleColumn::make('auto_approve_sign_in')->label('Auto-approve sign-in')
+                ->tooltip(fn (User $record) => $record->pin_issued_at
+                    ? 'This student has a PIN, so they never wait for approval.'
+                    : 'On: signs in with the student ID alone, no approval and no PIN. Off: waits for staff approval.')
+                ->disabled(fn (User $record) => ! static::canEdit($record))
+                ->updateStateUsing(function (User $record, bool $state) {
+                    abort_unless(static::canEdit($record), 403);
+                    $record->forceFill(['auto_approve_sign_in' => $state])->save();
+
+                    return $state;
+                }),
         ])->filters([
             Tables\Filters\SelectFilter::make('student_department_id')->label('Department')
                 ->options(fn () => app(AcademicStudents::class)->departments(auth()->user(), filament()->getTenant())->pluck('name', 'id')),
@@ -140,6 +153,8 @@ class AcademicStudentResource extends Resource
             Tables\Filters\SelectFilter::make('program')->label('Degree Program')
                 ->options(fn ($livewire) => StudentAcademicRecord::whereIn('user_id', static::getEloquentQuery()->select('users.id'))->where('semester_id', static::selectedPeriod($livewire))->whereNotNull('program')->distinct()->orderBy('program')->pluck('program', 'program'))
                 ->query(fn ($query, array $data, $livewire) => $query->when($data['value'] ?? null, fn ($q, $program) => $q->whereHas('academicRecords', fn ($q) => $q->where('program', $program)->where('semester_id', static::selectedPeriod($livewire))))),
+            Tables\Filters\TernaryFilter::make('auto_approve_sign_in')->label('Auto-approve sign-in')
+                ->trueLabel('On')->falseLabel('Off'),
         ], layout: FiltersLayout::AboveContent)->filtersFormColumns(['default' => 1, 'md' => 2])
             ->actions([
                 Tables\Actions\Action::make('enrolledSubjects')->label('Enrolled Subjects')->icon('heroicon-o-academic-cap')->modalHeading('Campus Master List Record')->modalWidth('4xl')
@@ -149,12 +164,37 @@ class AcademicStudentResource extends Resource
                 Tables\Actions\DeleteAction::make()->modalDescription(StudentDeletion::NOTICE)
                     ->using(fn (User $record) => app(StudentDeletion::class)->delete(auth()->user(), filament()->getTenant(), [$record->id]) > 0),
             ])->bulkActions([
+                static::autoApproveBulkAction(true),
+                static::autoApproveBulkAction(false),
                 Tables\Actions\DeleteBulkAction::make()->modalDescription(StudentDeletion::NOTICE)
                     ->action(function ($records, Tables\Actions\DeleteBulkAction $action) {
                         app(StudentDeletion::class)->delete(auth()->user(), filament()->getTenant(), $records->modelKeys());
                         $action->success();
                     })->deselectRecordsAfterCompletion(),
             ])->defaultSort('name');
+    }
+
+    protected static function autoApproveBulkAction(bool $on): Tables\Actions\BulkAction
+    {
+        return Tables\Actions\BulkAction::make($on ? 'autoApproveOn' : 'autoApproveOff')
+            ->label($on ? 'Turn on auto-approve sign-in' : 'Turn off auto-approve sign-in')
+            ->icon($on ? 'heroicon-o-lock-open' : 'heroicon-o-lock-closed')
+            ->color($on ? 'warning' : 'gray')
+            ->visible(fn () => static::canCreate())
+            ->requiresConfirmation()
+            ->modalHeading($on ? 'Let these students sign in without approval?' : 'Require approval again?')
+            ->modalDescription($on
+                ? 'Students without a PIN will sign in with their student ID alone. Anyone who knows one of these IDs could sign in as that student, so turn it off again when it is no longer needed. Students with a PIN still use it.'
+                : 'Students without a PIN will wait for staff approval again when they sign in.')
+            ->action(function ($records) use ($on) {
+                $ids = static::getEloquentQuery()->whereKey($records->modelKeys())->pluck('users.id');
+                $changed = User::whereKey($ids)->update(['auto_approve_sign_in' => $on]);
+
+                Notification::make()->success()
+                    ->title("Auto-approve sign-in turned ".($on ? 'on' : 'off')." for {$changed} ".str('student')->plural($changed))
+                    ->send();
+            })
+            ->deselectRecordsAfterCompletion();
     }
 
     public static function getPages(): array

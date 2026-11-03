@@ -14,6 +14,7 @@ use App\Services\StudentSignIns;
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
@@ -43,6 +44,80 @@ it('signs in only the approved waiting browser and consumes approval once', func
     auth()->logout();
     $this->withSession(['student_sign_in_token' => $token])->postJson(route('student.sign-in.check'))->assertJson(['state' => 'expired']);
     expect(auth()->check())->toBeFalse();
+});
+
+it('lets an approved student without a PIN create one, so the next sign-in needs no approval', function () {
+    ['student' => $student] = evaluationFixture();
+    $student->update(['student_id' => '2023-04512']);
+    StudentSignIns::request($student);
+    $token = session('student_sign_in_token');
+    $admin = User::factory()->create();
+    $admin->assignRole('super_admin');
+    $this->actingAs($admin);
+    StudentSignIns::approve(collect([$student]));
+    auth()->logout();
+
+    $this->withSession(['student_sign_in_token' => $token])->postJson(route('student.sign-in.check'))
+        ->assertJson(['state' => 'approved', 'url' => route('student.create-pin', absolute: false)]);
+    $this->get(route('student.create-pin'))->assertOk()->assertSee('Create your sign-in PIN');
+
+    foreach (['111111', '123456', '987654', '890123', '304512', '12345'] as $weak) {
+        $this->post(route('student.create-pin'), ['pin' => $weak, 'pin_confirmation' => $weak])->assertSessionHasErrors('pin');
+    }
+    $this->post(route('student.create-pin'), ['pin' => '583920', 'pin_confirmation' => '583921'])->assertSessionHasErrors('pin');
+    expect($student->fresh()->pin_issued_at)->toBeNull();
+
+    $this->post(route('student.create-pin'), ['pin' => '583920', 'pin_confirmation' => '583920'])->assertRedirect('/');
+    expect($student->fresh()->pin_issued_at)->not->toBeNull()
+        ->and(Hash::check('583920', $student->fresh()->password))->toBeTrue();
+
+    // The page cannot be used again to replace the PIN.
+    $this->post(route('student.create-pin'), ['pin' => '702614', 'pin_confirmation' => '702614'])->assertRedirect('/');
+    expect(Hash::check('583920', $student->fresh()->password))->toBeTrue();
+
+    auth()->logout();
+    Livewire::test(Login::class)->set('data.login', '2023-04512')->call('authenticate')->assertNoRedirect()
+        ->set('data.password', '583920')->call('authenticate');
+    expect(auth()->id())->toBe($student->id);
+});
+
+it('signs in an auto-approved student without a PIN straight away, without offering a PIN', function () {
+    ['student' => $student] = evaluationFixture();
+    $student->update(['student_id' => 'AUTO-100']);
+    $student->forceFill(['auto_approve_sign_in' => true])->save();
+
+    Livewire::test(Login::class)->set('data.login', 'AUTO-100')->call('authenticate')->assertRedirect('/');
+    expect(auth()->id())->toBe($student->id)
+        ->and(DB::table('student_sign_in_requests')->count())->toBe(0)
+        ->and(session('student_pin_setup'))->toBeNull();
+
+    auth()->logout();
+    $student->forceFill(['auto_approve_sign_in' => false])->save();
+    Livewire::test(Login::class)->set('data.login', 'AUTO-100')->call('authenticate')->assertRedirect(route('student.pin-pending'));
+    expect(auth()->check())->toBeFalse();
+});
+
+it('offers the PIN only right after an approval, and lets the student skip it', function () {
+    ['student' => $student] = evaluationFixture();
+    $this->actingAs($student);
+    $this->get(route('student.create-pin'))->assertRedirect('/');
+    $this->post(route('student.create-pin'), ['pin' => '583920', 'pin_confirmation' => '583920']);
+    expect($student->fresh()->pin_issued_at)->toBeNull();
+
+    $this->withSession(['student_pin_setup' => $student->id, 'student_pin_next' => '/5'])
+        ->post(route('student.create-pin.skip'))->assertRedirect('/5');
+    expect($student->fresh()->pin_issued_at)->toBeNull();
+    $this->get(route('student.create-pin'))->assertRedirect('/');
+});
+
+it('does not send exam-room approvals through PIN creation', function () {
+    extract(assessmentSignInFixture('quiz'));
+    StudentSignIns::request($student);
+    $this->actingAs($instructor);
+    StudentSignIns::approve(collect([$student]), assessment: $quiz);
+    auth()->logout();
+    $this->postJson(route('student.sign-in.check'))->assertJson(['url' => '/'.$offering->campus->id.'/take-assessment/'.$quiz->id]);
+    expect(session('student_pin_setup'))->toBeNull();
 });
 
 it('does not expose bulk sign-in approvals on evaluations', function () {
