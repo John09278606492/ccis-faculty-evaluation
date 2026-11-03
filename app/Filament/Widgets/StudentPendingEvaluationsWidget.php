@@ -3,6 +3,7 @@
 namespace App\Filament\Widgets;
 
 use App\Models\CourseOffering;
+use App\Services\EvaluationSubmissionIdentity;
 use BezhanSalleh\FilamentShield\Traits\HasWidgetShield;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -40,7 +41,7 @@ class StudentPendingEvaluationsWidget extends BaseWidget
                     ->where('is_active', true)
                     ->whereNotNull('form_id')
                     ->whereHas('students', fn (Builder $q) => $q->where('users.id', $user->id))
-                    ->whereDoesntHave('formSubmissions', fn (Builder $q) => $q->where('user_id', $user->id))
+                    ->whereKeyNot(app(EvaluationSubmissionIdentity::class)->completedClassIds($user, CourseOffering::whereHas('students', fn (Builder $q) => $q->where('users.id', $user->id))->get(['id'])))
                     ->with(['course', 'evaluatee', 'semester.schoolYear', 'evaluationForm'])
             )
             ->emptyStateHeading('No Pending Evaluations')

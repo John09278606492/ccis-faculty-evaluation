@@ -28,5 +28,8 @@ interface StudentDatabases
      */
     public function export(QuizAnswer $answer): ?string;
 
+    /** Revoke student writes and existing sessions before capturing a closed attempt. */
+    public function freeze(QuizAnswer $answer): void;
+
     public function drop(string $database): void;
 }

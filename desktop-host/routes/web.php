@@ -1,7 +1,7 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\HostController;
+use Illuminate\Support\Facades\Route;
 
 Route::get('/', [HostController::class, 'index']);
 Route::get('/host/status', [HostController::class, 'status']);

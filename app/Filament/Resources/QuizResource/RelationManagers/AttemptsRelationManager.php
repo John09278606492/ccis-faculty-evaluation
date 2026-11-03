@@ -2,9 +2,13 @@
 
 namespace App\Filament\Resources\QuizResource\RelationManagers;
 
+use App\Filament\Concerns\ReceivesClassroomUpdates;
 use App\Models\QuizAnswer;
 use App\Models\QuizAttempt;
 use App\Models\QuizQuestion;
+use App\Services\BackgroundTasks;
+use App\Support\SqliteWriter;
+use Carbon\CarbonInterval;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
@@ -12,15 +16,17 @@ use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\HtmlString;
-use pxlrbt\FilamentExcel\Actions\Tables\ExportAction;
-use pxlrbt\FilamentExcel\Exports\ExcelExport;
+use Illuminate\Validation\ValidationException;
+use Livewire\Attributes\Renderless;
 
 class AttemptsRelationManager extends RelationManager
 {
-    use \App\Filament\Concerns\ReceivesClassroomUpdates;
+    use ReceivesClassroomUpdates;
 
     protected static string $relationship = 'attempts';
 
@@ -33,9 +39,18 @@ class AttemptsRelationManager extends RelationManager
         return $form->schema([]);
     }
 
+    protected ?int $questionCount = null;
+
+    protected function receivesFocusUpdates(): bool
+    {
+        return true;
+    }
+
     public function table(Table $table): Table
     {
         return $table
+            ->modifyQueryUsing(fn ($query) => $query->with('answers:id,quiz_attempt_id,auto_check')
+                ->withCount(['answers as answered_count' => fn ($answers) => $answers->whereNotNull('answer_text')->where('answer_text', '!=', '')]))
             ->heading('Attempts & Submissions')
             ->description("Highest possible score: {$this->getOwnerRecord()->total_points} points")
             ->columns([
@@ -59,6 +74,11 @@ class AttemptsRelationManager extends RelationManager
                         default => 'gray',
                     }),
 
+                // Updates live while students work, so instructors can see who is stuck.
+                Tables\Columns\TextColumn::make('answered')
+                    ->label('Answered')
+                    ->state(fn (QuizAttempt $record) => $record->answered_count.' / '.($this->questionCount ??= $this->getOwnerRecord()->questions()->count())),
+
                 Tables\Columns\TextColumn::make('score')
                     ->label('Score')
                     ->sortable()
@@ -77,6 +97,53 @@ class AttemptsRelationManager extends RelationManager
                         'Failed' => 'danger',
                         default => 'gray',
                     }),
+
+                Tables\Columns\TextColumn::make('auto_check')
+                    ->label('Auto-check')
+                    ->visible(fn () => $this->getOwnerRecord()->questions()->where('type', 'code')->get()->contains(fn (QuizQuestion $question) => $question->autoChecks()))
+                    ->state(function (QuizAttempt $record) {
+                        $checks = $record->answers->pluck('auto_check')->filter();
+
+                        return $checks->isEmpty() ? 'Not checked' : $checks->sum('passed').' of '.$checks->sum('total').' tests';
+                    })
+                    ->badge()
+                    ->color(function (QuizAttempt $record) {
+                        $checks = $record->answers->pluck('auto_check')->filter();
+
+                        return match (true) {
+                            $checks->isEmpty() => 'gray',
+                            $checks->sum('passed') === $checks->sum('total') => 'success',
+                            $checks->sum('passed') === 0 => 'danger',
+                            default => 'warning',
+                        };
+                    }),
+
+                Tables\Columns\TextColumn::make('focus_leaves')
+                    ->label('Left page')
+                    ->visible(fn () => $this->getOwnerRecord()->type === 'exam')
+                    ->sortable()
+                    ->badge()
+                    ->color(fn (int $state) => $state === 0 ? 'gray' : ($state >= 3 ? 'danger' : 'warning'))
+                    ->formatStateUsing(fn (int $state) => $state === 0 ? 'Never' : ($state === 1 ? 'Once' : "{$state} times"))
+                    ->description(fn (QuizAttempt $record) => $record->focus_leaves ? 'Away '.CarbonInterval::seconds($record->focus_away_seconds)->cascade()->forHumans(short: true) : null)
+                    ->tooltip(fn (QuizAttempt $record) => collect($record->focus_log ?? [])
+                        ->map(fn (array $leave) => (($leave['kind'] ?? 'tab') === 'window' ? 'Other window ' : 'Left page ')
+                            .Carbon::parse($leave['left_at'])->timezone(config('app.timezone'))->format('g:i:s A').' to '
+                            .($leave['back_at'] ? Carbon::parse($leave['back_at'])->timezone(config('app.timezone'))->format('g:i:s A') : 'not back'))
+                        ->implode("\n") ?: null),
+
+                Tables\Columns\TextColumn::make('pastes')
+                    ->label('Pasted')
+                    ->visible(fn () => $this->getOwnerRecord()->type === 'exam')
+                    ->sortable()
+                    ->badge()
+                    ->color(fn (int $state) => $state === 0 ? 'gray' : 'danger')
+                    ->formatStateUsing(fn (int $state) => $state === 0 ? 'Never' : ($state === 1 ? 'Once' : "{$state} times"))
+                    ->description(fn (QuizAttempt $record) => $record->pastes ? number_format($record->pasted_chars).' characters' : null)
+                    ->tooltip(fn (QuizAttempt $record) => collect($record->paste_log ?? [])
+                        ->map(fn (array $paste) => Carbon::parse($paste['at'])->timezone(config('app.timezone'))->format('g:i:s A')
+                            .': '.number_format($paste['chars']).' characters, '.$paste['lines'].' '.str('line')->plural($paste['lines']))
+                        ->implode("\n") ?: null),
 
                 Tables\Columns\TextColumn::make('started_at')
                     ->dateTime()
@@ -108,11 +175,34 @@ class AttemptsRelationManager extends RelationManager
                     ->action(fn (QuizAttempt $record, array $data) => $this->saveGrades($record, $data)),
             ])
             ->headerActions([
-                ExportAction::make('exportResults')
-                    ->label('Export results')->exports([
-                        ExcelExport::make()
-                            ->fromTable()->withFilename('quiz-'.$this->getOwnerRecord()->id.'-results-'.now()->format('Y-m-d')),
-                    ]),
+                Tables\Actions\Action::make('autoCheck')
+                    ->label('Auto-check code')
+                    ->icon('heroicon-o-beaker')
+                    ->color('gray')
+                    ->visible(fn () => (auth()->user()?->can('update', $this->getOwnerRecord()) ?? false)
+                        && $this->getOwnerRecord()->questions()->where('type', 'code')->get()->contains(fn (QuizQuestion $question) => $question->autoChecks()))
+                    ->modalHeading('Check code answers automatically')
+                    ->modalDescription("Runs every submitted code answer and your reference solution on the question's test cases in this browser, then fills in the suggested score for answers you have not graded yet. Scores you set by hand are kept, and you can change any score with Grade.")
+                    ->modalContent(function () {
+                        $answers = $this->autoCheckedAnswers();
+
+                        return $this->checkerBlock(
+                            'bulk',
+                            $answers->pluck('question')->unique('id')->mapWithKeys(fn (QuizQuestion $question) => [$question->id => $question->checkConfig()])->all(),
+                            $answers->map(fn (QuizAnswer $answer) => [
+                                'id' => $answer->id,
+                                'questionId' => $answer->quiz_question_id,
+                                'label' => ($answer->attempt->user?->name ?? 'Student').' · '.str($answer->question->question_text)->limit(50),
+                            ])->all(),
+                        );
+                    })
+                    ->modalSubmitAction(false)
+                    ->modalCancelActionLabel('Close')
+                    ->modalWidth('3xl'),
+
+                Tables\Actions\Action::make('exportResults')->label('Export results CSV')->icon('heroicon-o-arrow-down-tray')
+                    ->action(fn () => app(BackgroundTasks::class)->enqueue(auth()->user(), filament()->getTenant(), 'assessment-export', 'Export assessment results',
+                        ['quiz_id' => $this->getOwnerRecord()->id, 'ids' => $this->getFilteredTableQuery()->pluck('quiz_attempts.id')->all()])),
             ])
             ->bulkActions([])
             ->defaultSort('started_at', 'desc');
@@ -190,8 +280,8 @@ class AttemptsRelationManager extends RelationManager
                     Forms\Components\Placeholder::make("database_{$answer->id}")
                         ->label('Student database (exported when submitted)')
                         ->content(fn () => match (true) {
-                            filled($answer->database_export) => $this->codeBlock([['name' => "{$answer->database_name}.sql", 'content' => $answer->database_export]], canRun: false),
-                            filled($answer->database_name) => 'Not exported: the student database server was not running at submission. Open the live database below.',
+                            $answer->hasVerifiedDatabaseSnapshot() => $this->codeBlock([['name' => "{$answer->database_name}.sql", 'content' => $answer->database_export]], canRun: false),
+                            filled($answer->database_name) => 'Snapshot '.($answer->database_snapshot_status ?? 'pending').': the workspace is retained and writes are closed. Retry the snapshot before final grading or cleanup. A live read-only view is not the submitted evidence.',
                             default => 'The student never opened their database.',
                         })
                         ->hintAction(
@@ -207,6 +297,15 @@ class AttemptsRelationManager extends RelationManager
                         ->label('Your Reference Solution')
                         ->content(fn () => $this->codeBlock($question->referenceFiles()))
                         ->visible($question->type === 'code' && $question->referenceFiles() !== []),
+
+                    Forms\Components\Placeholder::make("auto_check_{$answer->id}")
+                        ->label('Automatic check')
+                        ->content(fn () => $this->checkerBlock('single', [$question->id => $question->checkConfig()], [[
+                            'id' => $answer->id,
+                            'questionId' => $question->id,
+                            'files' => filled($answer->answer_text) ? $question->answerFiles($answer->answer_text) : null,
+                        ]], "mountedTableActionsData.0.awards.{$answer->id}.points"))
+                        ->visible($question->autoChecks()),
 
                     Forms\Components\TextInput::make("awards.{$answer->id}.points")
                         ->label('Points Awarded')
@@ -241,12 +340,111 @@ class AttemptsRelationManager extends RelationManager
         ));
     }
 
+    /**
+     * The in-browser checker (resources/js/components/code-checker.js).
+     *
+     * @param  array<int, array>  $questions  checkConfig() per question id
+     * @param  list<array{id: int, questionId: int, files?: ?array, label?: string}>  $answers
+     */
+    protected function checkerBlock(string $mode, array $questions, array $answers, ?string $pointsPath = null): HtmlString
+    {
+        return new HtmlString(view('components.code-checker', compact('mode', 'questions', 'answers', 'pointsPath'))->render());
+    }
+
+    /**
+     * Code answers of submitted attempts whose question is checked automatically.
+     *
+     * @return Collection<int, QuizAnswer>
+     */
+    protected function autoCheckedAnswers()
+    {
+        $questionIds = $this->getOwnerRecord()->questions()->where('type', 'code')->get()
+            ->filter(fn (QuizQuestion $question) => $question->autoChecks())
+            ->modelKeys();
+
+        return QuizAnswer::query()
+            ->whereIn('quiz_question_id', $questionIds ?: [0])
+            ->whereHas('attempt', fn ($query) => $query->where('quiz_id', $this->getOwnerRecord()->id)->where('status', '!=', 'in_progress'))
+            ->with(['question', 'attempt.user'])
+            ->orderBy('quiz_attempt_id')
+            ->get();
+    }
+
+    protected function checkedAnswer(int $answerId): QuizAnswer
+    {
+        abort_unless(auth()->user()?->can('update', $this->getOwnerRecord()), 403);
+        $answer = QuizAnswer::with(['question', 'attempt'])->findOrFail($answerId);
+        abort_unless($answer->attempt->quiz_id === $this->getOwnerRecord()->id && $answer->attempt->status !== 'in_progress' && $answer->question->autoChecks(), 403);
+
+        return $answer;
+    }
+
+    /**
+     * A submitted code answer's files for the checker, or null when the student left it empty.
+     */
+    #[Renderless]
+    public function codeCheckFiles(int $answerId): ?array
+    {
+        $answer = $this->checkedAnswer($answerId);
+
+        return filled($answer->answer_text) ? $answer->question->answerFiles($answer->answer_text) : null;
+    }
+
+    /**
+     * Store the checker's test case results and the score they suggest. With
+     * $apply, the suggested score becomes the answer's points unless the
+     * instructor has given it other points by hand.
+     *
+     * @param  list<array{label: string, passed: bool, expected: string, actual: string}>  $cases
+     * @return array{passed: int, total: int, suggested: float, applied: bool}
+     */
+    #[Renderless]
+    public function recordAutoCheck(int $answerId, array $cases, bool $apply = false): array
+    {
+        $answer = $this->checkedAnswer($answerId);
+        $cases = collect($cases)->take(QuizQuestion::MAX_CHECK_CASES)->map(fn ($case) => [
+            'label' => mb_substr((string) ($case['label'] ?? ''), 0, 80),
+            'passed' => (bool) ($case['passed'] ?? false),
+            'expected' => mb_substr((string) ($case['expected'] ?? ''), 0, 2_000),
+            'actual' => mb_substr((string) ($case['actual'] ?? ''), 0, 2_000),
+        ])->values();
+        $passed = $cases->where('passed', true)->count();
+        $total = max(1, $cases->count());
+        $suggested = round($answer->question->points * $passed / $total, 2);
+        $previous = $answer->auto_check['applied_points'] ?? null;
+        // Points the checker set earlier may be replaced; points set by hand are kept.
+        $applies = $apply && ($answer->points_awarded === null || ($previous !== null && (float) $answer->points_awarded === (float) $previous));
+
+        DB::transaction(function () use ($answer, $cases, $passed, $total, $suggested, $applies, $previous): void {
+            $answer->update([
+                'auto_check' => [
+                    'passed' => $passed,
+                    'total' => $total,
+                    'suggested' => $suggested,
+                    'cases' => $cases->all(),
+                    'checked_at' => now()->toIso8601String(),
+                    'applied_points' => $applies ? $suggested : $previous,
+                ],
+                ...($applies ? ['points_awarded' => $suggested, 'is_correct' => $suggested > 0] : []),
+            ]);
+            if ($applies) {
+                $answer->attempt->recalculateScore();
+            }
+        });
+
+        return ['passed' => $passed, 'total' => $total, 'suggested' => $suggested, 'applied' => $applies];
+    }
+
     protected function saveGrades(QuizAttempt $record, array $data): void
     {
         abort_unless(auth()->user()->can('update', $this->getOwnerRecord()) && $record->quiz_id === $this->getOwnerRecord()->id && $record->status !== 'in_progress', 403);
         DB::transaction(function () use ($record, $data): void {
+            SqliteWriter::reserve('quiz_attempts', $record->id);
             foreach ($data['awards'] ?? [] as $answerId => $award) {
                 $answer = $record->answers()->whereKey($answerId)->whereHas('question', fn ($q) => $q->whereIn('type', QuizQuestion::MANUALLY_GRADED_TYPES))->firstOrFail();
+                if ($answer->database_name && ! $answer->hasVerifiedDatabaseSnapshot()) {
+                    throw ValidationException::withMessages(['awards' => 'Recover and verify the student database snapshot before assigning a final grade. The live workspace is retained.']);
+                }
                 validator($award, ['points' => ['required', 'numeric', 'min:0', 'max:'.$answer->question->points]])->validate();
                 $answer->update([
                     'points_awarded' => $award['points'],
@@ -255,10 +453,7 @@ class AttemptsRelationManager extends RelationManager
                 ]);
             }
 
-            $record->update([
-                'score' => $record->answers()->sum('points_awarded'),
-                'status' => $record->hasUngradedAnswers() ? 'submitted' : 'graded',
-            ]);
+            $record->recalculateScore();
         });
 
         Notification::make()

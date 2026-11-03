@@ -3,6 +3,8 @@
 namespace App\Filament\Widgets;
 
 use App\Models\FormSubmission;
+use App\Services\AcademicPeriod;
+use App\Services\ReportService;
 use BezhanSalleh\FilamentShield\Traits\HasWidgetShield;
 use Filament\Facades\Filament;
 use Filament\Widgets\ChartWidget;
@@ -14,7 +16,7 @@ class EvaluationSubmissionsChart extends ChartWidget
 
     protected static ?string $heading = 'Evaluation Submissions';
 
-    protected static ?string $description = 'Submissions over the last 30 days';
+    protected static ?string $description = 'Current-instrument responses over 30 days in the selected semester';
 
     protected static ?int $sort = 3;
 
@@ -42,13 +44,15 @@ class EvaluationSubmissionsChart extends ChartWidget
 
         // One grouped query instead of 30 count() queries (one per day) — this
         // chart renders on every Dashboard visit, so the saving compounds.
-        $query = FormSubmission::query()
+        $ids = app(ReportService::class)->offerings(['campus_id' => $tenant?->id, 'semester_id' => $tenant ? AcademicPeriod::current($tenant) : null])->select('course_offerings.id');
+        $query = FormSubmission::query()->whereIn('course_offering_id', $ids)
+            ->whereHas('courseOffering', fn ($q) => $q->whereColumn('course_offerings.form_id', 'form_submissions.form_id'))
             ->where('submitted_at', '>=', $rangeStart)
             ->selectRaw('DATE(submitted_at) as day, COUNT(*) as total')
             ->groupBy('day');
 
         if ($tenant) {
-            $query->whereHas('form.campuses', fn ($q) => $q->where('campuses.id', $tenant->id));
+            $query->whereHas('courseOffering.semester.schoolYear', fn ($q) => $q->where('campus_id', $tenant->id));
         }
 
         // Instructors only see their own evaluations

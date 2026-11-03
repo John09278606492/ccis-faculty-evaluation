@@ -2,8 +2,10 @@
 
 namespace App\Policies;
 
+use App\Models\CourseOffering;
 use App\Models\Form;
 use App\Models\User;
+use App\Services\InstrumentCustomization;
 use Illuminate\Auth\Access\HandlesAuthorization;
 
 class FormPolicy
@@ -39,7 +41,7 @@ class FormPolicy
      */
     public function update(User $user, Form $form): bool
     {
-        return $user->can('update_form');
+        return $user->can('update_form') && InstrumentCustomization::allowed($user, $form);
     }
 
     /**
@@ -47,7 +49,7 @@ class FormPolicy
      */
     public function delete(User $user, Form $form): bool
     {
-        return $user->can('delete_form');
+        return $user->can('delete_form') && ! $form->isLocked() && ! CourseOffering::where('form_id', $form->id)->exists();
     }
 
     /**

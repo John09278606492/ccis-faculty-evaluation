@@ -1,0 +1,13 @@
+{
+  "domain": "faculty-evaluation.bisubalilihan.com",
+  "username": "u428200722",
+  "type": "php",
+  "plan": "Business Web Hosting",
+  "applicationDirectory": "evaluation-app",
+  "publicDirectory": "public_html",
+  "phpCli": "/opt/alt/php83/usr/bin/php",
+  "deployedRevision": "1c7d787",
+  "sourceBranch": "claude/project-thread-zjbov2",
+  "automaticGitDeploymentConfigured": false,
+  "lastPatch": "Grouped individual copies by instructor with scoped response counts and archived faculty names; four code files deployed and verified 2026-10-30. Prior report and section-assignment fixes also deployed."
+}

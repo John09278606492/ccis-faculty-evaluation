@@ -1,0 +1,109 @@
+/* Full-viewport login using the colors published by BISU Balilihan's website. */
+.bisu-login-layout { min-height: 100svh; padding: 0; background: #fff; color-scheme: light; }
+.bisu-login { --bisu-purple: #31146e; --bisu-gold: #ffcd04; --primary-50: 247, 244, 252; --primary-100: 239, 233, 250; --primary-200: 222, 210, 242; --primary-300: 196, 173, 227; --primary-400: 156, 123, 203; --primary-500: 112, 77, 165; --primary-600: 49, 20, 110; --primary-700: 41, 16, 92; --primary-800: 33, 13, 74; --primary-900: 27, 10, 60; display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(420px, .9fr); min-height: 100svh; width: 100%; color: #1e1e4b; background: #fff; }
+.bisu-login *, .bisu-login *::before, .bisu-login *::after { box-sizing: border-box; }
+.bisu-login svg { flex-shrink: 0; width: 20px; height: 20px; }
+.bisu-login a, .bisu-login button { -webkit-tap-highlight-color: transparent; }
+.bisu-login a:focus-visible, .bisu-login button:focus-visible { outline: 3px solid #9577c5; outline-offset: 4px; }
+.bisu-login .fi-link { color: var(--bisu-purple); }
+.bisu-login-campus { --campus-gutter: clamp(32px, 4.5vw, 88px); display: flex; flex-direction: column; position: relative; min-width: 0; padding: 32px var(--campus-gutter) 0; background: var(--bisu-purple); color: #fff; }
+.bisu-login-brand { display: flex; align-items: center; gap: 18px; }
+.bisu-login-seal { width: 64px; height: 64px; object-fit: contain; flex-shrink: 0; }
+.bisu-login-university { display: block; font-size: 19px; font-weight: 600; line-height: 1.4; letter-spacing: -.2px; }
+.bisu-login-campus-name { display: block; margin-top: 6px; color: var(--bisu-gold); font-size: 11px; font-weight: 500; letter-spacing: 2.2px; text-transform: uppercase; }
+.bisu-login-message { margin-top: 28px; padding-bottom: 28px; }
+.bisu-login-message h1 { margin: 0; font-size: clamp(30px, 2.7vw, 44px); font-weight: 600; line-height: 1.2; letter-spacing: -.9px; }
+.bisu-login-photo-wrap { display: flex; flex-direction: column; justify-content: flex-end; flex: 1; margin: 0 calc(-1 * var(--campus-gutter)); background: var(--bisu-purple); isolation: isolate; }
+
+.bisu-login-photo { display: block; flex-shrink: 0; width: 100%; max-width: 100%; height: auto; margin-top: auto; aspect-ratio: 2916 / 1386; object-fit: contain; object-position: center; mix-blend-mode: luminosity; opacity: .88; -webkit-mask-image: linear-gradient(to bottom, transparent, #000 22%, #000 68%, transparent); mask-image: linear-gradient(to bottom, transparent, #000 22%, #000 68%, transparent); }
+.bisu-login-location { display: flex; align-items: center; gap: 9px; padding: 20px var(--campus-gutter) 26px; color: #e1d8ef; font-size: 11px; line-height: 1.6; }
+.bisu-login-location svg { width: 15px; height: 15px; color: var(--bisu-gold); }
+.bisu-login-location-label { margin-left: auto; color: #c7b5e1; font-size: 10px; }
+.bisu-login-pane { display: flex; flex-direction: column; min-width: 0; padding: clamp(32px, 5vh, 56px) clamp(30px, 4.5vw, 88px) 26px; background: #fff; border-top: 4px solid var(--bisu-gold); }
+.bisu-login-content { width: 100%; max-width: 440px; margin: auto; padding: 26px 0 42px; }
+.bisu-login-product { display: flex; align-items: center; gap: 11px; color: var(--bisu-purple); font-size: 13px; font-weight: 600; }
+.bisu-login-product-icon { display: grid; width: 36px; height: 36px; place-items: center; color: var(--bisu-purple); background: #f3eff9; border-radius: 8px; }
+.bisu-login-product-icon svg { width: 21px; height: 21px; }
+.bisu-login-heading { margin-top: 32px; }
+.bisu-login-overline { margin: 0; color: #777381; font-size: 10px; font-weight: 600; letter-spacing: 1.7px; }
+.bisu-login-heading h2 { margin-top: 12px; color: #1e1e4b; font-size: clamp(28px, 2.2vw, 38px); font-weight: 600; letter-spacing: -1px; line-height: 1.25; }
+.bisu-login-heading > p:last-child { margin-top: 12px; color: #74707e; font-size: 14px; line-height: 1.7; }
+.bisu-login-access { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin: 30px 0 32px; border-bottom: 1px solid #e5e3e9; }
+.bisu-login-access-button { display: flex; justify-content: center; align-items: center; gap: 9px; min-height: 50px; padding: 12px 7px; border-bottom: 3px solid transparent; margin-bottom: -1px; background: transparent; color: #777381; font-size: 13px; font-weight: 500; cursor: pointer; }
+.bisu-login-access-button svg { width: 18px; height: 18px; }
+.bisu-login-access-button:hover:not(:disabled) { color: var(--bisu-purple); background: #faf8fd; }
+.bisu-login-access-button.is-active { border-bottom-color: var(--bisu-purple); color: var(--bisu-purple); font-weight: 600; cursor: default; }
+.bisu-login-evaluation { padding: 0; }
+.bisu-login-evaluation-heading { display: flex; align-items: flex-start; gap: 14px; }
+.bisu-login-evaluation-icon { display: grid; place-items: center; width: 42px; height: 42px; background: #f5f1fa; color: var(--bisu-purple); border-radius: 9px; flex-shrink: 0; }
+.bisu-login-evaluation-heading h3 { margin: 0; color: #28223d; font-size: 16px; font-weight: 600; line-height: 1.5; }
+.bisu-login-evaluation-heading p { margin-top: 5px; color: #7b7584; font-size: 13px; line-height: 1.8; }
+.bisu-login-primary { display: flex; justify-content: space-between; align-items: center; gap: 14px; min-height: 52px; margin-top: 26px; padding: 14px 20px; border-radius: 6px; background: var(--bisu-purple); color: #fff; font-size: 14px; font-weight: 600; text-decoration: none; transition: background .15s; }
+.bisu-login-primary:hover { background: #24104f; }
+.bisu-login-primary svg { width: 18px; height: 18px; }
+.bisu-login-id-note { display: flex; align-items: center; gap: 7px; margin-top: 14px; color: #79717f; font-size: 12px; line-height: 1.7; }
+.bisu-login-id-note svg { width: 14px; height: 14px; color: #746089; }
+.bisu-login-staff-note { margin: 0 0 24px; color: #74707e; font-size: 13px; line-height: 1.8; }
+.bisu-login-form { gap: 22px !important; }
+.bisu-login-form .fi-fo-field-wrp-label { color: #484151 !important; font-size: 13px; }
+.bisu-login-form .fi-input-wrp { border: 1px solid #dcd8e4; border-radius: 6px; background: #fff !important; box-shadow: none !important; }
+.bisu-login-form .fi-input-wrp:focus-within { border-color: #7959a9; outline: 3px solid #31146e12; }
+.bisu-login-form .fi-input { min-height: 48px; color: #352b40 !important; font-size: 16px; }
+.bisu-login-form .fi-input::placeholder { color: #a39aaf; }
+.bisu-login-form .fi-fo-field-wrp-helper-text { color: #81758d !important; font-size: 12px; }
+.bisu-login-form .fi-btn-color-primary { min-height: 50px; border-radius: 6px; background: var(--bisu-purple) !important; color: #fff !important; box-shadow: none; }
+.bisu-login-form .fi-btn-color-primary:hover { background: #24104f !important; }
+.bisu-login-form .fi-btn-label { font-size: 14px; font-weight: 600; }
+.bisu-login-form .fi-fo-checkbox label { color: #5f526e !important; font-size: 13px; }
+.bisu-login-other-access { color: #7a7288; font-size: 12px; }
+.bisu-login-other-access:empty { display: none; }
+.bisu-login-register { margin-top: 24px; text-align: center; font-size: 12px; }
+.bisu-login-help { display: flex; align-items: flex-start; gap: 8px; margin-top: 32px; padding-top: 22px; border-top: 1px solid #eae7ef; color: #817889; font-size: 12px; line-height: 1.8; }
+.bisu-login-help svg { width: 16px; height: 16px; margin-top: 2px; }
+.bisu-login-footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; width: 100%; max-width: 560px; align-self: center; margin-top: auto; padding-top: 16px; color: #89818f; font-size: 10px; line-height: 1.7; }
+.bisu-login-footer a { display: flex; align-items: center; gap: 5px; color: #6d5c81; }
+.bisu-login-footer svg { width: 12px; height: 12px; }
+.bisu-login.is-staff .bisu-login-content { padding-top: 0; padding-bottom: 24px; }
+.bisu-login.is-staff .bisu-login-heading { margin-top: 22px; }
+.bisu-login.is-staff .bisu-login-access { margin-top: 22px; margin-bottom: 22px; }
+.bisu-login.is-staff .bisu-login-staff-note { margin-bottom: 18px; }
+.bisu-login.is-staff .bisu-login-help { margin-top: 24px; padding-top: 16px; }
+.bisu-login.is-staff .bisu-login-register { margin-top: 16px; }
+@media (max-width: 1199px) and (min-width: 960px) { .bisu-login-location-label { display: none; } .bisu-login-campus { --campus-gutter: 36px; } .bisu-login-message h1 { font-size: 37px; } .bisu-login-pane { padding-left: 36px; padding-right: 36px; } }
+@media (min-width: 960px) and (max-height: 800px) { .bisu-login-message { margin-top: 34px; padding-bottom: 14px; } .bisu-login-message h1 { font-size: clamp(32px, 3vw, 48px); } .bisu-login-heading { margin-top: 24px; } .bisu-login-content { padding-top: 4px; padding-bottom: 24px; } }
+@media (max-width: 959px) {
+    .bisu-login { grid-template-columns: 1fr; }
+    .bisu-login-campus { --campus-gutter: 30px; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: auto auto; padding: 26px var(--campus-gutter) 0; column-gap: 24px; }
+    .bisu-login-brand { align-self: center; gap: 12px; }
+    .bisu-login-seal { width: 56px; height: 56px; }
+    .bisu-login-university { font-size: 14px; }
+    .bisu-login-campus-name { font-size: 9px; letter-spacing: 1.6px; }
+    .bisu-login-message { align-self: center; margin: 0; padding: 0; }
+    .bisu-login-message h1 { font-size: 26px; line-height: 1.25; letter-spacing: -.6px; }
+    .bisu-login-photo-wrap { grid-column: 1 / -1; margin-top: 26px; }
+    .bisu-login-pane { padding: 36px 30px 24px; border-top-width: 3px; }
+    .bisu-login-content { max-width: 480px; padding: 10px 0 36px; }
+    .bisu-login-heading { margin-top: 26px; }
+    .bisu-login-heading h2 { font-size: 30px; }
+    .bisu-login-footer { max-width: 480px; }
+}
+@media (max-width: 540px) {
+    .bisu-login-campus { --campus-gutter: 24px; display: flex; padding: 24px 24px 0; }
+    .bisu-login-brand { align-self: flex-start; gap: 12px; }
+    .bisu-login-message { align-self: stretch; margin-top: 24px; padding-bottom: 24px; }
+    .bisu-login-message h1 { font-size: 27px; line-height: 1.22; }
+    .bisu-login-photo-wrap { margin-top: 0; }
+    .bisu-login-location { font-size: 10px; padding-block: 12px; }
+    .bisu-login-pane { padding: 32px 24px 22px; }
+    .bisu-login-content { padding: 0 0 30px; }
+    .bisu-login-heading { margin-top: 25px; }
+    .bisu-login-heading h2 { font-size: 28px; }
+    .bisu-login-access { margin: 24px 0 28px; }
+    .bisu-login-access-button { gap: 7px; font-size: 12px; }
+    .bisu-login-evaluation-heading { gap: 11px; }
+    .bisu-login-evaluation-heading h3 { font-size: 15px; }
+    .bisu-login-evaluation-heading p { font-size: 12px; }
+    .bisu-login-location-label { display: none; }
+    .bisu-login-footer { font-size: 10px; }
+}
+@media (prefers-reduced-motion: reduce) { .bisu-login * { transition: none !important; } }

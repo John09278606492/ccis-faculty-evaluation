@@ -42,6 +42,6 @@ class StudentDatabaseController extends Controller
             abort(503, 'Your database could not be opened. Try again in a moment, or ask your instructor to check the student database server.');
         }
 
-        return redirect()->away($server->signOnUrl($workspace['user'], $workspace['password'], $workspace['database']));
+        return redirect()->away($server->signOnUrl($workspace['user'], $workspace['password'], $workspace['database'], ['read_only' => $managesQuiz, 'expires' => ! $managesQuiz && $attempt->expires_at ? $attempt->expires_at->timestamp : PHP_INT_MAX]));
     }
 }

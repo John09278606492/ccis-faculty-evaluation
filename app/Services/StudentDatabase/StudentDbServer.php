@@ -21,6 +21,12 @@ use Symfony\Component\Process\Process;
  */
 class StudentDbServer
 {
+    /**
+     * How long a phpMyAdmin sign-on link stays usable, in seconds. Long enough
+     * for a student to open it, look around and reload the page.
+     */
+    public const SIGN_ON_LIFETIME = 300;
+
     public function path(string $relative = ''): string
     {
         $base = rtrim(config('classroom.student_db.path'), '\\/');
@@ -168,7 +174,14 @@ class StudentDbServer
         if ($this->isRunning()) {
             throw new RuntimeException("Port {$this->port()} is already in use. Is the student database server already running?");
         }
+        // Empty runtime folders can disappear when a backup is moved to a new
+        // laptop. MySQL refuses to start if secure_file_priv points at one.
+        foreach (['logs', 'tmp', 'tokens', 'sessions', 'no-files', 'web/phpmyadmin/tmp'] as $folder) {
+            File::ensureDirectoryExists($this->path($folder));
+        }
         $this->writeMyIni($this->mysqlBin());
+        $this->writeSignOn();
+        File::ensureDirectoryExists($this->path('tokens'));
         $processes = [$this->process([$this->mysqlBin().DIRECTORY_SEPARATOR.$this->exe('mysqld'), '--defaults-file='.$this->path('my.ini')])];
         if ($phpMyAdminPort) {
             $processes[] = $this->process([PHP_BINARY, ...$this->phpMyAdminServerArguments($phpMyAdminPort)]);
@@ -197,9 +210,12 @@ class StudentDbServer
     public function phpMyAdminServerArguments(int $port): array
     {
         return [
-            '-d', 'session.save_path='.$this->path('sessions'),
-            '-d', 'upload_max_filesize=64M',
-            '-d', 'post_max_size=64M',
+            // "-d" and its value travel as one argument: a separate value is cut
+            // short at the apostrophe in a project folder like "Val's PC", and
+            // the session files then land in a folder that does not exist.
+            '-d session.save_path="'.$this->path('sessions').'"',
+            '-d upload_max_filesize=64M',
+            '-d post_max_size=64M',
             '-S', "127.0.0.1:{$port}",
             '-t', $this->path('web'),
         ];
@@ -211,14 +227,26 @@ class StudentDbServer
             return false;
         }
         $this->connect()->exec('SHUTDOWN');
+        $pidFile = $this->path('mysqld.pid');
+        for ($attempt = 0; $attempt < 120; $attempt++) {
+            clearstatcache(true, $pidFile);
+            if (! is_file($pidFile) && ! $this->isRunning()) {
+                return true;
+            }
+            usleep(250_000);
+        }
 
-        return true;
+        throw new RuntimeException('Student MySQL is still flushing its data. Wait before closing or backing up the classroom.');
     }
 
     /**
-     * Issue a one-time phpMyAdmin sign-on link, valid for one minute.
+     * Issue a phpMyAdmin sign-on link.
+     *
+     * The link stays usable for a few minutes so a student who reloads the page
+     * or opens it in a second tab still gets in; the app deletes expired tokens
+     * as it issues new ones.
      */
-    public function signOnUrl(string $user, string $password, string $database): string
+    public function signOnUrl(string $user, string $password, string $database, array $context = []): string
     {
         $tokens = $this->path('tokens');
         File::ensureDirectoryExists($tokens);
@@ -232,10 +260,30 @@ class StudentDbServer
             'user' => $user,
             'password' => $password,
             'database' => $database,
-            'expires' => time() + 60,
+            'expires' => min(time() + self::SIGN_ON_LIFETIME, $context['expires'] ?? PHP_INT_MAX),
+            'read_only' => $context['read_only'] ?? false,
         ]));
 
         return rtrim(config('classroom.student_db.phpmyadmin_url'), '/')."/signon.php?token={$token}";
+    }
+
+    public function isWorkspaceClosed(string $database): bool
+    {
+        return preg_match('/^stu\d+_[A-Za-z0-9_]+$/', $database) === 1 && is_file($this->path('closed/'.$database.'.json'));
+    }
+
+    /** Tokens cannot reopen a workspace after the attempt has closed. */
+    public function closeWorkspace(string $database): void
+    {
+        abort_unless(preg_match('/^stu\d+_[A-Za-z0-9_]+$/', $database), 422);
+        File::ensureDirectoryExists($this->path('closed'));
+        file_put_contents($this->path('closed/'.$database.'.json'), json_encode(['closed_at' => now()->toIso8601String()]));
+        foreach (glob($this->path('tokens/*.json')) ?: [] as $file) {
+            $token = json_decode((string) @file_get_contents($file), true);
+            if (($token['database'] ?? null) === $database && ! ($token['read_only'] ?? false)) {
+                @unlink($file);
+            }
+        }
     }
 
     protected function writeMyIni(string $bin): void
@@ -266,7 +314,7 @@ class StudentDbServer
             return;
         }
         if (! $fresh) {
-            throw new RuntimeException('The student MySQL data exists but its root password is missing from secrets.json. Delete '.$this->path('data').' to start over.');
+            throw new RuntimeException('The student MySQL data exists but secrets.json is missing. Preserve the data and restore the original recovery bundle and APP_KEY before continuing.');
         }
         $startedHere = ! $this->isRunning();
         $server = $this->process([$this->mysqlBin().DIRECTORY_SEPARATOR.$this->exe('mysqld'), '--defaults-file='.$this->path('my.ini')]);
@@ -308,6 +356,24 @@ class StudentDbServer
         throw new RuntimeException('MySQL did not start within 30 seconds.');
     }
 
+    /**
+     * The sign-on page that turns the app's links into phpMyAdmin sessions, and
+     * the page shown when a session is gone. Both are rewritten on every start,
+     * so a copy left by an older version cannot reject every link as expired.
+     */
+    protected function writeSignOn(): void
+    {
+        // Rebuild configuration too: a restored laptop or a changed classroom
+        // port must not leave phpMyAdmin pointing at the previous MySQL port.
+        File::ensureDirectoryExists($this->path('web/phpmyadmin/tmp'));
+        file_put_contents($this->path('web/phpmyadmin/config.inc.php'), strtr(file_get_contents(resource_path('student-db/config.inc.php.stub')), [
+            '{{blowfish_secret}}' => bin2hex(random_bytes(16)),
+            '{{port}}' => (string) $this->port(),
+        ]));
+        File::copy(resource_path('student-db/signon.php.stub'), $this->path('web/phpmyadmin/signon.php'));
+        File::copy(resource_path('student-db/signed-out.html'), $this->path('web/phpmyadmin/signed-out.html'));
+    }
+
     protected function installPhpMyAdmin(string $source): void
     {
         $target = $this->path('web/phpmyadmin');
@@ -325,13 +391,7 @@ class StudentDbServer
         File::ensureDirectoryExists("{$target}/tmp");
 
         $stubs = resource_path('student-db');
-        file_put_contents("{$target}/config.inc.php", strtr(file_get_contents("{$stubs}/config.inc.php.stub"), [
-            '{{blowfish_secret}}' => bin2hex(random_bytes(16)),
-            '{{port}}' => (string) $this->port(),
-        ]));
-        file_put_contents("{$target}/signon.php", strtr(file_get_contents("{$stubs}/signon.php.stub"), [
-            '{{tokens_path}}' => var_export($this->path('tokens'), true),
-        ]));
+        $this->writeSignOn();
         File::copy("{$stubs}/signed-out.html", "{$target}/signed-out.html");
     }
 

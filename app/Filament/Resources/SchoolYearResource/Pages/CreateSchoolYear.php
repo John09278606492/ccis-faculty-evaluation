@@ -2,8 +2,8 @@
 
 namespace App\Filament\Resources\SchoolYearResource\Pages;
 
+use App\Filament\Pages\DraftCreateRecord as CreateRecord;
 use App\Filament\Resources\SchoolYearResource;
-use Filament\Resources\Pages\CreateRecord;
 
 class CreateSchoolYear extends CreateRecord
 {

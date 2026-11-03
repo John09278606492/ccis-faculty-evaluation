@@ -5,6 +5,10 @@ namespace App\Filament\Resources\QuizResource\RelationManagers;
 use App\Models\Quiz;
 use App\Models\QuizAttempt;
 use App\Models\User;
+use App\Services\BackgroundTasks;
+use App\Services\StudentPins;
+use App\Services\StudentSignIns;
+use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
@@ -13,14 +17,22 @@ use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 
 class StudentsRelationManager extends RelationManager
 {
     protected static string $relationship = 'students';
 
-    protected static ?string $title = 'Students';
+    protected static ?string $title = 'Students & sign-in';
 
     protected static ?string $recordTitleAttribute = 'name';
+
+    public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
+    {
+        return $ownerRecord instanceof Quiz && ! auth()->user()?->is_student
+            && (auth()->user()?->can('update', $ownerRecord) ?? false);
+    }
 
     /**
      * Latest attempt per user_id for this quiz, loaded once per page render
@@ -41,9 +53,14 @@ class StudentsRelationManager extends RelationManager
         $this->getQuiz()->loadMissing('assignedStudents');
 
         return $table
-            ->heading('Students & Eligibility')
-            ->description('Control who this assessment is assigned to, and see who has not attempted it yet.')
+            ->poll('10s')
+            ->heading('Students, assignment & sign-in')
+            ->description('1. Assign students. 2. Ask them to enter their ID on the login page. 3. Approve one or select several to sign them in. PINs are an alternative. Approval does not start their attempt or change the schedule.')
             ->columns([
+                Tables\Columns\TextColumn::make('waiting_sign_ins')->label('Waiting sign-ins')
+                    ->state(fn (User $record) => StudentSignIns::pendingCount($record->id))->badge()->color('warning'),
+                Tables\Columns\IconColumn::make('pin_issued_at')->label('PIN issued')->boolean()
+                    ->getStateUsing(fn (User $record) => filled($record->pin_issued_at)),
                 Tables\Columns\TextColumn::make('student_id')
                     ->label('Student ID')
                     ->searchable(),
@@ -77,6 +94,9 @@ class StudentsRelationManager extends RelationManager
                     }),
             ])
             ->filters([
+                Tables\Filters\Filter::make('waiting_sign_in')->label('Waiting for sign-in approval')->toggle()
+                    ->query(fn (Builder $query) => $query->whereIn('users.id', DB::table('student_sign_in_requests')->select('user_id')
+                        ->whereNull('approved_at')->whereNull('consumed_at')->where('expires_at', '>', now()))),
                 Tables\Filters\Filter::make('not_attempted')
                     ->label('Has not attempted yet')
                     ->query(fn (Builder $query) => $query->whereDoesntHave('quizAttempts', fn ($q) => $q->where('quiz_id', $this->getQuiz()->id)))
@@ -109,9 +129,55 @@ class StudentsRelationManager extends RelationManager
                         Notification::make()->title('Assigned to all students')->success()->send();
                     }),
             ])
-            ->actions([])
+            ->actions([
+                Tables\Actions\Action::make('approveSignIn')->label('Approve sign-in')->icon('heroicon-o-check-circle')
+                    ->visible(fn (User $record) => $record->is_student && $this->getQuiz()->isAssignedTo($record->id) && auth()->user()->can('update', $this->getQuiz()))
+                    ->requiresConfirmation()
+                    ->modalDescription('Compare the code shown on the student’s device, then approve only that waiting browser. They still click Start when available.')
+                    ->form([
+                        Forms\Components\Select::make('request_ids')->label('Waiting browser verification code')->multiple()->required()
+                            ->options(fn (User $record) => StudentSignIns::requestOptions(collect([$record])))
+                            ->default(fn (User $record) => StudentSignIns::unambiguousRequests(collect([$record]))),
+                    ])
+                    ->action(function (User $record, array $data) {
+                        $count = StudentSignIns::approve(collect([$record]), assessment: $this->getQuiz(), requestIds: $data['request_ids']);
+                        Notification::make()->title("{$count} waiting sign-in request(s) approved")->success()->send();
+                    }),
+                Tables\Actions\Action::make('newPin')->label('Reset account PIN')->icon('heroicon-o-key')->color('gray')
+                    ->visible(fn (User $record) => $record->is_student && auth()->user()->can('update', $this->getQuiz()))
+                    ->requiresConfirmation()->modalDescription('Replace this student’s account PIN? Their previous PIN will stop working across all classes.')
+                    ->action(function (User $record) {
+                        abort_unless(auth()->user()->can('update', $this->getQuiz()), 403);
+                        $pin = StudentPins::issue(collect([$record]))->first()['pin'];
+                        Notification::make()->title("New PIN: {$pin}")->body('Share it privately with this student. It will not be shown again.')->success()->persistent()->send();
+                    }),
+            ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\BulkAction::make('approveSignIns')->label('Approve selected sign-ins')->icon('heroicon-o-check-circle')
+                        ->visible(fn () => auth()->user()->can('update', $this->getQuiz()))
+                        ->requiresConfirmation()->deselectRecordsAfterCompletion()
+                        ->modalDescription('Match browser verification codes with the students. Only selected requests are approved; other browsers remain waiting.')
+                        ->form([
+                            Forms\Components\CheckboxList::make('request_ids')->label('Verified waiting browsers')->required()
+                                ->options(fn (Collection $records) => StudentSignIns::requestOptions($records->filter(fn ($student) => $this->getQuiz()->isAssignedTo($student->id))))
+                                ->default(fn (Collection $records) => StudentSignIns::unambiguousRequests($records->filter(fn ($student) => $this->getQuiz()->isAssignedTo($student->id)))),
+                        ])
+                        ->action(function (Collection $records, array $data) {
+                            abort_unless(auth()->user()->can('update', $this->getQuiz()), 403);
+                            $eligible = $records->filter(fn (User $student) => $student->is_student && $this->getQuiz()->isAssignedTo($student->id));
+                            $count = StudentSignIns::approve($eligible, assessment: $this->getQuiz(), requestIds: $data['request_ids']);
+                            Notification::make()->title("{$count} waiting sign-in request(s) approved")
+                                ->body(($records->count() - $eligible->count()).' unassigned or non-student account(s) skipped.')->success()->send();
+                        }),
+                    Tables\Actions\BulkAction::make('issueMissingPins')->label('Generate missing PINs for selected')->icon('heroicon-o-key')
+                        ->visible(fn () => auth()->user()->can('update', $this->getQuiz()))
+                        ->requiresConfirmation()->deselectRecordsAfterCompletion()
+                        ->modalDescription('Generate and download account PINs only for selected students without one. Existing PINs are preserved.')
+                        ->action(function (Collection $records) {
+                            abort_unless(auth()->user()->can('update', $this->getQuiz()), 403);
+                            app(BackgroundTasks::class)->enqueue(auth()->user(), filament()->getTenant(), 'assessment-pins', 'Generate selected missing PINs', ['quiz_id' => $this->getQuiz()->id, 'ids' => $records->pluck('id')->all()]);
+                        }),
                     Tables\Actions\BulkAction::make('assign')
                         ->label('Assign Selected')
                         ->icon('heroicon-o-check-circle')

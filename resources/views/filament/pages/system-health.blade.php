@@ -1,0 +1,5 @@
+<x-filament-panels::page data-live-panel wire:poll.30s>
+    <p class="text-sm text-gray-600">Platform administrator view. These checks do not change services or overwrite data.</p>
+    <div class="grid gap-4 md:grid-cols-2">@foreach($this->checks() as $check)<x-filament::section><h3 class="font-semibold">{{ $check['label'] }}</h3><p class="my-2 text-lg">{{ $check['state'] }}</p><p class="text-sm text-gray-500">{{ $check['detail'] }}</p></x-filament::section>@endforeach</div>
+    <x-filament::section><x-slot name="heading">Recovery order</x-slot><ol class="list-decimal space-y-2 ps-5"><li>Verify and stage the backup with the recovery command.</li><li>Recover the original application key using the separately held recovery passphrase.</li><li>Restore the database and uploaded files into an empty target environment.</li><li>Restore SQL workspaces, verify the manifest, then test staff login, response copies and one assessment.</li></ol><p class="mt-3 text-sm text-gray-500">A staging/inspection command never overwrites the running campus database. Follow the recovery guide in the project documentation.</p></x-filament::section>
+</x-filament-panels::page>

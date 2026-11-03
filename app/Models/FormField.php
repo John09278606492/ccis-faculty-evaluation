@@ -10,6 +10,24 @@ class FormField extends Model
 {
     use HasFactory;
 
+    protected static function booted(): void
+    {
+        static::saving(function (self $field) {
+            if ($field->exists && $field->isDirty('form_id')) {
+                Form::findOrFail($field->getRawOriginal('form_id'))->assertEditable();
+            }
+            if (! $field->exists || $field->isDirty()) {
+                $field->form()->firstOrFail()->assertEditable();
+            }
+        });
+        static::deleting(fn (self $field) => $field->form()->firstOrFail()->assertEditable());
+    }
+
+    public function getQuestionTextAttribute(): string
+    {
+        return preg_replace('/^\s*\d+[.)]\s+/u', '', $this->label);
+    }
+
     protected $fillable = [
         'form_id',
         'section', // Group fields into sections (e.g., "A. Commitment")

@@ -3,20 +3,21 @@
 namespace App\Filament\Imports;
 
 use App\Models\Department;
-use App\Models\Role;
 use App\Models\User;
+use App\Services\AssignedDataAccess;
+use App\Services\ScopedAccountImport;
+use App\Services\UserAccessAdministration;
 use Filament\Actions\Imports\ImportColumn;
 use Filament\Actions\Imports\Importer;
 use Filament\Actions\Imports\Models\Import;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\HtmlString;
 use Illuminate\Validation\ValidationException;
 
 class InstructorImporter extends Importer
 {
+    use QueuesBulkFiles;
+
     protected static ?string $model = User::class;
 
     /**
@@ -55,9 +56,9 @@ class InstructorImporter extends Importer
                 ->guess(['email', 'email_address', 'e-mail'])
                 ->example('maria.garcia@school.edu'),
             ImportColumn::make('employee_id')
-                ->label('Employee ID (Must map to "employee_id" column)')
+                ->label('Employee ID')
                 ->requiredMapping()
-                ->rules(['required', 'integer'])
+                ->rules(['required', 'max:50'])
                 ->guess(['employee_id', 'employeeid', 'employee id', 'emp_id', 'empid', 'staff_id', 'staffid'])
                 ->example('1001'),
             ImportColumn::make('position')
@@ -75,44 +76,27 @@ class InstructorImporter extends Importer
     public static function getOptionsFormComponents(): array
     {
         return [
-            Placeholder::make('file_notice')
-                ->label('📋 Required Excel Columns')
-                ->content(fn () => new HtmlString(
-                    '<div class="text-sm space-y-1">
-                        <p class="font-bold text-danger-600">⚠️ Your Excel file MUST have these EXACT column headers:</p>
-                        <ul class="list-disc list-inside text-gray-600">
-                            <li><strong>first_name</strong></li>
-                            <li>middle_name (optional)</li>
-                            <li><strong>last_name</strong></li>
-                            <li><strong>email</strong></li>
-                            <li><strong>employee_id</strong> ← REQUIRED FOR INSTRUCTOR IMPORT</li>
-                            <li>position (optional)</li>
-                            <li>phone (optional)</li>
-                        </ul>
-                        <p class="text-danger-600 font-semibold mt-2">❌ If your file has "student_id" instead of "employee_id", you MUST use STUDENT import!</p>
-                    </div>'
-                ))
+            Placeholder::make('file_notice')->hiddenLabel()
+                ->content('CSV required: first_name, last_name, email and employee_id. Other columns are optional. Save Excel files as CSV before uploading.')
                 ->columnSpanFull(),
             Select::make('department_id')
                 ->label('Department')
                 ->options(function () {
-                    $campusId = filament()->getTenant()?->id;
-
-                    return Department::where('campus_id', $campusId)
+                    return app(AssignedDataAccess::class)->apply(Department::query(), auth()->user(), filament()->getTenant())
                         ->where('is_active', true)
                         ->pluck('name', 'id');
                 })
                 ->required()
                 ->searchable()
-                ->helperText('All imported instructors will be assigned to this department'),
+                ->helperText('Applies to every row in this file.'),
             Select::make('role_ids')
-                ->label('Assign Roles')
+                ->visible(fn () => auth()->user()?->isSuperAdmin() || auth()->user()?->can('assign_user_roles'))
+                ->label('Roles')
                 ->multiple()
-                ->required()
                 ->options(function () {
                     return static::getAvailableRoles();
                 })
-                ->helperText('Select roles to assign to all imported instructors'),
+                ->helperText('Leave empty for the Instructor role.'),
         ];
     }
 
@@ -122,21 +106,10 @@ class InstructorImporter extends Importer
      */
     protected static function getAvailableRoles(): array
     {
-        $user = auth()->user();
-        $campusId = filament()->getTenant()?->id;
+        $actor = auth()->user();
+        $campus = filament()->getTenant();
 
-        // Super admin can assign all roles except super_admin itself
-        if ($user && $user->hasRole('super_admin')) {
-            return Role::where('name', '!=', 'super_admin')
-                ->pluck('name', 'id')
-                ->toArray();
-        }
-
-        // Non-super admin can only assign campus-specific roles
-        return Role::where('team_id', $campusId)
-            ->where('name', '!=', 'super_admin')
-            ->pluck('name', 'id')
-            ->toArray();
+        return $actor && $campus ? app(UserAccessAdministration::class)->grantableRoles($actor, $campus)->where('name', '!=', 'student')->pluck('name', 'id')->all() : [];
     }
 
     /**
@@ -174,74 +147,27 @@ class InstructorImporter extends Importer
         return $rules;
     }
 
+    protected function beforeValidate(): void
+    {
+        $mapped = $this->columnMap['employee_id'] ?? null;
+        if ($mapped && ! in_array(strtolower(trim($mapped)), static::$validEmployeeIdColumns, true)) {
+            throw ValidationException::withMessages(['employee_id' => 'Map Employee ID to an employee_id or staff_id column. Student ID files belong in Students.']);
+        }
+    }
+
     public function resolveRecord(): ?User
     {
-        $email = $this->data['email'] ?? null;
-        $employeeId = $this->data['employee_id'] ?? null;
-
-        // Check if employee_id already exists for a DIFFERENT user
-        $existingEmployeeId = User::where('employee_id', $employeeId)
-            ->whereNotNull('employee_id')
-            ->first();
-
-        if ($existingEmployeeId) {
-            if ($existingEmployeeId->email === $email) {
-                return $existingEmployeeId;
-            }
-            // Throw validation exception for duplicate
-            throw ValidationException::withMessages([
-                'employee_id' => "Employee ID {$employeeId} is already assigned to {$existingEmployeeId->email}.",
-            ]);
-        }
-
-        // Check if email already exists
-        $existingEmail = User::where('email', $email)->first();
-
-        if ($existingEmail) {
-            if ($existingEmail->is_student) {
-                throw ValidationException::withMessages([
-                    'email' => "Email {$email} is already registered as a student.",
-                ]);
-            }
-
-            return $existingEmail;
-        }
-
-        return new User;
+        return app(ScopedAccountImport::class)->resolve($this->import->user, $this->options, 'instructor', $this->data);
     }
 
     protected function beforeSave(): void
     {
-        $departmentId = $this->options['department_id'] ?? null;
-
-        if (! $this->record->password) {
-            $this->record->password = Hash::make('password123');
-        }
-
-        $this->record->is_instructor = true;
-        $this->record->is_student = false;
-        $this->record->instructor_department_id = $departmentId;
-        $this->record->student_id = null;
+        app(ScopedAccountImport::class)->prepare($this->import->user, $this->record, $this->options, 'instructor');
     }
 
     protected function afterSave(): void
     {
-        // Use campus_id from options (passed from ListUsers to work in queue jobs)
-        $campusId = $this->options['campus_id'] ?? null;
-        $roleIds = $this->options['role_ids'] ?? [];
-
-        DB::transaction(function () use ($campusId, $roleIds) {
-            // Attach to campus
-            if ($campusId && ! $this->record->campuses()->where('campus_id', $campusId)->exists()) {
-                $this->record->campuses()->attach($campusId);
-            }
-
-            // Assign roles if selected
-            if (! empty($roleIds)) {
-                $roles = Role::whereIn('id', $roleIds)->pluck('name')->toArray();
-                $this->record->syncRoles($roles);
-            }
-        });
+        app(ScopedAccountImport::class)->finish($this->import->user, $this->record, $this->options, 'instructor');
     }
 
     public static function getCompletedNotificationBody(Import $import): string

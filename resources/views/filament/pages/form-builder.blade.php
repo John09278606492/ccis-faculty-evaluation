@@ -1,4 +1,5 @@
 <x-filament-panels::page>
+    @include('filament.partials.workspace-draft')
     <div x-data="{
             draggedType: null,
             draggedFieldId: null,
@@ -174,8 +175,18 @@
         {{-- ═══════ LEFT SIDEBAR — FIELD PALETTE ═══════ --}}
         <div class="fb-sidebar">
             <div class="fb-sidebar-header">
-                <h3>Fields</h3>
-                <p>Drag a field to the canvas</p>
+                <h3>Form Outline</h3>
+                <p>1. Add criteria groups · 2. Add questions · 3. Preview</p>
+            </div>
+
+            <div class="fb-category fb-section-outline">
+                <button type="button" class="fb-btn fb-btn-primary fb-btn-full" wire:click="addField('section_header')">+ Add Criteria Group</button>
+                @foreach($this->getSections() as $section)
+                <button type="button" class="fb-outline-item {{ $selectedFieldId === $section['id'] ? 'fb-outline-active' : '' }}" wire:click="selectField({{ $section['id'] }})" x-on:click="document.querySelector('[data-field-id=\'{{ $section['id'] }}\']')?.scrollIntoView({block:'center',behavior:'smooth'})">
+                    <strong>{{ $section['label'] }}</strong><span>{{ $section['count'] }} {{ Str::plural('question', $section['count']) }}</span>
+                </button>
+                @endforeach
+                @if(empty($this->getSections()))<p class="fb-prop-help" style="margin-top:12px">Sections group related questions, like “Teaching” or “Commitment”. Start with Add Criteria Group, then give it a name.</p>@endif
             </div>
 
             @if($hasCustomScale)
@@ -187,13 +198,14 @@
             @endif
 
             @foreach($this->getFilteredFieldCategories() as $category => $types)
+                @continue($category === 'Structure')
                 <div class="fb-category">
                     <h4 class="fb-category-title">{{ $category }}</h4>
                     <div class="fb-palette-grid">
                         @foreach($types as $typeKey => $typeInfo)
                             <div class="fb-palette-item" draggable="true"
                                 x-on:dragstart="startDragFromPalette($event, '{{ $typeKey }}')" x-on:dragend="onDragEnd($event)"
-                                wire:click="addField('{{ $typeKey }}')" title="Click or drag to add">
+                                wire:click="addSelectedQuestion('{{ $typeKey }}')" title="Click to add to the selected section, or drag to choose a position">
                                 <span class="fb-palette-icon">{{ $typeInfo['icon'] }}</span>
                                 <span class="fb-palette-label">{{ $typeInfo['label'] }}</span>
                             </div>
@@ -209,7 +221,7 @@
                 <div class="fb-canvas-title">
                     <h2>{{ $formRecord->name }}</h2>
                     @php $fieldCount = collect($fields)->where('type', '!=', 'section_header')->count(); @endphp
-                    <span class="fb-field-count">{{ $fieldCount }} {{ Str::plural('field', $fieldCount) }}</span>
+                    <span class="fb-field-count">{{ count($this->getSections()) }} sections · {{ $fieldCount }} questions</span>
                 </div>
                 <div class="fb-canvas-actions">
                     <a href="{{ \App\Filament\Resources\FormResource::getUrl('index') }}" class="fb-btn fb-btn-outline">
@@ -219,7 +231,7 @@
                         </svg>
                         Back
                     </a>
-                    <a href="{{ route('form.preview', $formRecord) }}" target="_blank" class="fb-btn fb-btn-outline">
+                    <button type="button" wire:click="mountAction('preview')" class="fb-btn fb-btn-outline">
                         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24"
                             stroke="currentColor" stroke-width="2">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -227,7 +239,7 @@
                                 d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                         </svg>
                         Preview
-                    </a>
+                    </button>
                     <a href="{{ \App\Filament\Resources\FormResource::getUrl('edit', ['record' => $formRecord]) }}"
                         class="fb-btn fb-btn-outline">
                         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24"
@@ -248,6 +260,7 @@
                 </div>
             </div>
 
+            <p class="fb-builder-hint">Click a section name to rename it. Use <strong>+ Add Question</strong> inside a section. To move a question, select it and choose its section on the right. Click <strong>Save Changes</strong> after editing.</p>
             <div class="fb-canvas" x-ref="canvas"
                 x-on:dragover.prevent="onDragOverCanvas($event)"
                 x-on:dragleave="onDragLeave($event)"
@@ -271,23 +284,25 @@
                     @if($field['type'] === 'section_header')
                         {{-- Section divider card --}}
                         <div class="fb-section-divider {{ $selectedFieldId === $field['id'] ? 'fb-section-divider-selected' : '' }}"
-                            data-field-id="{{ $field['id'] }}" draggable="true"
-                            x-on:dragstart="startDragField($event, {{ $field['id'] }})"
+                            data-field-id="{{ $field['id'] }}"
                             x-on:dragover.prevent.stop="onDragOver($event, {{ $index }})"
                             x-on:drop.stop="onDropField($event, {{ $index }})" x-on:dragend="onDragEnd($event)"
                             x-on:click="$wire.call('selectField', {{ $field['id'] }})" x-bind:class="{
                                 'fb-drop-above': dragOverIndex === {{ $index }} && (isDraggingFromPalette || draggedFieldId)
                             }">
-                            <div class="fb-field-drag-handle" title="Drag to reorder">
+                            <div class="fb-field-drag-handle" title="Use the arrows to move this whole section">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24"
                                     stroke="currentColor" stroke-width="2">
                                     <path stroke-linecap="round" stroke-linejoin="round" d="M4 8h16M4 16h16" />
                                 </svg>
                             </div>
                             <div class="fb-section-divider-icon">§</div>
-                            <div class="fb-section-divider-label">{{ $field['label'] }}</div>
+                            <div class="fb-section-divider-label">{{ $field['label'] }}<small style="display:block;font-weight:normal;font-size:12px">{{ $this->getSections()[$field['id']]['count'] ?? 0 }} questions · Click to rename</small></div>
                             <div class="fb-field-actions">
-                                <button wire:click.stop="deleteField({{ $field['id'] }})" wire:confirm="Delete this section and ungroup its fields?"
+                                <button type="button" wire:click.stop="moveSection({{ $field['id'] }}, -1)" class="fb-field-action-btn" title="Move section up with its questions" aria-label="Move section up">↑</button>
+                                <button type="button" wire:click.stop="moveSection({{ $field['id'] }}, 1)" class="fb-field-action-btn" title="Move section down with its questions" aria-label="Move section down">↓</button>
+                                <button type="button" wire:click.stop="addQuestionToSection({{ $field['id'] }})" class="fb-btn fb-btn-outline" style="font-size:12px;white-space:nowrap">+ Add Question</button>
+                                <button wire:click.stop="deleteField({{ $field['id'] }})" wire:confirm="Delete this empty section? Move its questions to another section first if it is not empty."
                                     class="fb-field-action-btn fb-field-action-delete" title="Delete">
                                     <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24"
                                         stroke="currentColor" stroke-width="2">
@@ -359,7 +374,7 @@
         <div class="fb-properties {{ $showProperties ? 'fb-properties-open' : '' }}">
             @if($showProperties && $selectedFieldId)
                 <div class="fb-properties-header">
-                    <h3>Field Properties</h3>
+                    <h3>{{ ($selectedFieldData['type'] ?? '') === 'section_header' ? 'Edit Section' : 'Edit Question' }}</h3>
                     <button wire:click="closeProperties" class="fb-properties-close">
                         <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24"
                             stroke="currentColor" stroke-width="2">
@@ -383,30 +398,34 @@
                             <label class="fb-prop-label" for="prop-label">Section Name <span class="text-red-500">*</span></label>
                             <input type="text" id="prop-label" class="fb-prop-input"
                                 wire:model.live.debounce.300ms="selectedFieldData.label">
-                            <span class="fb-prop-help">Fields placed below this header automatically belong to this section</span>
+                            <span class="fb-prop-help">Give this group a clear name. Renaming keeps all its questions together.</span>
+                            @error('selectedFieldData.label')<span class="text-sm text-red-600">{{ $message }}</span>@enderror
                         </div>
                     @else
                     <div class="fb-prop-group">
                         <label class="fb-prop-label" for="prop-label">Label <span class="text-red-500">*</span></label>
                         <input type="text" id="prop-label" class="fb-prop-input"
-                            wire:model.live.debounce.300ms="selectedFieldData.label"
-                            wire:change="$set('selectedFieldData.name', '{{ Str::snake($selectedFieldData['label'] ?? '') }}')">
+                            wire:model.live.debounce.300ms="selectedFieldData.label">
+                        @error('selectedFieldData.label')<span class="text-sm text-red-600">{{ $message }}</span>@enderror
                     </div>
 
-                    <div class="fb-prop-group">
+                    <details class="fb-prop-group"><summary class="fb-prop-label" style="cursor:pointer">Advanced: internal field name</summary>
                         <label class="fb-prop-label" for="prop-name">Field Name</label>
                         <input type="text" id="prop-name" class="fb-prop-input fb-prop-mono"
                             wire:model="selectedFieldData.name">
-                        <span class="fb-prop-help">Internal identifier (snake_case)</span>
-                    </div>
+                        <span class="fb-prop-help">Keep this unchanged when editing question wording so existing answers remain linked.</span>
+                        @error('selectedFieldData.name')<span class="text-sm text-red-600">{{ $message }}</span>@enderror
+                    </details>
 
-                    @if($selectedFieldData['section'] ?? null)
                         <div class="fb-prop-group">
-                            <label class="fb-prop-label">Section</label>
-                            <div class="fb-prop-readonly">{{ $selectedFieldData['section'] }}</div>
-                            <span class="fb-prop-help">Auto-assigned from the section header above this field</span>
+                            <label class="fb-prop-label" for="question-section">Section / Move Question</label>
+                            <select id="question-section" class="fb-prop-input" wire:model="selectedSectionId">
+                                <option value="">General Questions (no section)</option>
+                                @foreach($this->getSections() as $section)<option value="{{ $section['id'] }}">{{ $section['label'] }}</option>@endforeach
+                            </select>
+                            <span class="fb-prop-help">Choose a section and save to move this question there.</span>
+                            @error('selectedSectionId')<span class="text-sm text-red-600">{{ $message }}</span>@enderror
                         </div>
-                    @endif
 
                     @if(in_array($selectedFieldData['type'] ?? '', ['text', 'textarea', 'email', 'tel', 'url', 'number']))
                         <div class="fb-prop-group">
@@ -578,6 +597,7 @@
 
     @push('styles')
         <style>
+            .fb-outline-item{display:block;width:100%;text-align:left;margin-top:8px;padding:10px;border:1px solid #d5dce5;border-radius:7px;background:transparent;color:inherit;cursor:pointer}.fb-outline-item strong{display:block;font-size:12px;line-height:1.5}.fb-outline-item span{font-size:11px;color:#68788e}.fb-outline-active{border-color:#6366f1;background:#6366f112}.fb-builder-hint{padding:12px 20px;font-size:12px;line-height:1.6;background:#6366f10b;border-bottom:1px solid #d5dce5;color:inherit}.dark .fb-outline-item{border-color:#374151}.dark .fb-outline-item span{color:#a2b0c5}
             /* ═══════ LAYOUT ═══════ */
             .fb-container {
                 display: flex;
@@ -1877,12 +1897,32 @@
             .dark .fb-richtext-editor:empty:before {
                 color: #6b7280;
             }
+            /* Keep the canvas readable when editing on laptop screens. */
+            .fb-container{position:relative;container-type:inline-size}
+            .fb-canvas-wrapper,.fb-canvas-title,.fb-field-info{min-width:0}
+            .fb-canvas-header{flex-wrap:wrap;gap:12px}
+            .fb-canvas-actions{flex-wrap:wrap;gap:6px}
+            .fb-section-divider{flex-wrap:wrap}
+            .fb-section-divider-label{flex:1;min-width:130px;overflow-wrap:anywhere}
+            .fb-section-divider .fb-field-actions{flex-basis:100%;justify-content:flex-end;opacity:1}
+            .fb-field-card:focus-within .fb-field-actions{opacity:1}
+            @container (max-width:1100px){
+                .fb-sidebar{width:220px;min-width:220px}
+                .fb-properties-open{position:absolute;right:0;top:0;bottom:0;z-index:30;width:340px;min-width:340px;max-width:90%;box-shadow:-12px 0 28px #0003}
+                .fb-canvas-header h2{font-size:15px}
+            }
+            @container (max-width:650px){
+                .fb-sidebar{width:170px;min-width:170px}
+                .fb-canvas{padding:12px}
+                .fb-section-divider,.fb-field-card{padding:12px;gap:8px}
+            }
         </style>
     @endpush
 
     @push('scripts')
         <script>
-            document.addEventListener('alpine:init', () => {
+            (() => {
+            const register = () => {
                 Alpine.data('richTextEditor', (columnKey, initialContent) => ({
                     content: initialContent || '',
                     columnKey: columnKey,
@@ -1912,7 +1952,10 @@
                         @this.call('updateColumnValue', this.columnKey, this.content);
                     }
                 }));
-            });
+            };
+            // After a page change without a full reload, Alpine is already running.
+            window.Alpine ? register() : document.addEventListener('alpine:init', register);
+            })();
         </script>
     @endpush
 </x-filament-panels::page>

@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\RoleResource\Pages;
 
 use App\Filament\Resources\RoleResource;
+use App\Services\UserAccessAdministration;
 use BezhanSalleh\FilamentShield\Support\Utils;
 use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Support\Arr;
@@ -23,6 +24,8 @@ class CreateRole extends CreateRecord
             ->values()
             ->flatten()
             ->unique();
+
+        app(UserAccessAdministration::class)->validateRolePermissions(auth()->user(), filament()->getTenant(), $this->permissions->all());
 
         // Auto-set team_id to current campus for non-super_admin users
         if (! auth()->user()?->hasRole('super_admin')) {

@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'">
+<title>CCIS Classroom</title><link rel="stylesheet" href="style.css"></head>
+<body><main>
+<header><div><p class="eyebrow">CCIS • CLASSROOM SERVER</p><h1>Your classroom, ready anywhere.</h1><p>One app for assessments, evaluations and student databases.</p></div><span id="badge">Stopped</span></header>
+<section class="status"><span class="dot"></span><div><h2 id="status">Welcome to CCIS Classroom</h2><p id="message" role="status">Checking your installation…</p></div></section>
+<p id="error" role="alert" hidden></p>
+<section id="setup" hidden><h2>Set up this laptop</h2><p>PHP, MySQL and phpMyAdmin are included. No Laragon, Composer or terminal setup is needed.</p>
+<form id="setup-form"><div class="grid"><label>Administrator name<input id="name" required maxlength="100" autocomplete="name"></label><label>Email<input id="email" type="email" required autocomplete="username"></label><label>Administrator password<input id="password" type="password" minlength="12" maxlength="200" required autocomplete="new-password"><small>At least 12 characters. This stays on this laptop.</small></label><label>Classroom port<input id="setup-port" type="number" value="18080" min="1024" max="65480" required></label></div><button type="submit">Install my classroom</button></form></section>
+<section id="controls" hidden><div class="section-heading"><div><h2>Classroom controls</h2><p>Start once. Students join from a browser on your classroom network.</p></div><label class="port">Port<input id="port" type="number" min="1024" max="65480" value="18080"></label></div>
+<div class="actions"><button id="start">Start classroom</button><button id="stop" class="secondary">Stop safely</button><button id="open" class="secondary">Open system</button><button id="database" class="secondary">Manage database</button></div>
+<div id="links" hidden><h3>Join this classroom</h3><p id="local-url"></p><div id="network-links"></div><small>Students must be on the same network. Allow the app through Windows Firewall on your trusted classroom network when Windows asks.</small></div></section>
+<div class="grid cards"><section><h2>Move to another laptop</h2><p>Create one portable backup, install this app on the new laptop, then restore. Your accounts, records, uploads, student databases and encryption keys travel together.</p><p class="note">Backups stop the classroom first. Keep the ZIP private; it contains your records and credentials.</p><div class="actions"><button id="backup" class="secondary">Create backup</button><button id="restore" class="secondary">Restore backup</button></div></section>
+<section><h2>Everything stays together</h2><ul><li>Bundled PHP and web server</li><li>Private system MySQL database</li><li>Separate student MySQL workspaces</li><li>Database manager and live updates</li></ul><button id="data" class="text-button">Open data &amp; logs folder</button><small id="data-path"></small></section></div>
+<footer>CCIS Classroom <span id="version"></span> · Windows x64 · Your data stays on your computer</footer>
+</main><script src="app.js"></script></body></html>

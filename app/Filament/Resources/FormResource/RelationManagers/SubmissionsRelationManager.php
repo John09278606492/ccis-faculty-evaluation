@@ -28,10 +28,8 @@ class SubmissionsRelationManager extends RelationManager
                 ->label('#')
                 ->sortable(),
 
-            Tables\Columns\TextColumn::make('user.name')
-                ->label('Submitted By')
-                ->default('Anonymous')
-                ->searchable(),
+            Tables\Columns\TextColumn::make('respondent')->label('Evaluator')
+                ->state(fn (FormSubmission $record) => $record->form?->isSupervisorInstrument() ? 'Supervisor' : 'Student'),
 
             Tables\Columns\TextColumn::make('department.name')
                 ->label('Department')
@@ -51,15 +49,9 @@ class SubmissionsRelationManager extends RelationManager
             ->dateTime()
             ->sortable();
 
-        $columns[] = Tables\Columns\TextColumn::make('ip_address')
-            ->label('IP')
-            ->toggleable(isToggledHiddenByDefault: true);
-
         return $table
             ->columns($columns)
             ->filters([
-                Tables\Filters\SelectFilter::make('user')
-                    ->relationship('user', 'name'),
                 Tables\Filters\SelectFilter::make('department')
                     ->relationship('department', 'name'),
             ], layout: FiltersLayout::AboveContent)
@@ -69,12 +61,6 @@ class SubmissionsRelationManager extends RelationManager
                         'submission' => $record,
                         'fields' => $this->ownerRecord->fields()->orderBy('order')->get(),
                     ])),
-                Tables\Actions\DeleteAction::make(),
-            ])
-            ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
-                ]),
             ])
             ->defaultSort('submitted_at', 'desc');
     }

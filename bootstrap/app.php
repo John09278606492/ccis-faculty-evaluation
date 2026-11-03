@@ -1,11 +1,15 @@
 <?php
 
 use App\Http\Middleware\EnsureCampusAccess;
+use App\Http\Middleware\MeasureLoadRequest;
+use App\Support\ErrorPage;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\Response;
 
-return Application::configure(basePath: dirname(__DIR__))
+$application = Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         web: __DIR__.'/../routes/web.php',
         api: __DIR__.'/../routes/api.php',
@@ -16,8 +20,46 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->web(append: [
             EnsureCampusAccess::class,
+            MeasureLoadRequest::class,
         ]);
+        // The Filament panel owns sign-in; there is no route named "login".
+        $middleware->redirectGuestsTo('/login');
+        // The classroom server's gateway passes on each device's address, so sign-in
+        // limits and logs see the student's own device instead of the gateway.
+        if ($proxies = env('TRUSTED_PROXIES')) {
+            $middleware->trustProxies(at: explode(',', $proxies));
+        }
     })
     ->withExceptions(function (Exceptions $exceptions) {
-        //
+        $exceptions->context(fn () => ['error_reference' => ErrorPage::reference(request())]);
+        $exceptions->respond(function (Response $response, Throwable $exception, Request $request) {
+            $status = $response->getStatusCode();
+            if (! in_array($status, [401, 403, 404, 405, 408, 413, 419, 422, 429, 500, 502, 503, 504], true)) {
+                return $response;
+            }
+            if (! $request->expectsJson()) {
+                $headers = $response->headers->all();
+                unset($headers['content-type'], $headers['content-length']);
+                $response = response()->view('errors.application', ErrorPage::data($request, $status, $exception), $status, $headers);
+            }
+            $response->headers->set('Cache-Control', 'private, no-store, max-age=0');
+            if ($status >= 500) {
+                $response->headers->set('X-Error-Reference', ErrorPage::reference($request));
+            }
+
+            return $response;
+        });
     })->create();
+
+// Versioned campus releases share private data, keys, sessions and uploads. Code,
+// vendor dependencies and bootstrap caches remain inside each individual release.
+if ($sharedRoot = getenv('CAMPUS_SHARED_ROOT')) {
+    $sharedRoot = realpath($sharedRoot);
+    if (! $sharedRoot || ! is_file($sharedRoot.'/.env') || ! is_dir($sharedRoot.'/storage')) {
+        throw new RuntimeException('The campus shared data directory is unavailable.');
+    }
+    $application->useEnvironmentPath($sharedRoot);
+    $application->useStoragePath($sharedRoot.'/storage');
+}
+
+return $application;

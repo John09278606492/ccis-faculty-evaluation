@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ $form->name }} - Evaluation</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <x-bisu-favicon />
+    @vite('resources/css/app.css')
     <style>
         .rating-radio:checked + .rating-circle {
             background-color: var(--scale-color, #3b82f6);
@@ -46,7 +47,6 @@
         $overallMethod = $scoringConfig['overall_method'] ?? 'average';
         $sectionWeights = $scoringConfig['section_weights'] ?? [];
         $sectionCommentsMode = $scoringConfig['section_comments'] ?? 'optional';
-        $fieldCommentsMode = $scoringConfig['field_comments'] ?? 'optional';
         $overallCommentMode = $scoringConfig['overall_comment'] ?? 'optional';
     @endphp
 
@@ -54,12 +54,18 @@
         <!-- Header -->
         <div class="bg-white rounded-lg shadow-md p-6 mb-6 text-center">
             <h1 class="text-xl font-bold text-gray-800 mb-1">{{ $form->name }}</h1>
+            <p class="text-sm font-semibold text-indigo-700 mb-3">{{ $courseOffering->evaluation_type_label }}</p>
             @if($form->description)
             <p class="text-gray-600 text-sm mb-4">{{ $form->description }}</p>
             @endif
 
             <div class="bg-[#f5f0fa] border border-[#d4b8e8] p-4 rounded-lg text-left">
                 <div class="grid grid-cols-2 gap-4 text-sm">
+                    @if(isset($form->settings['annex']))
+                    <div><span class="text-gray-500">College/Department:</span> <span class="font-semibold">{{ $courseOffering->evaluatee?->instructorDepartment?->name ?? '—' }}</span></div>
+                    <div><span class="text-gray-500">Program Level / Year:</span> <span class="font-semibold">{{ $form->settings['program_level'] ?? '—' }}</span></div>
+                    @if(($form->settings['instrument'] ?? '') === 'SEF')<div><span class="text-gray-500">Academic Rank:</span> <span class="font-semibold">{{ $form->settings['academic_rank'] ?? '—' }}</span></div>@endif
+                    @endif
                     <div>
                         <span class="text-gray-500">Name of {{ $courseOffering->evaluatee_label ?? 'Faculty' }}:</span>
                         <span class="font-semibold">{{ $courseOffering->evaluatee->name ?? 'N/A' }}</span>
@@ -87,7 +93,7 @@
             <h2 class="text-lg font-semibold text-yellow-800 mb-2">Already Submitted</h2>
             <p class="text-yellow-700 mb-4">You have already submitted an evaluation for this assignment.</p>
             <a
-                href="{{ url()->previous() }}"
+                href="{{ session('evaluation.student_id') ? route('evaluation.entry') : url()->previous() }}"
                 class="inline-flex items-center gap-2 bg-[#340167] text-white font-semibold py-2 px-5 rounded-lg hover:bg-[#280150] transition"
             >
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -148,17 +154,18 @@
                     $sectionIndex++;
                 @endphp
 
-                <div class="bg-white rounded-lg shadow-md mb-6 overflow-hidden" data-section="{{ $section ?: 'General Questions' }}">
+                <div class="bg-white rounded-lg shadow-md mb-6 overflow-hidden" data-rating-section data-section="{{ $section ?: 'General Questions' }}">
                     <!-- Section Header -->
                     <div class="bg-[#340167] text-white px-4 py-3 flex items-center justify-between">
-                        <h3 class="font-semibold">{{ $section ?: 'General Questions' }}</h3>
+                        <h3 data-rating-section-title class="font-semibold">{{ $section ?: 'General Questions' }}</h3>
                     </div>
 
                     {{-- Likert Scale Fields as Table --}}
+                    @if(!empty($form->settings['section_descriptions'][$section]))<p class="px-4 py-3 text-sm text-gray-600">{{ $form->settings['section_descriptions'][$section] }}</p>@endif
                     @if($sectionHasLikert)
-                    <div class="overflow-x-auto">
+                    <div class="overflow-x-auto" data-rating-scroll tabindex="0" role="region" aria-label="Rating criteria table">
                         @php $colCount = count($form->field_columns ?? []); @endphp
-                        <table class="w-full eval-table" @if($colCount) style="--col-width: {{ floor(40 / $colCount) }}%" @endif>
+                        <table data-rating-guide class="w-full eval-table" style="--scale-count: {{ count($ratingScale) }};@if($colCount) --col-width: {{ floor(40 / $colCount) }}%@endif">
                             <thead>
                                 <tr class="bg-gray-50 border-b-2 border-gray-200">
                                     <th class="text-left py-3 px-4 font-semibold text-gray-700" @if(!$colCount) style="width:50%" @endif>Criteria</th>
@@ -181,7 +188,7 @@
                                 <tr class="border-b hover:bg-gray-50 {{ $loop->even ? 'bg-gray-50/50' : '' }}">
                                     <td class="py-3 px-4 text-gray-800">
                                         <span class="font-medium">{{ $globalFieldNumber }}.</span>
-                                        {{ $field->label }}
+                                        {{ $field->question_text }}
                                         @if($field->is_required)<span class="text-red-500">*</span>@endif
                                         @if($field->help_text)
                                         <p class="text-gray-500 text-xs mt-0.5">{{ $field->help_text }}</p>
@@ -209,29 +216,11 @@
                                             <span class="rating-circle w-9 h-9 flex items-center justify-center rounded-full border-2 border-gray-300 font-semibold text-sm text-gray-500 transition-all duration-150">
                                                 {{ $scale['value'] }}
                                             </span>
+                                        <span class="rating-mini-label">{{ $scale['label'] }}</span>
                                         </label>
                                     </td>
                                     @endforeach
                                 </tr>
-                                @if($fieldCommentsMode !== 'hidden')
-                                <tr class="border-b bg-gray-50/30">
-                                    <td colspan="{{ count($ratingScale) + 1 }}" class="px-4 py-2">
-                                        <div class="flex items-start gap-2">
-                                            <svg class="w-4 h-4 text-gray-400 mt-1.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"/></svg>
-                                            <textarea
-                                                name="field_comments[{{ $field->name }}]"
-                                                rows="1"
-                                                placeholder="Comment on this item{{ $fieldCommentsMode === 'required' ? ' (required)' : ' (optional)' }}..."
-                                                class="w-full border border-gray-200 rounded px-2 py-1 text-xs text-gray-600 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 resize-y bg-white/80"
-                                                @if($fieldCommentsMode === 'required') required @endif
-                                            ></textarea>
-                                        </div>
-                                        @error("field_comments.{$field->name}")
-                                        <p class="text-red-500 text-xs mt-1 ml-6">{{ $message }}</p>
-                                        @enderror
-                                    </td>
-                                </tr>
-                                @endif
                                 @endforeach
                             </tbody>
                         </table>
@@ -313,21 +302,6 @@
                             <p class="text-red-500 text-sm mt-2">{{ $message }}</p>
                             @enderror
 
-                            @if($fieldCommentsMode !== 'hidden')
-                            <div class="mt-2 flex items-start gap-2">
-                                <svg class="w-4 h-4 text-gray-400 mt-1.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"/></svg>
-                                <textarea
-                                    name="field_comments[{{ $field->name }}]"
-                                    rows="1"
-                                    placeholder="Comment on this item{{ $fieldCommentsMode === 'required' ? ' (required)' : ' (optional)' }}..."
-                                    class="w-full border border-gray-200 rounded px-2 py-1 text-xs text-gray-600 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 resize-y bg-white/80"
-                                    @if($fieldCommentsMode === 'required') required @endif
-                                ></textarea>
-                            </div>
-                            @error("field_comments.{$field->name}")
-                            <p class="text-red-500 text-xs mt-1 ml-6">{{ $message }}</p>
-                            @enderror
-                            @endif
                         </div>
                         @endforeach
                     </div>
@@ -390,7 +364,7 @@
         @endif
 
         <p class="text-center text-gray-400 text-sm mt-6">
-            Your responses are anonymous and will be used to improve teaching quality.
+            Your identity is hidden in reports by default. Authorized staff may retrieve an identified copy for institutional verification. Responses are used to improve teaching quality.
         </p>
     </div>
 
@@ -582,5 +556,6 @@
         });
     </script>
     @endif
+    @include('evaluation.partials.sticky-rating-guide')
 </body>
 </html>

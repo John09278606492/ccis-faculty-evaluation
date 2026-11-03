@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\UserResource\Pages;
 
 use App\Filament\Resources\UserResource;
+use App\Services\UserAccessAdministration;
 use Filament\Resources\Pages\EditRecord;
 use STS\FilamentImpersonate\Pages\Actions\Impersonate;
 
@@ -16,6 +17,11 @@ class EditUser extends EditRecord
             Impersonate::make()->record($this->getRecord()),
             // <--
         ];
+    }
+
+    protected function afterSave(): void
+    {
+        app(UserAccessAdministration::class)->enforceProfileRoles($this->record);
     }
 
     // customize redirect after create

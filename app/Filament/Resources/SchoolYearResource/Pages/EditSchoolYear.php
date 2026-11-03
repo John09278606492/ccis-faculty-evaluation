@@ -2,9 +2,9 @@
 
 namespace App\Filament\Resources\SchoolYearResource\Pages;
 
+use App\Filament\Pages\DraftEditRecord as EditRecord;
 use App\Filament\Resources\SchoolYearResource;
 use Filament\Actions;
-use Filament\Resources\Pages\EditRecord;
 
 class EditSchoolYear extends EditRecord
 {

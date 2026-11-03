@@ -1,6 +1,6 @@
 /.phpunit.cache
 /node_modules
-/public/build
+# public/build is committed: the classroom PC runs the app without Node.js.
 /public/hot
 /public/storage
 /storage/*.key
@@ -32,3 +32,18 @@ frankenphp-worker.php
 rr
 .rr.yaml
 /public/code-runner
+/desktop-host/standalone/node_modules/
+/desktop-host/standalone/bundle/
+/desktop-host/standalone/dist/
+/desktop-host/standalone/.test-data/
+
+/work/
+
+/output/
+
+# Private campus import/reconciliation reports belong with local data, not source releases.
+/docs/reviews/
+/runtime/
+/TRANSFER-MANIFEST.json
+/campus-updates.json
+/.campus-releases/

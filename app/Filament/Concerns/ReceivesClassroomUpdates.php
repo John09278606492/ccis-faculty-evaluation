@@ -18,6 +18,12 @@ trait ReceivesClassroomUpdates
 
             return;
         }
+        // Exam tab-leave updates only matter to the attempts table.
+        if (in_array($kind, ['focus', 'progress'], true) && ! $this->receivesFocusUpdates()) {
+            $this->skipRender();
+
+            return;
+        }
         if (method_exists($this, 'getOwnerRecord') && $quizId && (int) $this->getOwnerRecord()->id !== $quizId) {
             $this->skipRender();
 
@@ -30,5 +36,10 @@ trait ReceivesClassroomUpdates
             return;
         }
         // Normal Livewire rendering re-queries the authorized table and open read-only previews.
+    }
+
+    protected function receivesFocusUpdates(): bool
+    {
+        return false;
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\EvaluationInstrument;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -20,12 +21,27 @@ class FormSubmission extends Model
         'ip_address',
         'user_agent',
         'submitted_at',
+        'evaluator_identity',
+        'instrument_snapshot',
     ];
 
     protected $casts = [
+        'evaluator_identity' => 'encrypted:array',
         'data' => 'array',
+        'instrument_snapshot' => 'array',
         'submitted_at' => 'datetime',
     ];
+
+    protected static function booted(): void
+    {
+        static::creating(function (self $submission) {
+            if (! $submission->instrument_snapshot && ($form = Form::find($submission->form_id))) {
+                $submission->instrument_snapshot = EvaluationInstrument::snapshot($form);
+            }
+        });
+    }
+
+    protected $hidden = ['evaluator_identity'];
 
     /**
      * Get the course offering this submission is for (if evaluating an instructor).
@@ -48,7 +64,7 @@ class FormSubmission extends Model
      */
     public function user(): BelongsTo
     {
-        return $this->belongsTo(User::class);
+        return $this->belongsTo(User::class)->withTrashed();
     }
 
     /**

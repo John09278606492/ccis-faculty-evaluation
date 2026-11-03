@@ -4,6 +4,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 require_once __DIR__.'/Support/EvaluationFixture.php';
+require_once __DIR__.'/Support/AssessmentRecoveryFixture.php';
 
 /*
 |--------------------------------------------------------------------------

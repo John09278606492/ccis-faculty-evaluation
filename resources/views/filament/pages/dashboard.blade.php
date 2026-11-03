@@ -1,9 +1,44 @@
-<x-filament-panels::page class="fi-dashboard-page">
+<x-filament-panels::page data-live-panel class="fi-dashboard-page">
+    @php
+        $workspace = $this->getWorkspaceData();
+    @endphp
+    @include('filament.partials.workspace-guide')
+    <div class="grid gap-4 md:grid-cols-3">
+        @foreach($workspace['cards'] as $card)
+            <x-filament::section><div class="text-sm text-gray-500">{{ $card['label'] }}</div><div class="my-2 text-3xl font-semibold">{{ $card['value'] }}</div><div class="text-sm text-gray-500">{{ $card['hint'] }}</div></x-filament::section>
+        @endforeach
+    </div>
+    @if(! empty($workspace['progress']))
+        <x-filament::section heading="Evaluation progress" description="Student ratings received so far, one expected per student per class.">
+            <div class="space-y-4">
+                @foreach($workspace['progress'] as $row)
+                    @php
+                        $percent = $row['expected'] ? round($row['received'] / $row['expected'] * 100) : 0;
+                    @endphp
+                    <a href="{{ $row['url'] }}" class="block rounded-lg p-2 hover:bg-gray-50 dark:hover:bg-white/5">
+                        <div class="flex flex-wrap items-baseline justify-between gap-2 text-sm">
+                            <span class="font-medium text-gray-900 dark:text-white">{{ $row['name'] }}</span>
+                            <span class="text-gray-600 dark:text-gray-300">{{ number_format($row['received']) }} of {{ number_format($row['expected']) }} · <strong>{{ $percent }}%</strong></span>
+                        </div>
+                        <div style="margin-top:.5rem;height:10px;border-radius:9999px;overflow:hidden;background:rgba(var(--gray-400),.25)"><div style="height:100%;border-radius:9999px;background:rgb(var(--primary-600));width: {{ $percent }}%"></div></div>
+                    </a>
+                @endforeach
+            </div>
+            @if(\App\Filament\Pages\StudentEvaluationProgress::canAccess())
+                <div class="mt-3 border-t border-gray-100 pt-3 text-sm dark:border-white/10">
+                    <a href="{{ \App\Filament\Pages\StudentEvaluationProgress::getUrl(['view' => 'sections']) }}" class="font-medium text-primary-600 hover:underline dark:text-primary-400">See which sections are behind →</a>
+                </div>
+            @endif
+        </x-filament::section>
+    @endif
+    @foreach($workspace['warnings'] as $warning)<x-filament::section><p class="text-warning-700">{{ $warning }}</p></x-filament::section>@endforeach
     @if (method_exists($this, 'filtersForm'))
         {{ $this->filtersForm }}
     @endif
 
-    <div x-data="{
+    <details class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
+        <summary class="cursor-pointer text-sm font-semibold text-gray-700 dark:text-gray-300">More Statistics</summary>
+    <div class="mt-4" x-data="{
             draggedEl: null,
             placeholder: null,
             grid: null,
@@ -81,6 +116,7 @@
                 }, { offset: Number.NEGATIVE_INFINITY }).element;
             }
         }">
+        @if(count($this->getVisibleWidgets()) > 1)
         {{-- Reset Order Button --}}
         <div class="flex items-center justify-end gap-2 mb-3">
             <button type="button"
@@ -91,6 +127,7 @@
             </button>
         </div>
 
+        @endif
         {{-- Widget Grid --}}
         <div x-ref="widgetGrid" x-on:dragstart="startDrag($event)" x-on:dragend="endDrag()"
             x-on:dragover.prevent="overDrag($event)" x-on:drop.prevent="dropDrag($event)"
@@ -139,5 +176,6 @@
             @endforeach
         </div>
     </div>
+    </details>
 </x-filament-panels::page>
 

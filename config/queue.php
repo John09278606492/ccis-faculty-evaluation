@@ -30,6 +30,17 @@ return [
 
     'connections' => [
 
+        // A separate worker keeps large files from delaying ordinary notifications.
+        // Reservation outlives the job timeout to avoid running an import twice.
+        'bulk' => [
+            'driver' => 'database',
+            'connection' => env('DB_QUEUE_CONNECTION'),
+            'table' => 'jobs',
+            'queue' => 'bulk',
+            'retry_after' => 1200,
+            'after_commit' => true,
+        ],
+
         'sync' => [
             'driver' => 'sync',
         ],

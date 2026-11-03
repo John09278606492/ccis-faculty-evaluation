@@ -2,8 +2,8 @@
 
 namespace App\Filament\Resources\CourseOfferingResource\Pages;
 
+use App\Filament\Pages\DraftCreateRecord as CreateRecord;
 use App\Filament\Resources\CourseOfferingResource;
-use Filament\Resources\Pages\CreateRecord;
 
 class CreateCourseOffering extends CreateRecord
 {

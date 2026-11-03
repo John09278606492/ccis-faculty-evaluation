@@ -2,14 +2,20 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\AvatarProviders\InitialsAvatarProvider;
 use App\Filament\Pages\Dashboard;
 use App\Filament\Pages\Login;
+use App\Filament\Plugins\CampusTourPlugin;
+use App\Http\Middleware\EnsurePasswordIsChanged;
+use App\Http\Middleware\ScopeAssignedData;
 use App\Models\Campus;
 use App\Models\User;
 use App\Settings\KaidoSetting;
 use BezhanSalleh\FilamentShield\FilamentShieldPlugin;
 use DutchCodingCompany\FilamentSocialite\FilamentSocialitePlugin;
 use DutchCodingCompany\FilamentSocialite\Provider;
+use Filament\Enums\ThemeMode;
+use Filament\FontProviders\LocalFontProvider;
 use Filament\Forms\Components\FileUpload;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -19,6 +25,7 @@ use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
 use Filament\Support\Enums\MaxWidth;
+use Filament\View\PanelsRenderHook;
 use Hasnayeen\Themes\ThemesPlugin;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
@@ -26,6 +33,7 @@ use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\AuthenticateSession;
 use Illuminate\Session\Middleware\StartSession;
+use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 use Jeffgreco13\FilamentBreezy\BreezyCore;
@@ -54,12 +62,17 @@ class AdminPanelProvider extends PanelProvider
         return $panel
             ->default()
             ->id('admin')
+            ->favicon(asset('images/bisu/favicon-36.png'))
+            ->defaultThemeMode(ThemeMode::Light)
             ->path('')
             ->when($this->settings?->login_enabled ?? true, fn ($panel) => $panel->login(Login::class))
             ->when($this->settings?->registration_enabled ?? true, fn ($panel) => $panel->registration())
             ->when($this->settings?->password_reset_enabled ?? true, fn ($panel) => $panel->passwordReset())
             ->emailVerification()
             ->maxContentWidth(MaxWidth::Full)
+            // No font or avatar requests to the internet: the classroom network is often offline.
+            ->font('Inter', provider: LocalFontProvider::class)
+            ->defaultAvatarProvider(InitialsAvatarProvider::class)
             ->colors([
                 'cyan' => Color::Cyan,         // Stays the same for a neutral/calm tone
                 'danger' => Color::Red,        // Red is more universally recognized for danger
@@ -77,24 +90,14 @@ class AdminPanelProvider extends PanelProvider
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
             ->widgets([])
             ->navigationGroups([
-                NavigationGroup::make('Evaluations')
-                    ->icon('heroicon-o-clipboard-document-list'),
-                NavigationGroup::make('Assessments')
-                    ->icon('heroicon-o-pencil-square'),
-                NavigationGroup::make('Student')
-                    ->icon('heroicon-o-academic-cap'),
-                NavigationGroup::make('Academic Management')
-                    ->icon('heroicon-o-building-library')
-                    ->collapsed(),
-                NavigationGroup::make('Forms')
-                    ->icon('heroicon-o-document-text')
-                    ->collapsed(),
-                NavigationGroup::make('User Management')
-                    ->icon('heroicon-o-users')
-                    ->collapsed(),
-                NavigationGroup::make('Settings')
-                    ->icon('heroicon-o-cog-6-tooth')
-                    ->collapsed(),
+                NavigationGroup::make('My Learning')->icon('heroicon-o-academic-cap'),
+                NavigationGroup::make('My Work')->icon('heroicon-o-inbox-stack'),
+                NavigationGroup::make('Academic Management')->icon('heroicon-o-building-library'),
+                NavigationGroup::make('Faculty Evaluation')->icon('heroicon-o-clipboard-document-list'),
+                NavigationGroup::make('Evaluation Reports')->icon('heroicon-o-chart-bar'),
+                NavigationGroup::make('Assessments')->icon('heroicon-o-pencil-square')->collapsed(),
+                NavigationGroup::make('Administration')->icon('heroicon-o-cog-6-tooth')->collapsed(),
+                NavigationGroup::make('Settings')->icon('heroicon-o-user-circle')->collapsed(),
             ])
             ->middleware([
                 EncryptCookies::class,
@@ -108,14 +111,36 @@ class AdminPanelProvider extends PanelProvider
                 DispatchServingFilamentEvent::class,
             ])
             ->sidebarCollapsibleOnDesktop(true)
+            // Moving between panel pages swaps only the page content instead of reloading everything.
+            ->spa()
+            // Pages outside the panel, and exams, which should always start from a fresh page.
+            ->spaUrlExceptions([
+                '*/background-downloads/*',
+                '*/section-student-template/*',
+                '*/instructor-offerings-template/*',
+                '*/evaluate/*',
+                '*/form-preview/*',
+                '*/quiz-submissions/*',
+                '*/student-databases/*',
+                '*/phpmyadmin*',
+                '*/change-password',
+                '*/take-assessment/*',
+            ])
+            ->unsavedChangesAlerts()
+            ->globalSearchKeyBindings(['command+k', 'ctrl+k'])
             ->authMiddleware([
                 Authenticate::class,
+                EnsurePasswordIsChanged::class,
             ])
+            ->authMiddleware([ScopeAssignedData::class], isPersistent: true)
             ->plugins(
                 $this->getPlugins()
             )
             ->databaseNotifications()
-            ->renderHook(\Filament\View\PanelsRenderHook::BODY_END, fn () => view('filament.partials.live-connection'))
+            ->renderHook(PanelsRenderHook::HEAD_START, fn () => view('filament.partials.light-first'))
+            ->renderHook(PanelsRenderHook::CONTENT_START, fn () => Blade::render('@livewire("workspace-context")'))
+            ->renderHook(PanelsRenderHook::PAGE_HEADER_ACTIONS_AFTER, fn () => view('filament.partials.guided-help'))
+            ->renderHook(PanelsRenderHook::BODY_END, fn () => view('filament.partials.live-connection'))
             // Multi-tenancy with Campus
             ->tenant(Campus::class)
             ->tenantRegistration(null)
@@ -126,6 +151,7 @@ class AdminPanelProvider extends PanelProvider
     private function getPlugins(): array
     {
         $plugins = [
+            CampusTourPlugin::make()->onlyVisibleOnce()->enableCssSelector(false),
             // ThemesPlugin::make(), // Disabled - causes tenant error before tenant is selected
             FilamentShieldPlugin::make(),
             ApiServicePlugin::make(),
@@ -134,7 +160,7 @@ class AdminPanelProvider extends PanelProvider
             BreezyCore::make()
                 ->myProfile(
                     shouldRegisterUserMenu: true,
-                    shouldRegisterNavigation: true,
+                    shouldRegisterNavigation: false,
                     navigationGroup: 'Settings',
                     hasAvatars: true,
                     slug: 'my-profile'

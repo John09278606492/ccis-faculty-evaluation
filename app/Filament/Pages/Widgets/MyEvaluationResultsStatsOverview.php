@@ -2,8 +2,7 @@
 
 namespace App\Filament\Pages\Widgets;
 
-use App\Models\CourseOffering;
-use App\Models\FormSubmission;
+use App\Services\EvaluationResultsRelease;
 use Filament\Widgets\StatsOverviewWidget as BaseWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
 use Illuminate\Support\Facades\Auth;
@@ -14,14 +13,9 @@ class MyEvaluationResultsStatsOverview extends BaseWidget
     {
         $user = Auth::user();
 
-        $courseCount = CourseOffering::where('user_id', $user->id)
-            ->whereHas('formSubmissions')
-            ->count();
-
-        $totalSubmissions = FormSubmission::whereHas(
-            'courseOffering',
-            fn ($q) => $q->where('user_id', $user->id),
-        )->count();
+        $offerings = EvaluationResultsRelease::ownOfferings($user);
+        $courseCount = $offerings->count();
+        $totalSubmissions = $offerings->sum('form_submissions_count');
 
         return [
             Stat::make('Courses Evaluated', number_format($courseCount))

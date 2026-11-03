@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\BackgroundTask;
 use App\Models\Campus;
 use App\Models\Course;
 use App\Models\CourseOffering;
@@ -9,6 +10,8 @@ use App\Models\FormField;
 use App\Models\SchoolYear;
 use App\Models\Semester;
 use App\Models\User;
+use App\Services\BackgroundTasks;
+use Filament\Facades\Filament;
 use Spatie\Permission\Models\Role;
 
 function evaluationFixture(bool $enrolled = true): array
@@ -83,4 +86,24 @@ function evaluationFixture(bool $enrolled = true): array
     }
 
     return compact('student', 'offering', 'form');
+}
+
+function finishBackgroundReview(): BackgroundTask
+{
+    $task = BackgroundTask::where('user_id', auth()->id())->whereIn('kind', ['student-review', 'course-review'])->latest('created_at')->firstOrFail();
+    app(BackgroundTasks::class)->run($task->id);
+    $task->refresh();
+    expect($task->status)->toBe('completed', $task->error ?? 'Review did not complete');
+
+    return $task;
+}
+
+function confirmBackgroundReview(BackgroundTask $review): BackgroundTask
+{
+    $task = app(BackgroundTasks::class)->confirm($review, auth()->user(), Filament::getTenant());
+    app(BackgroundTasks::class)->run($task->id);
+    $task->refresh();
+    expect($task->status)->toBe('completed', $task->error ?? 'Import did not complete');
+
+    return $task;
 }

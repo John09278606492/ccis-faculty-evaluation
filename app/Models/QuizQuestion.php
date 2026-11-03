@@ -65,6 +65,16 @@ class QuizQuestion extends Model
             if ($this->referenceFiles() && ($referenceIssues = CodeProject::issues($this->referenceFiles()))) {
                 $issues[] = 'Reference solution: '.implode(' ', $referenceIssues);
             }
+            if ($this->options['checks']['enabled'] ?? false) {
+                if (! $this->canAutoCheck()) {
+                    $issues[] = 'Automatic checking works for PHP, web page and SQL questions without a student database.';
+                } elseif ($this->referenceFiles() === []) {
+                    $issues[] = 'Add a reference solution to check answers automatically.';
+                }
+                if (count($this->options['checks']['cases'] ?? []) > self::MAX_CHECK_CASES) {
+                    $issues[] = 'Use at most '.self::MAX_CHECK_CASES.' test cases.';
+                }
+            }
         }
 
         return $issues;
@@ -227,18 +237,82 @@ class QuizQuestion extends Model
 
     /**
      * Whether students may add, rename and delete files and folders in their workspace.
+     * On unless the instructor turned it off, like a normal VS Code workspace.
      */
     public function studentsCanManageFiles(): bool
     {
-        return (bool) ($this->options['allow_student_files'] ?? false);
+        return (bool) ($this->options['allow_student_files'] ?? true);
     }
 
     /**
      * Whether the editor offers code suggestions (autocomplete) for this question.
+     * On unless the instructor turned it off, so a student gets help writing
+     * their code without the instructor having to set anything up.
      */
     public function allowsAutocomplete(): bool
     {
-        return (bool) ($this->options['autocomplete'] ?? false);
+        return (bool) ($this->options['autocomplete'] ?? true);
+    }
+
+    /** Runners whose output automatic checking can compare (see resources/js/components/code-checker.js). */
+    public const AUTO_CHECK_RUNNERS = ['php', 'web', 'sql'];
+
+    public const MAX_CHECK_CASES = 20;
+
+    public const MAX_CHECK_INPUT = 2_000;
+
+    public function canAutoCheck(): bool
+    {
+        return $this->type === 'code' && ! $this->hasDatabase() && in_array($this->codeRunner(), self::AUTO_CHECK_RUNNERS, true);
+    }
+
+    /**
+     * Whether answers are checked by running them and the reference solution
+     * on the same test cases and comparing their output.
+     */
+    public function autoChecks(): bool
+    {
+        return $this->canAutoCheck() && ($this->options['checks']['enabled'] ?? false) && $this->referenceFiles() !== [];
+    }
+
+    /**
+     * Test cases, each with an optional name and input; at least one (an empty
+     * input runs the project as it is).
+     *
+     * @return list<array{label: string, input: string}>
+     */
+    public function checkCases(): array
+    {
+        $cases = collect($this->options['checks']['cases'] ?? [])
+            ->filter(fn ($case) => is_array($case))
+            ->map(fn (array $case) => [
+                'label' => mb_substr(trim((string) ($case['label'] ?? '')), 0, 80),
+                'input' => mb_substr((string) ($case['input'] ?? ''), 0, self::MAX_CHECK_INPUT),
+            ])
+            ->take(self::MAX_CHECK_CASES)
+            ->values()
+            ->all();
+
+        return $cases ?: [['label' => '', 'input' => '']];
+    }
+
+    public function checkIgnoresCase(): bool
+    {
+        return (bool) ($this->options['checks']['ignore_case'] ?? false);
+    }
+
+    /**
+     * What the in-browser checker needs for this question.
+     */
+    public function checkConfig(): array
+    {
+        return [
+            'runner' => $this->codeRunner(),
+            'cases' => $this->checkCases(),
+            'ignoreCase' => $this->checkIgnoresCase(),
+            'points' => $this->points,
+            'reference' => $this->referenceFiles(),
+        ];
     }
 
     public function studentsCanRunCode(): bool
@@ -252,6 +326,31 @@ class QuizQuestion extends Model
      * file list for this question.
      */
     public function normalizeCodeAnswer(string $answer): ?string
+    {
+        return $this->codeAnswerIssue($answer) === null ? $this->normalizedCodeAnswer($answer) : null;
+    }
+
+    /**
+     * Why a submitted code answer cannot be saved, or null when it can.
+     */
+    public function codeAnswerIssue(string $answer): ?string
+    {
+        $decoded = json_decode($answer, true);
+        $submitted = CodeProject::normalize(is_array($decoded) ? ($decoded['files'] ?? null) : null);
+        if ($submitted === null) {
+            return 'Your code could not be saved. Reload the page and try again.';
+        }
+        if ($this->studentsCanManageFiles() && ($issues = CodeProject::issues($submitted)) !== []) {
+            return 'Your code could not be saved: '.implode(' ', $issues);
+        }
+        if ($this->normalizedCodeAnswer($answer) === null) {
+            return 'Your code could not be saved: it may not exceed '.number_format(self::MAX_CODE_LENGTH).' characters in total.';
+        }
+
+        return null;
+    }
+
+    protected function normalizedCodeAnswer(string $answer): ?string
     {
         $decoded = json_decode($answer, true);
         $submitted = CodeProject::normalize(is_array($decoded) ? ($decoded['files'] ?? null) : null);

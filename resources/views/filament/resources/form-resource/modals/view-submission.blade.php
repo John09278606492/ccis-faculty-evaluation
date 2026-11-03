@@ -3,12 +3,12 @@
 <div class="space-y-4">
     <div class="grid grid-cols-2 gap-4 text-sm">
         <div>
-            <span class="font-medium text-gray-500 dark:text-gray-400">Submitted By:</span>
-            <span class="ml-2">{{ $submission->user?->name ?? 'Anonymous' }}</span>
+            <span class="font-medium text-gray-500 dark:text-gray-400">Evaluator:</span>
+            <span class="ml-2">{{ $submission->form?->isSupervisorInstrument() ? 'Supervisor' : 'Student' }}</span>
         </div>
         <div>
             <span class="font-medium text-gray-500 dark:text-gray-400">Date:</span>
-            <span class="ml-2">{{ $submission->submitted_at->format('M j, Y g:i A') }}</span>
+            <span class="ml-2">{{ $submission->submitted_at?->format('M j, Y g:i A') }}</span>
         </div>
         @if($submission->department)
             <div>
@@ -16,10 +16,6 @@
                 <span class="ml-2">{{ $submission->department->name }}</span>
             </div>
         @endif
-        <div>
-            <span class="font-medium text-gray-500 dark:text-gray-400">IP Address:</span>
-            <span class="ml-2 font-mono text-xs">{{ $submission->ip_address ?? 'N/A' }}</span>
-        </div>
     </div>
 
     <hr class="border-gray-200 dark:border-gray-700">

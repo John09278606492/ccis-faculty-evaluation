@@ -2,7 +2,8 @@
 
 namespace App\Filament\Widgets;
 
-use App\Models\CourseOffering;
+use App\Services\AcademicPeriod;
+use App\Services\ReportService;
 use BezhanSalleh\FilamentShield\Traits\HasWidgetShield;
 use Filament\Facades\Filament;
 use Filament\Widgets\ChartWidget;
@@ -13,7 +14,7 @@ class EvaluationCompletionChart extends ChartWidget
 
     protected static ?string $heading = 'Evaluation Completion Rate';
 
-    protected static ?string $description = 'Completion status across active evaluation assignments';
+    protected static ?string $description = 'Unique assigned students with current SET responses in the selected semester';
 
     protected static ?int $sort = 4;
 
@@ -37,12 +38,8 @@ class EvaluationCompletionChart extends ChartWidget
         $user = auth()->user();
         $tenant = Filament::getTenant();
 
-        $query = CourseOffering::where('is_active', true)
-            ->whereNotNull('form_id');
-
-        if ($tenant) {
-            $query->whereHas('semester.schoolYear', fn ($q) => $q->where('campus_id', $tenant->id));
-        }
+        $query = app(ReportService::class)->offerings(['campus_id' => $tenant?->id,
+            'semester_id' => $tenant ? AcademicPeriod::current($tenant) : null, 'evaluation_type' => 'SET']);
 
         // Instructors see only their own course offerings
         if (! $user->isSuperAdmin() && $user->isInstructor() && ! $user->can('view_any_course::offering')) {
@@ -56,13 +53,11 @@ class EvaluationCompletionChart extends ChartWidget
         $notStarted = 0;
 
         foreach ($courseOfferings as $offering) {
-            if ($offering->students_count === 0) {
-                $notStarted++;
-
+            $completion = app(ReportService::class)->assignmentCompletion($offering);
+            if ($completion['expected'] === 0) {
                 continue;
             }
-
-            $completionRate = $offering->form_submissions_count / $offering->students_count;
+            $completionRate = $completion['completed'] / $completion['expected'];
 
             if ($completionRate >= 1) {
                 $fullyCompleted++;

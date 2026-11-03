@@ -1,0 +1,191 @@
+{
+  "B": [
+    {
+      "section": "A. Management of Teaching and Learning",
+      "verification": "Daily time record; Faculty schedule and timetable; Informal interview with students",
+      "number": 1,
+      "label": "1. Comes to class on time."
+    },
+    {
+      "section": "A. Management of Teaching and Learning",
+      "verification": "Documents submission log; Submission Receipts or Acknowledgment Emails",
+      "number": 2,
+      "label": "2. Submits updated syllabus, grade sheets, and other required reports on time."
+    },
+    {
+      "section": "A. Management of Teaching and Learning",
+      "verification": "Class Schedules & Timetables; LMS Logs; Informal interview with students",
+      "number": 3,
+      "label": "3. Maximizes the allocated time/learning hours effectively."
+    },
+    {
+      "section": "A. Management of Teaching and Learning",
+      "verification": "Course syllabus; Learning Plan; Classroom Observation; Informal interview with students; LMS Logs",
+      "number": 4,
+      "label": "4. Provide appropriate learning activities that facilitate critical thinking and creativity of students."
+    },
+    {
+      "section": "A. Management of Teaching and Learning",
+      "verification": "Course Syllabus; Learning Plan; Student Work Samples; Classroom Observation; LMS Logs; Informal interview with students; Faculty Consultation Log",
+      "number": 5,
+      "label": "5. Guides students to learn on their own, reflect on new ideas and experiences, and make decisions in accomplishing given tasks."
+    },
+    {
+      "section": "A. Management of Teaching and Learning",
+      "verification": "Graded Student Work with Feedback; Faculty Consultation Log; Informal interview with students; Emails or Official correspondence; LMS Logs",
+      "number": 6,
+      "label": "6. Communicates constructive feedback to students for their academic growth."
+    },
+    {
+      "section": "B. Content Knowledge, Pedagogy and Technology",
+      "verification": "Course Syllabus; Learning Plan; IMs developed by the faculty; Informal interview with students; Mentorship or Thesis/ Dissertation Advisory records",
+      "number": 7,
+      "label": "7. Demonstrates extensive and broad knowledge of the subject/course."
+    },
+    {
+      "section": "B. Content Knowledge, Pedagogy and Technology",
+      "verification": "Learning Plan; Course Syllabus; Classroom Observation; Informal interview with students; Lecture notes and presentations; LMS Logs",
+      "number": 8,
+      "label": "8. Simplifies complex ideas in the lesson for ease of understanding."
+    },
+    {
+      "section": "B. Content Knowledge, Pedagogy and Technology",
+      "verification": "Course Syllabus; Learning Plan; Classroom Observation; Informal interview with students; LMS Logs; IMs developed by the faculty; Participation in Conferences, Webinars, and Training",
+      "number": 9,
+      "label": "9. Integrates contemporary issues and developments in the discipline and/or daily life activities in the syllabus."
+    },
+    {
+      "section": "B. Content Knowledge, Pedagogy and Technology",
+      "verification": "Course Syllabus; Learning Plan; Classroom Observation; Informal interview with students; LMS Logs; Multimedia Lecture Materials; Student Work Samples",
+      "number": 10,
+      "label": "10. Promotes active learning and student engagement by using appropriate teaching and learning resources including ICT tools and platforms."
+    },
+    {
+      "section": "B. Content Knowledge, Pedagogy and Technology",
+      "verification": "Course Syllabus; Learning Plan; Informal interview with students; Assessment tools and rubrics; Exam and Quiz Samples; Graded Student Work Samples; LMS records",
+      "number": 11,
+      "label": "11. Uses appropriate assessments (projects, exams, quizzes, assignments, etc.) aligned with the learning outcomes."
+    },
+    {
+      "section": "C. Commitment and Transparency",
+      "verification": "Course Syllabus; Learning Plan; IMs developed by the faculty; Classroom Observation; Informal interview with students",
+      "number": 12,
+      "label": "12. Recognizes and values the unique diversity and individual differences among students."
+    },
+    {
+      "section": "C. Commitment and Transparency",
+      "verification": "Course Syllabus; Faculty Consultation Log; Advisory Records; LMS Logs; Emails or Official Correspondence",
+      "number": 13,
+      "label": "13. Assists students with their learning challenges during consultation hours."
+    },
+    {
+      "section": "C. Commitment and Transparency",
+      "verification": "Graded Student Work Samples; Assessment tools and rubrics; Informal interview with students; LMS Logs; Emails or Official; Correspondence; Faculty Consultation Log; Advising Reports",
+      "number": 14,
+      "label": "14. Provides immediate feedback on student outputs and performance."
+    },
+    {
+      "section": "C. Commitment and Transparency",
+      "verification": "Course Syllabus; Assessment Tools and Rubrics; Informal interview with students; LMS Records; Grade Sheets and Records",
+      "number": 15,
+      "label": "15. Provides transparent and clear criteria in rating student's performance."
+    }
+  ],
+  "A": [
+    {
+      "section": "A. Management of Teaching and Learning",
+      "verification": "",
+      "number": 1,
+      "label": "1. Comes to class on time."
+    },
+    {
+      "section": "A. Management of Teaching and Learning",
+      "verification": "",
+      "number": 2,
+      "label": "2. Explains learning outcomes, expectations, grading system, and various requirements of the subject/course."
+    },
+    {
+      "section": "A. Management of Teaching and Learning",
+      "verification": "",
+      "number": 3,
+      "label": "3. Maximizes the allocated time/learning hours effectively."
+    },
+    {
+      "section": "A. Management of Teaching and Learning",
+      "verification": "",
+      "number": 4,
+      "label": "4. Facilitates students to think critically and creatively by providing appropriate learning activities."
+    },
+    {
+      "section": "A. Management of Teaching and Learning",
+      "verification": "",
+      "number": 5,
+      "label": "5. Guides students to learn on their own, reflect on new ideas and experiences, and make decisions in accomplishing given tasks."
+    },
+    {
+      "section": "A. Management of Teaching and Learning",
+      "verification": "",
+      "number": 6,
+      "label": "6. Communicates constructive feedback to students for their academic growth."
+    },
+    {
+      "section": "B. Content Knowledge, Pedagogy and Technology",
+      "verification": "",
+      "number": 7,
+      "label": "7. Demonstrates extensive and broad knowledge of the subject/course."
+    },
+    {
+      "section": "B. Content Knowledge, Pedagogy and Technology",
+      "verification": "",
+      "number": 8,
+      "label": "8. Simplifies complex ideas in the lesson for ease of understanding."
+    },
+    {
+      "section": "B. Content Knowledge, Pedagogy and Technology",
+      "verification": "",
+      "number": 9,
+      "label": "9. Relates the subject matter to contemporary issues and developments in the discipline and/or daily life activities."
+    },
+    {
+      "section": "B. Content Knowledge, Pedagogy and Technology",
+      "verification": "",
+      "number": 10,
+      "label": "10. Promotes active learning and student engagement by using appropriate teaching and learning resources including ICT tools and platforms"
+    },
+    {
+      "section": "B. Content Knowledge, Pedagogy and Technology",
+      "verification": "",
+      "number": 11,
+      "label": "11. Uses appropriate assessments (projects, exams, quizzes, assignments, etc.) aligned with the learning outcomes."
+    },
+    {
+      "section": "C. Commitment and Transparency",
+      "verification": "",
+      "number": 12,
+      "label": "12. Recognizes and values the unique diversity and individual differences among students."
+    },
+    {
+      "section": "C. Commitment and Transparency",
+      "verification": "",
+      "number": 13,
+      "label": "13. Assists students with their learning challenges during consultation hours."
+    },
+    {
+      "section": "C. Commitment and Transparency",
+      "verification": "",
+      "number": 14,
+      "label": "14. Provides immediate feedback on student outputs and performance."
+    },
+    {
+      "section": "C. Commitment and Transparency",
+      "verification": "",
+      "number": 15,
+      "label": "15. Provides transparent and clear criteria in rating student's performance."
+    }
+  ],
+  "descriptions": {
+    "A. Management of Teaching and Learning": "Management of Teaching and Learning refers to the intentional and organized handling of classroom presence, clear communication of academic expectations, efficient use of time, and the purposeful use of student-centered activities that promote critical thinking, independent learning, reflection, decision-making, and continuous academic improvement through constructive feedback.",
+    "B. Content Knowledge, Pedagogy and Technology": "Content Knowledge, Pedagogy, and Technology refer to a teacher's ability to demonstrate a strong grasp of subject matter, present complex concepts in a clear and accessible way, relate content to real-world contexts and current developments, engage students through appropriate instructional strategies and digital tools, and apply assessment methods aligned with intended learning outcomes.",
+    "C. Commitment and Transparency": "Commitment and Transparency refer to the teacher's consistent dedication to supporting student learning by acknowledging learner diversity, offering timely academic support and feedback, and upholding fairness and accountability through the use of clear and openly communicated performance criteria."
+  }
+}

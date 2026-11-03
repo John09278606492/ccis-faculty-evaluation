@@ -2,16 +2,37 @@
 
 namespace App\Filament\Resources\QuizResource\Pages;
 
+use App\Filament\Pages\DraftEditRecord as EditRecord;
 use App\Filament\Resources\QuizResource;
 use Filament\Actions;
-use Filament\Resources\Pages\EditRecord;
 use Illuminate\Contracts\View\View;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Locked;
+use Livewire\Attributes\On;
 
 class EditQuiz extends EditRecord
 {
     protected static string $resource = QuizResource::class;
+
+    public function hasCombinedRelationManagerTabsWithContent(): bool
+    {
+        return true;
+    }
+
+    public function getContentTabLabel(): ?string
+    {
+        return 'Settings & schedule';
+    }
+
+    public function getTitle(): string
+    {
+        return $this->getRecord()->kindLabel().': '.$this->getRecord()->title;
+    }
+
+    public function getSubheading(): ?string
+    {
+        return 'Details → Questions → Participants & conduct → Grade & results. Review readiness before publishing. Exam scores can be exported; quizzes and activities can also sync to class records.';
+    }
 
     #[Locked]
     public string $loadedRevision = '';
@@ -29,10 +50,10 @@ class EditQuiz extends EditRecord
         return hash('sha256', json_encode($this->getRecord()->fresh()->except(['updated_at', 'class_record_synced_at', 'class_record_sync_error'])));
     }
 
-    #[\Livewire\Attributes\On('classroom-push')]
+    #[On('classroom-push')]
     public function checkRemoteChanges(string $kind = 'reconnected', ?int $quizId = null, ?int $courseId = null): void
     {
-        if (($quizId && $quizId !== $this->getRecord()->id) || ($courseId && $courseId !== $this->getRecord()->course_offering_id)) {
+        if (in_array($kind, ['focus', 'progress'], true) || ($quizId && $quizId !== $this->getRecord()->id) || ($courseId && $courseId !== $this->getRecord()->course_offering_id)) {
             $this->skipRender();
 
             return;
@@ -64,10 +85,17 @@ class EditQuiz extends EditRecord
     {
         return [
             QuizResource::buildHeaderAction(),
-            QuizResource::previewHeaderAction(),
-            QuizResource::copyLinkHeaderAction(),
-            QuizResource::syncClassRecordHeaderAction(),
-            Actions\DeleteAction::make(),
+            Actions\Action::make('studentAccess')->label('Participants & conduct')->icon('heroicon-o-user-group')
+                ->color('gray')->action(fn () => $this->activeRelationManager = '1'),
+            Actions\Action::make('grading')->label('Grade & results')->icon('heroicon-o-clipboard-document-check')
+                ->color('gray')->action(fn () => $this->activeRelationManager = '2'),
+            Actions\ActionGroup::make([
+                QuizResource::previewHeaderAction(),
+                QuizResource::copyLinkHeaderAction(),
+                QuizResource::syncClassRecordHeaderAction(),
+                QuizResource::releaseResultsHeaderAction(),
+                Actions\DeleteAction::make(),
+            ])->label('More actions')->button()->color('gray'),
         ];
     }
 }

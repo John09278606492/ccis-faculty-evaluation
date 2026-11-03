@@ -1,4 +1,6 @@
 <x-filament-panels::page>
+    @include('filament.partials.workspace-draft')
+    <div class="qb-responsive-host">
     @php($questionsLocked = $quizRecord->attempts()->exists())
     <div x-data="{
             dirty: false,
@@ -125,7 +127,7 @@
             },
         }" class="qb-container" x-on:input="dirty = true" x-on:change="dirty = true"
         x-on:question-saved.window="dirty = false"
-        x-on:question-selected.window="if (window.innerWidth <= 640) $nextTick(() => $refs.properties.scrollIntoView({ behavior: 'smooth', block: 'start' }))"
+        x-on:question-selected.window="if ($el.clientWidth <= 1050) $nextTick(() => $refs.properties.scrollIntoView({ behavior: 'smooth', block: 'start' }))"
         x-on:beforeunload.window="if (dirty) { $event.preventDefault(); $event.returnValue = ''; }">
 
         {{-- ═══════ LEFT SIDEBAR — QUESTION TYPE PALETTE ═══════ --}}
@@ -370,10 +372,10 @@
                         </div>
                         <div class="qb-prop-group">
                             <label class="qb-tf-option">
-                                <input @disabled($questionsLocked) type="checkbox" wire:model="selectedQuestionData.allow_student_files">
+                                <input @disabled($questionsLocked) type="checkbox" wire:model.live="selectedQuestionData.allow_student_files">
                                 <span>Students can create files and folders</span>
                             </label>
-                            <span class="qb-prop-help">Like a VS Code workspace: students add, rename and delete files and folders. Otherwise they edit exactly your starter files.</span>
+                            <span class="qb-prop-help">Like a VS Code workspace: students add, rename and delete files and folders. Turn off to keep students to exactly your starter files.</span>
                         </div>
                         <div class="qb-prop-group">
                             <label class="qb-tf-option">
@@ -402,7 +404,7 @@
                         @endif
                         <div class="qb-prop-group">
                             <span class="qb-prop-label">Starter Files</span>
-                            <span class="qb-prop-help">Students get exactly these files and edit them; they cannot add or remove files.</span>
+                            <span class="qb-prop-help">{{ ($selectedQuestionData['allow_student_files'] ?? true) ? 'Students start with these files and can add, rename or delete files and folders.' : 'Students edit these starter files; adding, renaming and deleting files is disabled.' }}</span>
                             <x-code-editor state-path="selectedQuestionData.starter_files"
                                 :read-only="$questionsLocked" :can-manage-files="! $questionsLocked" can-run autocomplete
                                 min-height="8rem" max-height="24rem"
@@ -417,6 +419,58 @@
                                 min-height="8rem" max-height="24rem"
                                 wire:key="reference-{{ $selectedQuestionId }}-{{ $codeLanguage }}" />
                         </div>
+                        @unless ($selectedQuestionData['database_enabled'] ?? false)
+                            @php($checkRunner = \App\Support\CodeProject::runner(\App\Support\CodeProject::decode($selectedQuestionData['starter_files'] ?? null, [])))
+                            <div class="qb-prop-group">
+                                <label class="qb-tf-option">
+                                    <input @disabled($questionsLocked) type="checkbox" wire:model.live="selectedQuestionData.auto_check">
+                                    <span>Check answers automatically</span>
+                                </label>
+                                <span class="qb-prop-help">Runs each student's code and your reference solution on the same test cases and suggests a score from how many outputs match. Only the output is compared, so students may write the code their own way. Works for PHP, web page and SQL questions.</span>
+                            </div>
+                            @if ($selectedQuestionData['auto_check'] ?? false)
+                                <div class="qb-prop-group">
+                                    <span class="qb-prop-label">Test Cases</span>
+                                    <span class="qb-prop-help">{{ match ($checkRunner) {
+                                        'php' => 'Input: the page to open, with a query string if needed, such as index.php?n=5. Add form fields on the next lines as name=value to send them as a POST.',
+                                        'sql' => "Input: a query run after the student's SQL, such as SELECT * FROM products ORDER BY id. Leave it empty to compare the rows the student's own queries return.",
+                                        'web' => "Input: JavaScript run on the page once it loads; its result is compared, for example document.querySelector('#total').textContent. Leave it empty to compare the page's text and console output.",
+                                        default => 'Automatic checking works for PHP, web page and SQL questions.',
+                                    } }} With no test cases, the code is run once as it is.</span>
+                                    <div class="qb-options-list">
+                                        @foreach ($selectedQuestionData['check_cases'] ?? [] as $index => $case)
+                                            <div class="qb-option-row" wire:key="check-case-{{ $selectedQuestionId }}-{{ $index }}" style="align-items:flex-start">
+                                                <div style="flex:1;display:flex;flex-direction:column;gap:4px">
+                                                    <input @disabled($questionsLocked) type="text" class="qb-prop-input" maxlength="80"
+                                                        wire:model="selectedQuestionData.check_cases.{{ $index }}.label" placeholder="Test {{ $index + 1 }} name (optional)">
+                                                    <textarea @disabled($questionsLocked) class="qb-prop-input" rows="2" style="font-family:ui-monospace,monospace"
+                                                        wire:model="selectedQuestionData.check_cases.{{ $index }}.input" placeholder="Input"></textarea>
+                                                </div>
+                                                <button @disabled($questionsLocked) wire:click="removeCheckCase({{ $index }})" class="qb-option-remove" title="Remove test case">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                        @endforeach
+                                    </div>
+                                    @if (count($selectedQuestionData['check_cases'] ?? []) < \App\Models\QuizQuestion::MAX_CHECK_CASES)
+                                        <button @disabled($questionsLocked) wire:click="addCheckCase" class="qb-add-option-btn">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                                            </svg>
+                                            Add Test Case
+                                        </button>
+                                    @endif
+                                </div>
+                                <div class="qb-prop-group">
+                                    <label class="qb-tf-option">
+                                        <input @disabled($questionsLocked) type="checkbox" wire:model="selectedQuestionData.check_ignore_case">
+                                        <span>Ignore upper and lower case when comparing</span>
+                                    </label>
+                                </div>
+                            @endif
+                        @endunless
                     @else
                         <div class="qb-prop-group">
                             <div class="qb-prop-readonly">
@@ -455,6 +509,7 @@
         </div>
     </div>
 
+    </div>
     @push('styles')
         <style>
             .qb-container { display: flex; height: calc(100vh - 64px); margin: -1.5rem; overflow: hidden; background: #f3f4f6; }
@@ -575,6 +630,7 @@
             .dark .qb-btn-outline { background: #1f2937; border-color: #4b5563; color: #d1d5db; }
             .dark .qb-toast { background: #1f2937; border-color: #065f46; color: #6ee7b7; }
             .qb-container { height: auto; min-height: 65vh; margin: 0; border: 1px solid #e5e7eb; border-radius: 12px; align-items: stretch; }
+            .qb-responsive-host { container-type: inline-size; }
             .qb-sidebar { width: 190px; min-width: 190px; }
             .qb-canvas-wrapper { min-width: 0; }
             .qb-canvas-header { flex-wrap: wrap; gap: 12px; padding: 16px; }
@@ -606,6 +662,15 @@
                 .qb-question-card { padding: 12px; gap: 8px; }
                 .qb-empty-state { padding: 24px; }
                 .qb-properties-footer { position: sticky; bottom: 0; background: inherit; }
+            }
+            @container (max-width: 1050px) {
+                .qb-container { flex-wrap: wrap; }
+                .qb-sidebar { width: 100%; min-width: 0; border-right: 0; }
+                .qb-category { display: inline-block; padding: 8px 16px; }
+                .qb-palette-grid { flex-direction: row; flex-wrap: wrap; }
+                .qb-canvas-wrapper { flex: 1 1 100%; }
+                .qb-properties-open { width: 100%; min-width: 0; border-left: 0; border-top: 1px solid #64748b; }
+                .qb-field-label { overflow-wrap: break-word; }
             }
         </style>
     @endpush

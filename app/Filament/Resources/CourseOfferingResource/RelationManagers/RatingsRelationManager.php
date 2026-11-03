@@ -4,15 +4,26 @@ namespace App\Filament\Resources\CourseOfferingResource\RelationManagers;
 
 use App\Models\RatingCriteria;
 use App\Models\User;
+use App\Services\EvaluationResultsRelease;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Model;
 
 class RatingsRelationManager extends RelationManager
 {
+    /**
+     * The person being evaluated sees these scores only once the results are released.
+     */
+    public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
+    {
+        return parent::canViewForRecord($ownerRecord, $pageClass)
+            && EvaluationResultsRelease::canSeeScores(auth()->user(), $ownerRecord);
+    }
+
     protected static string $relationship = 'ratings';
 
     public function form(Form $form): Form

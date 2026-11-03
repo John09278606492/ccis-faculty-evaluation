@@ -2,6 +2,7 @@
 
 namespace App\Filament\Widgets;
 
+use App\Filament\AvatarProviders\InitialsAvatarProvider;
 use App\Models\User;
 use BezhanSalleh\FilamentShield\Traits\HasWidgetShield;
 use Filament\Facades\Filament;
@@ -48,7 +49,7 @@ class LatestUsersWidget extends BaseWidget
                 Tables\Columns\ImageColumn::make('avatar_url')
                     ->label('Avatar')
                     ->circular()
-                    ->defaultImageUrl(fn (User $record) => 'https://ui-avatars.com/api/?name='.urlencode($record->name).'&color=7F9CF5&background=EBF4FF'),
+                    ->defaultImageUrl(fn (User $record) => app(InitialsAvatarProvider::class)->get($record)),
                 Tables\Columns\TextColumn::make('name')
                     ->searchable()
                     ->sortable(),
