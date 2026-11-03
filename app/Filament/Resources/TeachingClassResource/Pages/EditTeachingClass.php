@@ -6,6 +6,7 @@ use App\Filament\Pages\DraftEditRecord as EditRecord;
 use App\Filament\Resources\TeachingClassResource;
 use App\Services\TeachingClasses;
 use Filament\Actions;
+use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\ValidationException;
 
@@ -26,7 +27,7 @@ class EditTeachingClass extends EditRecord
                 ->action(function () {
                     abort_unless(auth()->user()->can('update', $this->record), 403);
                     $this->record->update(['is_active' => false]);
-                    \Filament\Notifications\Notification::make()->success()->title('Class deactivated')->send();
+                    Notification::make()->success()->title('Class deactivated')->send();
                 }),
         ];
     }
