@@ -125,7 +125,7 @@ class TeachingClassResource extends CourseOfferingResource
                 Tables\Actions\Action::make('deleteEmpty')->label('Delete')->icon('heroicon-o-trash')->color('danger')->iconButton()->tooltip('Delete this unused class')
                     ->visible(fn (CourseOffering $record) => auth()->user()->can('delete', $record) && static::deletable($record))
                     ->requiresConfirmation()->modalHeading('Delete this class?')
-                    ->modalDescription(fn (CourseOffering $record) => ($record->course?->code ?? 'This class').' has '.static::emptyReason($record).' and no evaluation or assessment records. This cannot be undone.')
+                    ->modalDescription('Remove this unused teaching class and its student links. Student accounts and saved sections remain. This cannot be undone.')
                     ->action(function (CourseOffering $record) {
                         abort_unless(auth()->user()->can('delete', $record) && static::deletable($record->fresh()), 403);
                         $record->delete();
@@ -135,7 +135,7 @@ class TeachingClassResource extends CourseOfferingResource
                 Tables\Actions\BulkAction::make('deleteEmpty')->label('Delete unused classes')->icon('heroicon-o-trash')->color('danger')
                     ->visible(fn () => auth()->user()->can('deleteAny', CourseOffering::class))
                     ->requiresConfirmation()->modalHeading('Delete unused classes?')
-                    ->modalDescription('Only selected classes with no students or no faculty, and no evaluation or assessment records, are deleted. Others are skipped.')
+                    ->modalDescription('Only selected classes outside an evaluation cycle and without responses, scores or assessments are deleted. Student accounts and saved sections remain. Others are skipped.')
                     ->deselectRecordsAfterCompletion()
                     ->action(function (Collection $records) {
                         $deleted = 0;
@@ -145,22 +145,22 @@ class TeachingClassResource extends CourseOfferingResource
                                 $deleted++;
                             }
                         }
-                        Notification::make()->success()->title($deleted.' classes deleted')->body(($records->count() - $deleted).' skipped because they have students and faculty or evaluation records.')->send();
+                        Notification::make()->success()->title($deleted.' classes deleted')->body(($records->count() - $deleted).' skipped because they belong to an evaluation cycle or have evaluation or assessment records.')->send();
                     }),
             ])->recordUrl(fn (CourseOffering $record) => auth()->user()->can('update', $record) ? static::getUrl('edit', ['record' => $record, 'activeRelationManager' => '0']) : null)
             ->defaultSort(fn (Builder $query) => $query->orderByDesc('evaluator_selection->auto_match->ambiguous')->orderByDesc('evaluator_selection->auto_match->section_required')->orderByDesc('id'))
             ->emptyStateHeading('No teaching classes yet')->emptyStateDescription('Import instructor offerings to match enrolled students automatically.');
     }
 
-    /** Unused setup rows only: never a class in an evaluation or with responses, scores or assessments. */
+    /** Setup enrolment and stale section references do not make a class historical. */
     public static function deletable(?CourseOffering $record): bool
     {
         if (! $record || $record->evaluation_cycle_id || $record->formSubmissions()->withoutGlobalScope('assigned_data')->exists()
-            || $record->ratings()->exists() || $record->quizzes()->exists()) {
+            || $record->ratings()->withoutGlobalScope('assigned_data')->exists() || $record->quizzes()->withoutGlobalScope('assigned_data')->exists()) {
             return false;
         }
 
-        return static::emptyReason($record) !== null;
+        return true;
     }
 
     public static function emptyReason(CourseOffering $record): ?string

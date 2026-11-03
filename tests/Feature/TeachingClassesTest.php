@@ -137,7 +137,7 @@ it('protects the period course and evaluatee after responses while allowing desc
     expect($submission->fresh()->getRawOriginal())->toBe($originalData);
 })->with(['semester_id', 'course_id', 'user_id']);
 
-it('deletes only unused classes without students or faculty and keeps classes with records', function () {
+it('deletes unused classes even with student links and keeps classes with records', function () {
     foreach (['delete_course::offering', 'delete_any_course::offering'] as $permission) {
         $this->actor->givePermissionTo(Permission::findOrCreate($permission, 'web'));
     }
@@ -158,6 +158,24 @@ it('deletes only unused classes without students or faculty and keeps classes wi
 
     Livewire::test(ListTeachingClasses::class)->callTableBulkAction('deleteEmpty', [$noFaculty, $answered]);
     expect(CourseOffering::find($noFaculty->id))->toBeNull()->and(CourseOffering::find($answered->id))->not->toBeNull();
+});
+
+it('removes an unused class with a deleted section reference without deleting its students', function () {
+    $this->actor->givePermissionTo(Permission::findOrCreate('delete_course::offering', 'web'));
+    $class = $this->service->save($this->actor, $this->campus, $this->data);
+    $class->students()->attach($this->student);
+    $class->update(['evaluator_selection' => ['source' => 'sections_v1', 'sections' => ['deleted-section']]]);
+    Livewire::test(EditTeachingClass::class, ['record' => $class->id])->assertActionVisible('delete')->callAction('delete');
+    expect(CourseOffering::find($class->id))->toBeNull()->and(User::find($this->student->id))->not->toBeNull();
+});
+
+it('deactivates a class with responses while keeping the response and roster intact', function () {
+    $this->offering->students()->syncWithoutDetaching([$this->student->id]);
+    $response = FormSubmission::create(['form_id' => $this->offering->form_id, 'course_offering_id' => $this->offering->id,
+        'user_id' => $this->student->id, 'data' => ['teaching_quality' => 5]]);
+    Livewire::test(EditTeachingClass::class, ['record' => $this->offering->id])->assertActionHidden('delete')->callAction('deactivate');
+    expect($this->offering->fresh()->is_active)->toBeFalse()->and($response->fresh()->data)->toBe(['teaching_quality' => 5])
+        ->and($this->offering->students()->whereKey($this->student->id)->exists())->toBeTrue();
 });
 
 it('filters teaching classes by evaluation status and counts student responses per evaluation', function () {
