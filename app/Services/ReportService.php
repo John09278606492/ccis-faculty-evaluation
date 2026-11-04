@@ -188,6 +188,27 @@ class ReportService
         return ['field_comments' => $fieldComments, 'overall_comments' => $overallComments];
     }
 
+    /**
+     * Drop blank and placeholder non-comments ("N/A", "none", "wala", empty, punctuation-only) from a list.
+     * This only curates what a comments summary displays; it never edits or hides a genuine comment.
+     *
+     * @param  array<int, mixed>  $comments
+     * @return array<int, string>
+     */
+    public function meaningfulComments(array $comments): array
+    {
+        $placeholders = ['', 'n/a', 'na', 'none', 'wala', 'no comment', 'no comments', 'nothing', 'nada'];
+
+        return array_values(array_filter($comments, function ($comment) use ($placeholders) {
+            if (! is_string($comment)) {
+                return false;
+            }
+            $normalized = trim(mb_strtolower($comment), " \t\n\r\0\x0B.!-");
+
+            return $normalized !== '' && ! in_array($normalized, $placeholders, true) && preg_match('/[\p{L}\p{N}]/u', $comment);
+        }));
+    }
+
     public function getDepartmentSummary(Department $department, ?int $semesterId = null): array
     {
         $context = ['campus_id' => $department->campus_id, 'semester_id' => $semesterId, 'department_id' => $department->id];

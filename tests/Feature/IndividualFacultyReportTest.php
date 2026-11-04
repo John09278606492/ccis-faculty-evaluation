@@ -3,6 +3,7 @@
 use App\Filament\Pages\EvaluationResults;
 use App\Models\FormSubmission;
 use App\Models\User;
+use App\Services\ReportService;
 use Filament\Facades\Filament;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Permission;
@@ -45,6 +46,19 @@ it('renders Annex C with weighted student ratings and anonymous qualitative comm
         ->assertSee('90.00')->assertSee('180.00')->assertSee('Clear examples in class.')->assertSee('OVERALL RATING')->assertDontSee('Not configured')
         ->assertDontSee('<script>alert(1)</script>', false)->assertSee('Prepared by')->assertSee('Reviewed by');
     expect($response->viewData('ratings')['SET'])->toBe(90.0);
+});
+
+it('drops blank and placeholder entries from the Annex C comments', function () {
+    foreach (['Clear examples in class.', 'N/A', 'none', 'wala', '   '] as $comment) {
+        FormSubmission::create(['form_id' => $this->form->id, 'course_offering_id' => $this->offering->id,
+            'data' => ['teaching_quality' => 4, '_overall_comment' => $comment]]);
+    }
+
+    $this->get(route('evaluation.report', $this->offering))->assertOk()
+        ->assertSee('Clear examples in class.')->assertDontSee('wala');
+
+    expect(app(ReportService::class)->meaningfulComments(['Clear examples in class.', 'N/A', 'none', 'wala', '  ', '...', 5]))
+        ->toBe(['Clear examples in class.']);
 });
 
 it('preserves acknowledgement details when individual report metadata is saved', function () {

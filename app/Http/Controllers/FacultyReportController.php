@@ -58,7 +58,7 @@ class FacultyReportController extends Controller
             $score = app(EvaluationScoring::class)->assignment($assignment, $assignment->formSubmissions);
             $comments = app(ReportService::class)->getAggregatedComments(collect([$assignment->id]));
             $rows->push(['assignment' => $assignment, 'form' => $form, 'instrument' => $score['instrument'],
-                'comments' => array_merge($comments['overall_comments'], ...array_values($comments['field_comments'])), 'count' => $score['count'],
+                'comments' => app(ReportService::class)->meaningfulComments(array_merge($comments['overall_comments'], ...array_values($comments['field_comments']))), 'count' => $score['count'],
                 'mean_total' => $score['mean_total'], 'mean_5' => $score['mean_5'], 'maximum' => $score['maximum'], 'percentage' => $score['percentage'],
                 'items' => $score['fields']->map(fn ($field) => ['label' => $field['label'], 'section' => $field['section'], 'mean' => $field['native_avg']])]);
             if ($score['instrument'] === 'SET') {
