@@ -310,7 +310,8 @@ class UserResource extends Resource
                         ->action(function (User $record) {
                             abort_unless(static::canEdit($record), 403);
                             $password = Str::password(18);
-                            $record->update(['password' => $password, 'must_change_password' => true]);
+                            // must_change_password is guarded (not $fillable), so update() silently drops it; forceFill makes the one-time flag stick.
+                            $record->forceFill(['password' => $password, 'must_change_password' => true])->save();
                             Notification::make()->title('Temporary password: '.$password)->body('For '.$record->name.'. Copy it now; it will not be displayed again.')->success()->persistent()->send();
                         }),
                     Action::make('newPin')

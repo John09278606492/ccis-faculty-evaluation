@@ -5,6 +5,7 @@ use App\Filament\Resources\FormResource\Pages\EditForm;
 use App\Filament\Resources\FormResource\RelationManagers\SubmissionsRelationManager;
 use App\Filament\Resources\UserResource;
 use App\Filament\Resources\UserResource\Pages\EditUser;
+use App\Filament\Resources\UserResource\Pages\ListUsers;
 use App\Http\Middleware\ScopeAssignedData;
 use App\Models\Campus;
 use App\Models\CourseOffering;
@@ -17,6 +18,7 @@ use App\Services\AssignedDataAccess;
 use App\Services\ScopedAccountImport;
 use App\Services\UserAccessAdministration;
 use Filament\Facades\Filament;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -77,6 +79,24 @@ it('rechecks import scope without a Filament tenant and never adopts a foreign a
     expect(Hash::check('password123', $new->password))->toBeFalse()->and($new->must_change_password)->toBeTrue();
     $this->actor->revokePermissionTo('create_user');
     expect(fn () => $service->resolve($this->actor, $options, 'instructor', ['employee_id' => 'NEW-123', 'email' => 'new@example.test']))->toThrow(HttpException::class);
+});
+
+it('forces a password change when issuing a temporary password', function () {
+    $subject = User::factory()->create(['is_student' => false, 'instructor_department_id' => $this->actor->instructor_department_id,
+        'password' => 'Original-pass-123', 'first_name' => 'Temp', 'last_name' => 'Target']);
+    $subject->campuses()->attach($this->campus);
+
+    $previous = Model::preventsLazyLoading();
+    Model::preventLazyLoading(false);
+    try {
+        Livewire::test(ListUsers::class)->callTableAction('issueTemporaryPassword', $subject)->assertHasNoTableActionErrors();
+    } finally {
+        Model::preventLazyLoading($previous);
+    }
+
+    $fresh = $subject->fresh();
+    expect($fresh->must_change_password)->toBeTrue()
+        ->and(Hash::check('Original-pass-123', $fresh->password))->toBeFalse();
 });
 
 it('denies another departments direct form preview', function () {
