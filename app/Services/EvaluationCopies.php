@@ -78,4 +78,52 @@ class EvaluationCopies
 
         return null;
     }
+
+    /**
+     * One row per submitted response, with the evaluator named and their comment.
+     * Same gate as revealing identity in the printed copies: identity reveal permission plus the actor's own data scope.
+     *
+     * @return array<int, array{instructor: ?string, instrument: string, subject: ?string, section: ?string, evaluator: ?string, evaluator_id: ?string, score_5: ?float, percentage: ?float, comment: string}>
+     */
+    public function identityRows(Campus $campus, User $actor, array $ids): array
+    {
+        abort_unless($this->allowed($actor, $campus) && $actor->can('view_evaluator_identity_form'), 403);
+        $ids = array_values(array_unique($ids));
+        if ($ids === []) {
+            return [];
+        }
+        $submissions = $this->query($campus, $actor)->whereKey($ids)
+            ->with(['form.fields', 'courseOffering.course', 'courseOffering.evaluatee' => fn ($q) => $q->withTrashed()->withoutGlobalScope('assigned_data')])
+            ->orderBy('id')->get();
+        abort_unless($submissions->count() === count($ids), 403);
+
+        $scoring = app(EvaluationScoring::class);
+
+        return $submissions->map(function (FormSubmission $submission) use ($scoring) {
+            $identity = $this->identity($submission);
+            $score = $scoring->response($submission->form, $submission);
+            $comments = [];
+            $overall = data_get($submission->data, '_overall_comment');
+            if (is_string($overall) && trim($overall) !== '') {
+                $comments[] = trim($overall);
+            }
+            foreach ((array) data_get($submission->data, '_field_comments', []) as $comment) {
+                if (is_string($comment) && trim($comment) !== '') {
+                    $comments[] = trim($comment);
+                }
+            }
+
+            return [
+                'instructor' => $submission->courseOffering?->evaluatee?->name,
+                'instrument' => $submission->form->isSupervisorInstrument() ? 'Annex B · Supervisor' : 'Annex A · Student',
+                'subject' => $submission->courseOffering?->course?->code,
+                'section' => data_get($submission->data, '_evaluation_context.section') ?: $submission->courseOffering?->section,
+                'evaluator' => $identity['name'] ?? null,
+                'evaluator_id' => $identity['student_id'] ?? null,
+                'score_5' => $score ? round($score['mean_5'], 2) : null,
+                'percentage' => $score ? round($score['percentage'], 2) : null,
+                'comment' => implode("\n", $comments),
+            ];
+        })->all();
+    }
 }

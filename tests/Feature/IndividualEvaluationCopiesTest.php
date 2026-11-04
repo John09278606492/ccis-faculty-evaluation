@@ -186,6 +186,37 @@ it('counts only authorized teaching departments and blocks unrelated instructor 
     Livewire::test(IndividualEvaluationCopies::class, ['faculty' => $faculty->id])->assertNotFound();
 });
 
+it('exports evaluator identity rows only with the reveal permission', function () {
+    $this->first->update(['data' => [...$this->first->data, '_overall_comment' => 'Named comment for export.']]);
+    $service = app(EvaluationCopies::class);
+
+    expect(fn () => $service->identityRows($this->campus, $this->staff, [$this->first->id]))->toThrow(HttpException::class);
+
+    $this->staff->givePermissionTo(Permission::findOrCreate('view_evaluator_identity_form', 'web'));
+    $rows = $service->identityRows($this->campus, $this->staff, [$this->first->id, $this->second->id]);
+
+    expect($rows)->toHaveCount(2)
+        ->and($rows[0]['evaluator'])->toBe('Private Student Name')
+        ->and($rows[0]['evaluator_id'])->toBe('PRIVATE-001')
+        ->and($rows[0]['comment'])->toBe('Named comment for export.')
+        ->and($rows[0]['score_5'])->toBe(4.0)
+        ->and($rows[0]['percentage'])->toBe(80.0)
+        ->and($rows[1]['evaluator'])->toBeNull();
+});
+
+it('shows the identity export only to reveal-permission holders', function () {
+    Filament::setCurrentPanel(Filament::getPanel('admin'));
+    Filament::setTenant($this->campus, isQuiet: true);
+
+    Livewire::test(IndividualEvaluationCopies::class, ['faculty' => $this->assignment->user_id])
+        ->assertTableActionHidden('exportWithIdentity');
+
+    $this->staff->givePermissionTo(Permission::findOrCreate('view_evaluator_identity_form', 'web'));
+
+    Livewire::test(IndividualEvaluationCopies::class, ['faculty' => $this->assignment->user_id])
+        ->assertTableActionVisible('exportWithIdentity');
+});
+
 it('recalculates grouped counts when the academic period filter changes', function () {
     $period = $this->assignment->semester->replicate();
     $period->name = 'Another term';
