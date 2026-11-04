@@ -2,6 +2,8 @@
 <x-bisu-favicon />@include('reports.report-styles')</head><body>
 @include('reports.report-toolbar')
 <main class="sheet">
+<style>.filtered-banner{background:#fde68a;border:2px solid #b45309;color:#7c2d12;padding:8px 12px;margin:0 0 10px;font-weight:bold;text-align:center}.pick-col{width:64px;text-align:center}tr.excluded{opacity:.4}@media print{tr.excluded{display:none!important}}</style>
+<div class="filtered-banner" id="filtered-banner" hidden>FILTERED WORKING COPY — not the complete evaluation record. Unticked comments are omitted from this printout.</div>
 @if(session('status'))<p class="notice no-print">{{ session('status') }}</p>@endif
 @if($errors->any())<div class="errors no-print">{{ $errors->first() }}</div>@endif
 <div class="annex">Annex C</div><h1>INDIVIDUAL FACULTY EVALUATION REPORT</h1>
@@ -24,11 +26,12 @@
 <h2>D. Summary of Qualitative Comments and Suggestions</h2>
 @foreach(['SET' => 'Students', 'SEF' => 'Supervisor'] as $type => $label)
 @php($comments = $rows->where('instrument', $type)->flatMap(fn ($row) => $row['comments'])->values())
-<table><thead><tr><th style="width:50px">Seq</th><th>Comments and Suggestions from the {{ $label }}</th></tr></thead><tbody>@forelse($comments as $index => $comment)<tr><td>{{ $index + 1 }}</td><td style="white-space:pre-wrap">{{ $comment }}</td></tr>@empty<tr><td>—</td><td>No comments provided.</td></tr>@endforelse</tbody></table>
+<table><thead><tr><th style="width:50px">Seq</th><th>Comments and Suggestions from the {{ $label }}</th><th class="no-print pick-col">Include</th></tr></thead><tbody>@forelse($comments as $index => $comment)<tr data-comment-row><td>{{ $index + 1 }}</td><td style="white-space:pre-wrap">{{ $comment }}</td><td class="no-print pick-col"><input type="checkbox" class="comment-pick" checked aria-label="Include this comment in the printout"></td></tr>@empty<tr><td>—</td><td colspan="2">No comments provided.</td></tr>@endforelse</tbody></table>
 @endforeach
 <div class="signatures" style="grid-template-columns:1fr">@foreach(['prepared' => 'Prepared by', 'reviewed' => 'Reviewed by'] as $key => $label)<div><b>{{ $label }}:</b><div class="signature"></div><span class="muted">{{ $key === 'prepared' ? 'Signature of Staff' : 'Signature of Authorized Official' }}</span>@include('reports.signatory-select', ['label' => ($key === 'prepared' ? 'Name of Staff' : 'Name of Authorized Official')])<label for="{{ $key }}_date">Date</label><input type="date" id="{{ $key }}_date" name="{{ $key }}_date" value="{{ old($key.'_date', $details[$key.'_date'] ?? '') }}" @readonly(!$canEdit)><div class="print-text">{{ $details[$key.'_date'] ?? '________________________' }}</div></div>@endforeach</div>
 @if($canEdit)<p class="no-print"><button type="submit">Save Report Details</button> <span class="muted">Save before printing. Signatures are completed on paper.</span></p>@endif
 </form>
 <p class="muted">Generated {{ now()->format('F j, Y g:i A') }}. Current assigned forms only. Individual evaluator identities are omitted.</p>
 </main>@include('reports.live-preview')
+<script>(function(){function u(){var any=false;document.querySelectorAll('[data-comment-row]').forEach(function(r){var c=r.querySelector('.comment-pick');var ex=!!(c&&!c.checked);r.classList.toggle('excluded',ex);if(ex)any=true;});var b=document.getElementById('filtered-banner');if(b)b.hidden=!any;}document.querySelectorAll('.comment-pick').forEach(function(c){c.addEventListener('change',u);});})();</script>
 </body></html>

@@ -61,6 +61,17 @@ it('drops blank and placeholder entries from the Annex C comments', function () 
         ->toBe(['Clear examples in class.']);
 });
 
+it('offers a labeled filtered working copy with per-comment selection on Annex C', function () {
+    FormSubmission::create(['form_id' => $this->form->id, 'course_offering_id' => $this->offering->id,
+        'data' => ['teaching_quality' => 4, '_overall_comment' => 'Helpful feedback.']]);
+
+    $this->get(route('evaluation.report', $this->offering))->assertOk()
+        ->assertSee('Helpful feedback.')
+        ->assertSee('data-comment-row', false)
+        ->assertSee('class="comment-pick"', false)
+        ->assertSee('FILTERED WORKING COPY — not the complete evaluation record', false);
+});
+
 it('preserves acknowledgement details when individual report metadata is saved', function () {
     $this->post(route('evaluation.report.save', $this->offering), ['annex' => 'D', 'action_plan' => 'Mentoring plan']);
     $this->post(route('evaluation.report.save', $this->offering), ['annex' => 'C', 'prepared_name' => 'Report Staff', 'rank' => 'Assistant Professor'])
