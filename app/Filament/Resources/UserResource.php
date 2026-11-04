@@ -123,8 +123,12 @@ class UserResource extends Resource
                         Placeholder::make('registrar_id')->label('Source Faculty ID')
                             ->visible(fn (?User $record) => $record && FacultySourceLink::where('campus_id', filament()->getTenant()->id)->where('user_id', $record->id)->exists())
                             ->content(fn (?User $record) => FacultySourceLink::where('campus_id', filament()->getTenant()->id)->where('user_id', $record?->id)->pluck('external_id')->join(', ')),
+                        // Stored passwords are hashed and can never be shown; the eye only reveals what is typed here.
+                        // new-password stops the browser filling the admin's own saved password into this field.
                         TextInput::make('password')
-                            ->password()
+                            ->label(fn (string $operation): string => $operation === 'create' ? 'Password' : 'New Password')
+                            ->password()->revealable()->autocomplete('new-password')
+                            ->helperText(fn (string $operation): ?string => $operation === 'create' ? null : 'Leave empty to keep the current password. Saved passwords cannot be viewed; type a new one here or use Issue Temporary Password.')
                             ->required(fn (string $operation): bool => $operation === 'create')
                             ->dehydrated(fn (?string $state): bool => filled($state))
                             ->maxLength(255),

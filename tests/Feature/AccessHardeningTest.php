@@ -132,6 +132,19 @@ it('preserves protected global profile roles while editing delegated campus role
     expect($subject->fresh()->hasRole('local_form_reviewer'))->toBeTrue();
 });
 
+it('keeps the stored password unless a new one is typed and blocks browser autofill', function () {
+    $subject = User::factory()->create(['is_student' => false, 'instructor_department_id' => $this->actor->instructor_department_id, 'password' => 'Original-pass-123', 'first_name' => 'Pass', 'last_name' => 'Keeper']);
+    $subject->campuses()->attach($this->campus);
+    Livewire::test(EditUser::class, ['record' => $subject->id])
+        ->assertFormFieldExists('password', fn ($field) => $field->isPasswordRevealable() && $field->getAutocomplete() === 'new-password' && $field->getLabel() === 'New Password')
+        ->assertFormSet(['password' => null])
+        ->fillForm(['first_name' => 'Kept'])->call('save')->assertHasNoFormErrors();
+    expect(Hash::check('Original-pass-123', $subject->fresh()->password))->toBeTrue();
+    Livewire::test(EditUser::class, ['record' => $subject->id])
+        ->fillForm(['password' => 'Changed-pass-456'])->call('save')->assertHasNoFormErrors();
+    expect(Hash::check('Changed-pass-456', $subject->fresh()->password))->toBeTrue();
+});
+
 it('shows effective access and records explicit department assignments in the admin page', function () {
     $this->actor->givePermissionTo(Permission::findOrCreate('manage_access_assignments', 'web'));
     Livewire::test(AccessAssignments::class)->assertSuccessful()->assertSee('Access &amp; Assignments', false)->assertSee($this->actor->name);
