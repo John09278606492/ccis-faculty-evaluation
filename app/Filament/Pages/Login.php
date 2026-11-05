@@ -72,10 +72,11 @@ class Login extends BaseLogin
             if (! $student) {
                 $this->throwFailureValidationException();
             }
-            if (! $student->pin_issued_at && $student->auto_approve_sign_in && $student->canAccessPanel(Filament::getCurrentPanel())) {
-                // Staff switched approval off for this student in the master list.
+            if ($student->auto_approve_sign_in && $student->canAccessPanel(Filament::getCurrentPanel())) {
+                // Staff switched approval off for this student in the master list, so the
+                // ID number alone signs them in, with or without a PIN.
                 StudentSignIns::cancel();
-                Filament::auth()->login($student);
+                Filament::auth()->login($student, true);
                 session()->regenerate();
                 $this->redirect('/');
 

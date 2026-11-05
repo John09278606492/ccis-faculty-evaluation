@@ -97,6 +97,22 @@ it('signs in an auto-approved student without a PIN straight away, without offer
     expect(auth()->check())->toBeFalse();
 });
 
+it('signs in an auto-approved student who already has a PIN with the ID number alone', function () {
+    ['student' => $student] = evaluationFixture();
+    $student->update(['student_id' => 'AUTO-200']);
+    $student->forceFill(['auto_approve_sign_in' => true, 'pin_issued_at' => now(), 'password' => Hash::make('583920')])->save();
+
+    Livewire::test(Login::class)->set('data.login', 'AUTO-200')->call('authenticate')->assertRedirect('/');
+    expect(auth()->id())->toBe($student->id)
+        ->and(DB::table('student_sign_in_requests')->count())->toBe(0);
+});
+
+it('sends a signed-out page to sign in instead of a restricted error on a background refresh', function () {
+    ['student' => $student] = evaluationFixture();
+    Livewire::test(\App\Livewire\PanelChrome::class, ['area' => 'sidebar', 'pageUrl' => url('/')])
+        ->assertRedirect(filament()->getLoginUrl());
+});
+
 it('offers the PIN only right after an approval, and lets the student skip it', function () {
     ['student' => $student] = evaluationFixture();
     $this->actingAs($student);
