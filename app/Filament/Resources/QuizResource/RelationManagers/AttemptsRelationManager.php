@@ -7,6 +7,7 @@ use App\Models\QuizAnswer;
 use App\Models\QuizAttempt;
 use App\Models\QuizQuestion;
 use App\Services\BackgroundTasks;
+use App\Services\ExtendAttemptTime;
 use App\Support\SqliteWriter;
 use Carbon\CarbonInterval;
 use Filament\Forms;
@@ -197,6 +198,25 @@ class AttemptsRelationManager extends RelationManager
                         Notification::make()->title($moved ? 'New device allowed' : 'Nothing to allow')
                             ->body($moved ? 'Ask the student to reload the exam page on the new device.' : null)->success()->send();
                     }),
+                Tables\Actions\Action::make('extendTime')
+                    ->label('Give more time')
+                    ->icon('heroicon-o-clock')
+                    ->color('warning')
+                    ->visible(fn (QuizAttempt $record) => (auth()->user()?->can('update', $this->getOwnerRecord()) ?? false)
+                        && ($record->status === 'in_progress' || $record->finalized_reason === 'expired')
+                        && app(ExtendAttemptTime::class)->canExtend($record))
+                    ->modalHeading(fn (QuizAttempt $record) => 'Give '.($record->user?->name ?? 'this student').' more time')
+                    ->modalDescription(fn (QuizAttempt $record) => $record->status === 'in_progress'
+                        ? 'Everything already saved is kept. The student continues where they stopped.'
+                        : 'This attempt was closed when its time ran out. It is reopened with everything the student saved, and its score is cleared until they submit again.')
+                    ->form(self::extendTimeForm())
+                    ->action(function (QuizAttempt $record, array $data) {
+                        abort_unless(auth()->user()?->can('update', $this->getOwnerRecord()) && $record->quiz_id === $this->getOwnerRecord()->id, 403);
+                        $done = app(ExtendAttemptTime::class)->extend($record, (int) $data['minutes'], (bool) $data['any_device']);
+                        Notification::make()->title($done ? 'More time given' : 'This attempt can no longer be extended')
+                            ->body($done ? 'The student can open the assessment again from My Assessments and continue.' : null)
+                            ->{$done ? 'success' : 'warning'}()->send();
+                    }),
                 // Only the student's latest attempt, so the next one takes its number again.
                 Tables\Actions\Action::make('resetAttempt')
                     ->label('Reset attempt')
@@ -219,6 +239,29 @@ class AttemptsRelationManager extends RelationManager
                     }),
             ])
             ->headerActions([
+                Tables\Actions\Action::make('extendAll')
+                    ->label('Give unfinished students more time')
+                    ->icon('heroicon-o-clock')
+                    ->color('warning')
+                    ->visible(fn () => (auth()->user()?->can('update', $this->getOwnerRecord()) ?? false)
+                        && app(ExtendAttemptTime::class)->eligible($this->getOwnerRecord()->id)->exists())
+                    ->modalDescription(fn () => 'Unfinished now: '.app(ExtendAttemptTime::class)->eligible($this->getOwnerRecord()->id, false)->count()
+                        .' still open, '.app(ExtendAttemptTime::class)->eligible($this->getOwnerRecord()->id)->where('status', '!=', 'in_progress')->count()
+                        .' closed when their time ran out. Everything they saved is kept; reopened attempts lose their score until they submit again. Students who submitted on their own are not changed.')
+                    ->form([
+                        ...self::extendTimeForm(),
+                        Forms\Components\Toggle::make('include_timed_out')->label('Also reopen attempts that were closed when time ran out')->default(true),
+                    ])
+                    ->action(function (array $data) {
+                        abort_unless(auth()->user()?->can('update', $this->getOwnerRecord()), 403);
+                        $service = app(ExtendAttemptTime::class);
+                        $count = 0;
+                        foreach ($service->eligible($this->getOwnerRecord()->id, (bool) $data['include_timed_out'])->get() as $attempt) {
+                            $count += $service->extend($attempt, (int) $data['minutes'], (bool) $data['any_device']) ? 1 : 0;
+                        }
+                        Notification::make()->title($count.' '.str('student')->plural($count).' can continue')
+                            ->body('They open the assessment again from My Assessments.')->success()->send();
+                    }),
                 Tables\Actions\Action::make('autoCheck')
                     ->label('Auto-check code')
                     ->icon('heroicon-o-beaker')
@@ -250,6 +293,18 @@ class AttemptsRelationManager extends RelationManager
             ])
             ->bulkActions([])
             ->defaultSort('started_at', 'desc');
+    }
+
+    /** @return array<int, Forms\Components\Component> */
+    protected static function extendTimeForm(): array
+    {
+        return [
+            Forms\Components\TextInput::make('minutes')->label('Extra minutes')->numeric()->integer()->required()
+                ->minValue(1)->maxValue(20160)->default(60)
+                ->helperText('Counted from now (or from the current end time if it has not passed yet). 1440 = one day.'),
+            Forms\Components\Toggle::make('any_device')->label('Let them continue on a different device (e.g. at home)')->default(true)
+                ->helperText('The exam stays locked to whichever device opens it first after this.'),
+        ];
     }
 
     /**

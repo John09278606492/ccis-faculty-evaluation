@@ -107,6 +107,7 @@ class User extends Authenticatable implements FilamentUser, HasAvatar, HasTenant
             'email_verified_at' => 'datetime',
             'pin_issued_at' => 'datetime',
             'must_change_password' => 'boolean',
+            'auto_approve_sign_in' => 'boolean',
             'password' => 'hashed',
             'is_student' => 'boolean',
             'sections' => 'array',

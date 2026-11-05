@@ -825,14 +825,14 @@ function fakeStudentDatabases(bool $available = true): object
     return $fake;
 }
 
-function databaseQuestionAttempt(array $fixture): array
+function databaseQuestionAttempt(array $fixture, string $shows = 'Open phpMyAdmin'): array
 {
     $code = $fixture['quiz']->questions()->create(['type' => 'code', 'question_text' => 'Create the tables', 'points' => 5, 'order' => 2, 'options' => [
         'language' => 'sql', 'files' => [['name' => 'query.sql', 'content' => '']],
         'database' => ['enabled' => true, 'starter_sql' => 'CREATE TABLE students (id INT);'],
     ]]);
     test()->actingAs($fixture['student']);
-    $page = Livewire::test(TakeQuiz::class, ['quiz' => $fixture['quiz']])->call('beginAttempt')->assertSee('Open phpMyAdmin');
+    $page = Livewire::test(TakeQuiz::class, ['quiz' => $fixture['quiz']])->call('beginAttempt')->assertSee($shows);
     $attempt = $fixture['quiz']->attempts()->firstOrFail();
 
     return [$code, $page, $attempt, $attempt->answers()->where('quiz_question_id', $code->id)->firstOrFail()];
@@ -886,8 +886,11 @@ it('exports the student database with the answer on submit and lets the instruct
 it('explains when the student database server is not running', function () {
     $fixture = quizWorkflowFixture();
     fakeStudentDatabases(available: false);
-    [, , , $answer] = databaseQuestionAttempt($fixture);
+    // An online installation has no student MySQL server: the exam says so instead of offering phpMyAdmin or Run.
+    [, $page, , $answer] = databaseQuestionAttempt($fixture, 'available only on the campus classroom server');
+    $page->assertDontSee('Open phpMyAdmin')->assertDontSee('Test your project');
     $this->get(route('student-databases.open', $answer))->assertStatus(503);
+    $this->get(route('project-run', ['quizAnswer' => $answer, 'path' => 'index.php']))->assertStatus(503);
 });
 
 it('turns on a student database with starter SQL in the quiz builder', function () {

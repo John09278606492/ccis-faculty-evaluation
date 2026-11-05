@@ -26,7 +26,14 @@ class PanelChrome extends Component
     public function render()
     {
         $campus = filament()->getTenant();
-        abort_unless(auth()->user() && (! $campus || auth()->user()->canAccessTenant($campus)), 403);
+        if (! auth()->user()) {
+            // A background refresh after the session ended: send the person to sign in
+            // instead of covering the page with a "restricted" error.
+            $this->redirect(filament()->getLoginUrl());
+
+            return '<div></div>';
+        }
+        abort_unless(! $campus || auth()->user()->canAccessTenant($campus), 403);
         $request = request();
         $originalRoute = $request->route();
         try {

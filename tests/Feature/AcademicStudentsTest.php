@@ -40,6 +40,28 @@ it('adds academic student profiles with campus membership and student access', f
     Livewire::test(ListAcademicStudents::class)->assertSuccessful()->assertCanSeeTableRecords([$student]);
 });
 
+it('switches auto-approve sign-in per student and in bulk from the master list', function () {
+    Livewire::test(CreateAcademicStudent::class)->fillForm($this->profile)->call('create')->assertHasNoFormErrors();
+    $student = User::where('student_id', 'BAL-0001')->sole();
+    expect($student->auto_approve_sign_in)->toBeFalse();
+
+    Livewire::test(ListAcademicStudents::class)->call('updateTableColumnState', 'auto_approve_sign_in', (string) $student->id, true);
+    expect($student->fresh()->auto_approve_sign_in)->toBeTrue();
+    Livewire::test(ListAcademicStudents::class)->filterTable('auto_approve_sign_in', true)->assertCanSeeTableRecords([$student]);
+
+    Livewire::test(ListAcademicStudents::class)->callTableBulkAction('autoApproveOff', [$student]);
+    expect($student->fresh()->auto_approve_sign_in)->toBeFalse();
+    Livewire::test(ListAcademicStudents::class)->callTableBulkAction('autoApproveOn', [$student]);
+    expect($student->fresh()->auto_approve_sign_in)->toBeTrue();
+
+    $viewer = User::factory()->create();
+    $viewer->campuses()->attach($this->campus);
+    $viewer->givePermissionTo('view_academic_students');
+    $this->actingAs($viewer);
+    Livewire::test(ListAcademicStudents::class)->call('updateTableColumnState', 'auto_approve_sign_in', (string) $student->id, false);
+    expect($student->fresh()->auto_approve_sign_in)->toBeTrue();
+});
+
 it('imports mixed sections atomically and refuses accounts outside the assigned campus', function () {
     $rows = [array_merge($this->profile, ['department_code' => $this->department->code]),
         array_merge($this->profile, ['student_id' => 'BAL-0002', 'sections' => ['BSIT 3B'], 'department_code' => $this->department->code])];

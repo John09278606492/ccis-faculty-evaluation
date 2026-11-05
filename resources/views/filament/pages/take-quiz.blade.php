@@ -348,7 +348,13 @@
                                     wire:key="code-{{ $question->id }}-{{ $reviewMode ? 'review' : 'edit' }}"
                                 />
                             @endif
-                            @if ($question->hasDatabase() && ! $reviewMode)
+                            @if ($question->hasDatabase() && ! $reviewMode && ! ($studentDbOnline ??= app(\App\Services\StudentDatabase\StudentDatabases::class)->available()))
+                                {{-- An online installation has no student MySQL server; the code is still saved and graded by reading. --}}
+                                <div class="mt-3 flex items-center gap-3 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-600 dark:border-gray-700 dark:text-gray-300">
+                                    <x-heroicon-o-circle-stack class="h-5 w-5 shrink-0 text-gray-400" />
+                                    <span class="flex-1">phpMyAdmin and Run my project are available only on the campus classroom server. Write your code here; it is saved and your instructor checks it by reading it.</span>
+                                </div>
+                            @elseif ($question->hasDatabase() && ! $reviewMode)
                                 @php($databaseAnswer = $attempt->answers->firstWhere('quiz_question_id', $question->id))
                                 <div class="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 px-3 py-2 text-sm dark:border-gray-700">
                                     <x-heroicon-o-circle-stack class="h-5 w-5 shrink-0 text-primary-600" />

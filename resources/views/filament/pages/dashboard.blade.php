@@ -3,11 +3,33 @@
         $workspace = $this->getWorkspaceData();
     @endphp
     @include('filament.partials.workspace-guide')
-    <div class="grid gap-4 md:grid-cols-3">
-        @foreach($workspace['cards'] as $card)
-            <x-filament::section><div class="text-sm text-gray-500">{{ $card['label'] }}</div><div class="my-2 text-3xl font-semibold">{{ $card['value'] }}</div><div class="text-sm text-gray-500">{{ $card['hint'] }}</div></x-filament::section>
-        @endforeach
-    </div>
+    @if ($workspace['student'] ?? false)
+        {{-- Students: the three evaluation numbers sit side by side, even on a phone. --}}
+        <style>
+            .stu-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+            .stu-stat { padding: 12px; border: 1px solid #e5e7eb; border-radius: 12px; background: #fff; }
+            .stu-stat-value { font-size: 24px; font-weight: 700; line-height: 1.1; }
+            .stu-stat-label { margin-top: 4px; font-size: 13px; font-weight: 600; line-height: 1.25; }
+            .stu-stat-hint { margin-top: 2px; font-size: 12px; line-height: 1.3; color: #6b7280; }
+            @media (max-width: 480px) { .stu-stat { padding: 10px; } .stu-stat-hint { display: none; } }
+            .dark .stu-stat { background: #111827; border-color: #374151; }
+            .dark .stu-stat-hint { color: #9ca3af; }
+        </style>
+        <div>
+            <div class="text-sm font-semibold text-gray-700 dark:text-gray-300" style="margin-bottom:8px;">Faculty evaluations</div>
+            <div class="stu-stats">
+                @foreach($workspace['cards'] as $card)
+                    <div class="stu-stat"><div class="stu-stat-value">{{ $card['value'] }}</div><div class="stu-stat-label">{{ $card['label'] }}</div><div class="stu-stat-hint">{{ $card['hint'] }}</div></div>
+                @endforeach
+            </div>
+        </div>
+    @else
+        <div class="grid gap-4 md:grid-cols-3">
+            @foreach($workspace['cards'] as $card)
+                <x-filament::section><div class="text-sm text-gray-500">{{ $card['label'] }}</div><div class="my-2 text-3xl font-semibold">{{ $card['value'] }}</div><div class="text-sm text-gray-500">{{ $card['hint'] }}</div></x-filament::section>
+            @endforeach
+        </div>
+    @endif
     @foreach($workspace['warnings'] as $warning)<x-filament::section><p class="text-warning-700">{{ $warning }}</p></x-filament::section>@endforeach
     @if (method_exists($this, 'filtersForm'))
         {{ $this->filtersForm }}

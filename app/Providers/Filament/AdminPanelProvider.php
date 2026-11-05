@@ -135,6 +135,7 @@ class AdminPanelProvider extends PanelProvider
             )
             ->databaseNotifications()
             ->renderHook(PanelsRenderHook::HEAD_START, fn () => view('filament.partials.light-first'))
+            ->renderHook(PanelsRenderHook::HEAD_END, fn () => view('filament.partials.liquid-buttons'))
             ->renderHook(PanelsRenderHook::CONTENT_START, fn () => Blade::render('@livewire("workspace-context")'))
             ->renderHook(PanelsRenderHook::BODY_END, fn () => view('filament.partials.live-connection'))
             ->renderHook(PanelsRenderHook::BODY_START, fn () => filled(config('classroom.login.title')) ? view('filament.partials.login-brand') : '', scopes: Login::class)
