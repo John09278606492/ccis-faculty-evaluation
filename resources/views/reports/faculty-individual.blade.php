@@ -2,8 +2,8 @@
 <x-bisu-favicon />@include('reports.report-styles')</head><body>
 @include('reports.report-toolbar')
 <main class="sheet">
-<style>.filtered-banner{background:#fde68a;border:2px solid #b45309;color:#7c2d12;padding:8px 12px;margin:0 0 10px;font-weight:bold;text-align:center}.pick-col{width:64px;text-align:center}tr.excluded{opacity:.4}@media print{tr.excluded{display:none!important}}</style>
-<div class="filtered-banner" id="filtered-banner" hidden>FILTERED WORKING COPY — not the complete evaluation record. Unticked comments are omitted from this printout.</div>
+<style>.pick-col{width:64px;text-align:center}tr.excluded{opacity:.4}@media print{tr.excluded{display:none!important}}</style>
+
 @if(session('status'))<p class="notice no-print">{{ session('status') }}</p>@endif
 @if($errors->any())<div class="errors no-print">{{ $errors->first() }}</div>@endif
 <div class="annex">Annex C</div><h1>INDIVIDUAL FACULTY EVALUATION REPORT</h1>
@@ -42,22 +42,24 @@
         const show = toggle.getAttribute('aria-pressed') === 'true';
         document.body.classList.toggle('show-placeholders', show);
         toggle.textContent = show ? 'Hide N/A, None & empty responses' : 'Show N/A, None & empty responses';
-        let total = 0, visible = 0, excluded = false;
+        let total = 0, visible = 0;
         document.querySelectorAll('[data-comment-group]').forEach(table => {
-            let count = 0;
+            let count = 0, included = 0;
             const rows = table.querySelectorAll('[data-comment-row]');
             rows.forEach(row => {
                 const shown = show || row.dataset.placeholder !== 'true';
-                if (shown) row.querySelector('[data-comment-number]').textContent = ++count;
                 const omitted = !row.querySelector('.comment-pick').checked;
                 row.classList.toggle('excluded', omitted);
-                if (shown && omitted) excluded = true;
+                if (shown) {
+                    count++;
+                    row.querySelector('[data-comment-number]').textContent = omitted ? '—' : ++included;
+                }
             });
             total += rows.length; visible += count;
             document.querySelector('[data-comment-group-count="' + table.dataset.commentGroup + '"]').textContent = 'Showing ' + count + ' of ' + rows.length + ' responses' + (count < rows.length ? ' · ' + (rows.length - count) + ' placeholder responses hidden.' : '.');
         });
         document.getElementById('comment-visibility-count').textContent = visible + ' of ' + total + ' responses shown';
-        document.getElementById('filtered-banner').hidden = !excluded;
+
     }
     toggle.addEventListener('click', () => { toggle.setAttribute('aria-pressed', toggle.getAttribute('aria-pressed') === 'true' ? 'false' : 'true'); update(); });
     document.querySelectorAll('.comment-pick').forEach(input => input.addEventListener('change', update));

@@ -65,7 +65,7 @@ it('retains every response for the Annex C placeholder visibility toggle', funct
         ->toBe(['Clear examples in class.']);
 });
 
-it('offers a labeled filtered working copy with per-comment selection on Annex C', function () {
+it('offers per-comment print selection without adding a banner to Annex C', function () {
     FormSubmission::create(['form_id' => $this->form->id, 'course_offering_id' => $this->offering->id,
         'data' => ['teaching_quality' => 4, '_overall_comment' => 'Helpful feedback.']]);
 
@@ -73,7 +73,7 @@ it('offers a labeled filtered working copy with per-comment selection on Annex C
         ->assertSee('Helpful feedback.')
         ->assertSee('data-comment-row', false)
         ->assertSee('class="comment-pick"', false)
-        ->assertSee('FILTERED WORKING COPY — not the complete evaluation record', false);
+        ->assertDontSee('FILTERED WORKING COPY', false);
 });
 
 it('preserves acknowledgement details when individual report metadata is saved', function () {
