@@ -47,3 +47,6 @@ rr
 /TRANSFER-MANIFEST.json
 /campus-updates.json
 /.campus-releases/
+
+# Graphify knowledge graph (rebuilt locally).
+/graphify-out/

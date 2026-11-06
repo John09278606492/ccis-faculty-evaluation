@@ -30,7 +30,7 @@ class DepartmentSupervisorAssignments
     {
         $department = $this->department($actor, $campus, $departmentId);
         $payload = ['department_id' => $departmentId, 'semester_id' => $semesterId, 'cycle_id' => $cycleId,
-            'supervisor_id' => (int) $department->supervisor_id];
+            'supervisor_id' => (int) $department->chairperson_id];
         $this->validate($actor, $campus, $payload);
 
         return app(BackgroundTasks::class)->enqueue($actor, $campus, 'supervisor-bulk', 'Fill missing supervisors — '.$department->code, $payload);
@@ -40,12 +40,12 @@ class DepartmentSupervisorAssignments
     {
         $department = $this->department($actor, $campus, (int) $payload['department_id']);
         AcademicPeriod::validate($campus, (int) $payload['semester_id']);
-        if (! $department->supervisor_id || (int) $department->supervisor_id !== (int) $payload['supervisor_id']) {
-            throw ValidationException::withMessages(['supervisor_id' => 'Select and save the department supervisor first. If that selection changed, start the bulk assignment again.']);
+        if (! $department->chairperson_id || (int) $department->chairperson_id !== (int) $payload['supervisor_id']) {
+            throw ValidationException::withMessages(['supervisor_id' => 'Select and save the chairperson first. If that selection changed, start the bulk assignment again.']);
         }
-        if (! User::withoutGlobalScope('assigned_data')->whereKey($department->supervisor_id)->where('is_student', false)
+        if (! User::withoutGlobalScope('assigned_data')->whereKey($department->chairperson_id)->where('is_student', false)
             ->whereHas('roles')->whereHas('campuses', fn ($q) => $q->whereKey($campus->id))->exists()) {
-            throw ValidationException::withMessages(['supervisor_id' => 'The department supervisor must be an active staff account in this campus.']);
+            throw ValidationException::withMessages(['supervisor_id' => 'The chairperson must be an active staff account in this campus.']);
         }
         if (! empty($payload['cycle_id'])) {
             abort_unless(app(EvaluationCycles::class)->query($actor, $campus)->whereKey($payload['cycle_id'])
@@ -81,18 +81,18 @@ class DepartmentSupervisorAssignments
 
                     continue;
                 }
-                if ((int) $class->user_id === (int) $department->supervisor_id) {
+                if ((int) $class->user_id === (int) $department->chairperson_id) {
                     $self++;
 
                     continue;
                 }
-                app(FacultySupervisorEvaluators::class)->save($actor, $class, [(int) $department->supervisor_id]);
+                app(FacultySupervisorEvaluators::class)->save($actor, $class, [(int) $department->chairperson_id]);
                 $assigned++;
             }
             ClassroomUpdates::panel('setup');
 
             return ['assigned_classes' => $assigned, 'preserved_classes' => $preserved, 'self_evaluation_skipped' => $self,
-                'message' => $assigned.' classes received the department supervisor. '.$preserved.' existing supervisor selections were kept. '
+                'message' => $assigned.' classes received the chairperson. '.$preserved.' existing supervisor selections were kept. '
                     .$self.' self-evaluation cases were skipped; select another supervisor for those faculty.'];
         });
     }

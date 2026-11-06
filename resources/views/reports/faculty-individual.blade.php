@@ -2,6 +2,8 @@
 <x-bisu-favicon />@include('reports.report-styles')</head><body>
 @include('reports.report-toolbar')
 <main class="sheet">
+<style>.pick-col{width:64px;text-align:center}tr.excluded{opacity:.4}@media print{tr.excluded{display:none!important}}</style>
+
 @if(session('status'))<p class="notice no-print">{{ session('status') }}</p>@endif
 @if($errors->any())<div class="errors no-print">{{ $errors->first() }}</div>@endif
 <div class="annex">Annex C</div><h1>INDIVIDUAL FACULTY EVALUATION REPORT</h1>
@@ -23,12 +25,45 @@
 <p class="muted">Based on {{ $rows->where('instrument', 'SET')->sum('count') }} completed student response(s) and {{ $rows->where('instrument', 'SEF')->sum('count') }} completed supervisor response(s). Pending responses are not counted as zero.</p>
 <h2>D. Summary of Qualitative Comments and Suggestions</h2>
 @foreach(['SET' => 'Students', 'SEF' => 'Supervisor'] as $type => $label)
-@php($comments = $rows->where('instrument', $type)->flatMap(fn ($row) => $row['comments'])->values())
-<table><thead><tr><th style="width:50px">Seq</th><th>Comments and Suggestions from the {{ $label }}</th></tr></thead><tbody>@forelse($comments as $index => $comment)<tr><td>{{ $index + 1 }}</td><td style="white-space:pre-wrap">{{ $comment }}</td></tr>@empty<tr><td>—</td><td>No comments provided.</td></tr>@endforelse</tbody></table>
+@php($comments = $rows->where('instrument', $type)->flatMap(fn ($row) => $row['comment_entries'])->values())
+<p class="muted no-print" data-comment-group-count="{{ $type }}"></p>
+<table data-comment-group="{{ $type }}"><thead><tr><th style="width:50px">Seq</th><th>Comments and Suggestions from the {{ $label }}</th><th class="no-print pick-col">Include</th></tr></thead><tbody>@forelse($comments as $index => $comment)<tr data-comment-row data-placeholder="{{ $comment['placeholder'] ? 'true' : 'false' }}" @class(['placeholder-comment' => $comment['placeholder']])><td data-comment-number>{{ $index + 1 }}</td><td style="white-space:pre-wrap">{{ $comment['text'] !== '' ? $comment['text'] : '[No comment provided]' }}</td><td class="no-print pick-col"><input type="checkbox" class="comment-pick" checked aria-label="Include this comment in the printout"></td></tr>@empty<tr><td>—</td><td colspan="2">No submitted responses.</td></tr>@endforelse</tbody></table>
 @endforeach
 <div class="signatures" style="grid-template-columns:1fr">@foreach(['prepared' => 'Prepared by', 'reviewed' => 'Reviewed by'] as $key => $label)<div><b>{{ $label }}:</b><div class="signature"></div><span class="muted">{{ $key === 'prepared' ? 'Signature of Staff' : 'Signature of Authorized Official' }}</span>@include('reports.signatory-select', ['label' => ($key === 'prepared' ? 'Name of Staff' : 'Name of Authorized Official')])<label for="{{ $key }}_date">Date</label><input type="date" id="{{ $key }}_date" name="{{ $key }}_date" value="{{ old($key.'_date', $details[$key.'_date'] ?? '') }}" @readonly(!$canEdit)><div class="print-text">{{ $details[$key.'_date'] ?? '________________________' }}</div></div>@endforeach</div>
 @if($canEdit)<p class="no-print"><button type="submit">Save Report Details</button> <span class="muted">Save before printing. Signatures are completed on paper.</span></p>@endif
 </form>
 <p class="muted">Generated {{ now()->format('F j, Y g:i A') }}. Current assigned forms only. Individual evaluator identities are omitted.</p>
 </main>@include('reports.live-preview')
+<style>.placeholder-comment{display:none}body.show-placeholders .placeholder-comment{display:table-row}@media print{tr.excluded{display:none!important}}</style>
+<script>
+(() => {
+    const toggle = document.getElementById('placeholder-toggle');
+    function update() {
+        const show = toggle.getAttribute('aria-pressed') === 'true';
+        document.body.classList.toggle('show-placeholders', show);
+        toggle.textContent = show ? 'Hide N/A, None & empty responses' : 'Show N/A, None & empty responses';
+        let total = 0, visible = 0;
+        document.querySelectorAll('[data-comment-group]').forEach(table => {
+            let count = 0, included = 0;
+            const rows = table.querySelectorAll('[data-comment-row]');
+            rows.forEach(row => {
+                const shown = show || row.dataset.placeholder !== 'true';
+                const omitted = !row.querySelector('.comment-pick').checked;
+                row.classList.toggle('excluded', omitted);
+                if (shown) {
+                    count++;
+                    row.querySelector('[data-comment-number]').textContent = omitted ? '—' : ++included;
+                }
+            });
+            total += rows.length; visible += count;
+            document.querySelector('[data-comment-group-count="' + table.dataset.commentGroup + '"]').textContent = 'Showing ' + count + ' of ' + rows.length + ' responses' + (count < rows.length ? ' · ' + (rows.length - count) + ' placeholder responses hidden.' : '.');
+        });
+        document.getElementById('comment-visibility-count').textContent = visible + ' of ' + total + ' responses shown';
+
+    }
+    toggle.addEventListener('click', () => { toggle.setAttribute('aria-pressed', toggle.getAttribute('aria-pressed') === 'true' ? 'false' : 'true'); update(); });
+    document.querySelectorAll('.comment-pick').forEach(input => input.addEventListener('change', update));
+    update();
+})();
+</script>
 </body></html>
