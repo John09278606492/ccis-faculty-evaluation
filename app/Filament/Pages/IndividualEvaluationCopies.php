@@ -15,9 +15,6 @@ use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Livewire\Attributes\Url;
-use PhpOffice\PhpSpreadsheet\Spreadsheet;
-use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
-use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class IndividualEvaluationCopies extends Page implements HasTable
 {
@@ -86,30 +83,6 @@ class IndividualEvaluationCopies extends Page implements HasTable
             ->query(fn (Builder $query) => $query);
     }
 
-    public function exportWithIdentity(array $ids): StreamedResponse
-    {
-        $rows = app(EvaluationCopies::class)->identityRows(filament()->getTenant(), auth()->user(), $ids);
-        $headers = ['Instructor', 'Instrument', 'Subject', 'Section', 'Evaluator', 'ID No.', 'Score (/5)', 'Rating (%)', 'Comment'];
-        $filename = 'evaluation-identities-'.now()->format('Ymd-His').'.xlsx';
-
-        return response()->streamDownload(function () use ($rows, $headers) {
-            $book = new Spreadsheet;
-            $sheet = $book->getActiveSheet();
-            $sheet->fromArray($headers, null, 'A1');
-            $line = 2;
-            foreach ($rows as $row) {
-                $sheet->fromArray(array_values($row), null, 'A'.$line++);
-            }
-            $sheet->getStyle('A1:I1')->getFont()->setBold(true);
-            foreach (range('A', 'I') as $column) {
-                $sheet->getColumnDimension($column)->setAutoSize(true);
-            }
-            $sheet->getColumnDimension('I')->setAutoSize(false)->setWidth(80);
-            $sheet->getStyle('I:I')->getAlignment()->setWrapText(true);
-            (new Xlsx($book))->save('php://output');
-        }, $filename, ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']);
-    }
-
     private function preview(array $ids)
     {
         $url = app(EvaluationCopies::class)->previewUrl(auth()->user(), filament()->getTenant(), $ids);
@@ -158,13 +131,6 @@ class IndividualEvaluationCopies extends Page implements HasTable
                     ->visible(fn () => $this->getFilteredTableQuery()->exists())
                     ->modalHeading('Print All Filtered Copies')->modalWidth('7xl')->modalSubmitAction(false)->modalCancelActionLabel('Close')
                     ->modalContent(fn () => $this->preview($this->getFilteredTableQuery()->pluck('form_submissions.id')->all())),
-                // Only identity-reveal holders see this; it names each evaluator, so it carries the same authority as Show Identity.
-                Tables\Actions\Action::make('exportWithIdentity')->label('Export with Identity (Excel)')->icon('heroicon-o-arrow-down-tray')->color('gray')
-                    ->visible(fn () => auth()->user()?->can('view_evaluator_identity_form') && $this->getFilteredTableQuery()->exists())
-                    ->requiresConfirmation()->modalHeading('Export with identity')
-                    ->modalDescription('This spreadsheet names each evaluator alongside their ratings and comments. Handle it under your institution’s rules for evaluation data.')
-                    ->modalSubmitActionLabel('Download')
-                    ->action(fn () => $this->exportWithIdentity($this->getFilteredTableQuery()->pluck('form_submissions.id')->all())),
             ])->actions([
                 Tables\Actions\Action::make('printCopy')->label('Print Copy')->icon('heroicon-o-printer')
                     ->modalHeading('Individual Evaluation Copy')->modalWidth('7xl')->modalSubmitAction(false)->modalCancelActionLabel('Close')
