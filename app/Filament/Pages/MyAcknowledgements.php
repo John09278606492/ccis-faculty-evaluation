@@ -249,6 +249,8 @@ class MyAcknowledgements extends Page implements HasTable
             ->inCampus(filament()->getTenant()?->id)
             ->where('status', '!=', 'archived')
             ->whereIn('course_offering_id', DB::table('course_offering_student')->where('user_id', Auth::id())->select('course_offering_id'))
+            // Receipts the instructor removed this student from.
+            ->whereNotIn('id', AcknowledgementRecipient::where('user_id', Auth::id())->whereNotNull('removed_at')->select('acknowledgement_form_id'))
             ->with('courseOffering.course')
             ->addSelect(['signed_at' => AcknowledgementRecipient::select('signed_at')
                 ->whereColumn('acknowledgement_form_id', 'acknowledgement_forms.id')

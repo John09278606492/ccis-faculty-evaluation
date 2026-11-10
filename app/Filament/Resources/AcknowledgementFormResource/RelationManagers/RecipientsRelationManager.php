@@ -42,6 +42,24 @@ class RecipientsRelationManager extends RelationManager
         return $form->schema([]);
     }
 
+    private function wholeClassToggle(): Forms\Components\Toggle
+    {
+        return Forms\Components\Toggle::make('whole_class')
+            ->label("Also remove from this class's other receipts")
+            ->default(true);
+    }
+
+    /** @param  array<int, int>  $userIds */
+    private function removeAndNotify(array $userIds, bool $wholeClass): void
+    {
+        $rows = app(AcknowledgementForms::class)->removeStudents($this->getOwnerRecord(), $userIds, $wholeClass);
+        $students = count($userIds);
+        Notification::make()
+            ->title("{$students} ".str('student')->plural($students).' removed'.($wholeClass ? " ({$rows} ".str('receipt')->plural($rows).')' : ''))
+            ->success()
+            ->send();
+    }
+
     public function table(Table $table): Table
     {
         return $table
@@ -93,6 +111,42 @@ class RecipientsRelationManager extends RelationManager
                         $sent = app(AcknowledgementForms::class)->notifyWaiting($this->getOwnerRecord(), 'Reminder: please sign this form');
                         Notification::make()->title($sent ? "Reminder sent to {$sent} ".str('student')->plural($sent) : 'Everyone has already signed')->success()->send();
                     }),
+                Tables\Actions\Action::make('removedStudents')
+                    ->label(fn () => 'Removed students ('.$this->getOwnerRecord()->removedRecipients()->count().')')
+                    ->icon('heroicon-o-user-plus')
+                    ->color('gray')
+                    ->visible(fn () => $this->canManage() && $this->getOwnerRecord()->removedRecipients()->count() > 0)
+                    ->modalHeading('Removed students')
+                    ->modalDescription('These students are not on this receipt or its printout. Tick the ones to add back.')
+                    ->modalSubmitActionLabel('Add back')
+                    ->form([
+                        Forms\Components\CheckboxList::make('students')
+                            ->hiddenLabel()
+                            ->options(fn () => $this->getOwnerRecord()->removedRecipients()->orderBy('student_name')->pluck('student_name', 'user_id')->all())
+                            ->bulkToggleable()
+                            ->required(),
+                    ])
+                    ->action(function (array $data) {
+                        abort_unless($this->canManage(), 403);
+                        $count = app(AcknowledgementForms::class)->restoreStudents($this->getOwnerRecord(), array_map('intval', $data['students']));
+                        Notification::make()->title("{$count} ".str('student')->plural($count).' added back')->success()->send();
+                    }),
+            ])
+            ->bulkActions([
+                Tables\Actions\BulkAction::make('removeSelected')
+                    ->label('Remove from receipt')
+                    ->icon('heroicon-o-user-minus')
+                    ->color('danger')
+                    ->visible(fn () => $this->canManage())
+                    ->requiresConfirmation()
+                    ->modalHeading('Remove the selected students?')
+                    ->modalDescription('For students who stopped attending. They leave the list and the printout, and stop seeing this receipt. You can add them back later.')
+                    ->form([$this->wholeClassToggle()])
+                    ->deselectRecordsAfterCompletion()
+                    ->action(function (\Illuminate\Support\Collection $records, array $data) {
+                        abort_unless($this->canManage(), 403);
+                        $this->removeAndNotify($records->pluck('user_id')->all(), (bool) $data['whole_class']);
+                    }),
             ])
             ->actions([
                 Tables\Actions\Action::make('viewSignature')
@@ -134,6 +188,19 @@ class RecipientsRelationManager extends RelationManager
                         abort_unless($this->canManage(), 403);
                         app(AcknowledgementForms::class)->clear($record);
                         Notification::make()->title('Signature cleared')->success()->send();
+                    }),
+                Tables\Actions\Action::make('remove')
+                    ->label('Remove')
+                    ->icon('heroicon-o-user-minus')
+                    ->color('danger')
+                    ->visible(fn () => $this->canManage())
+                    ->requiresConfirmation()
+                    ->modalHeading(fn (AcknowledgementRecipient $record) => 'Remove '.$record->student_name.'?')
+                    ->modalDescription('For a student who stopped attending. They leave the list and the printout, and stop seeing this receipt. You can add them back later.')
+                    ->form([$this->wholeClassToggle()])
+                    ->action(function (AcknowledgementRecipient $record, array $data) {
+                        abort_unless($this->canManage(), 403);
+                        $this->removeAndNotify([$record->user_id], (bool) $data['whole_class']);
                     }),
             ])
             ->emptyStateHeading('No students on this receipt')

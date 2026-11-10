@@ -39,9 +39,15 @@ class AcknowledgementForm extends Model
         return $this->belongsTo(CourseOffering::class);
     }
 
+    /** Students on the receipt. Students the instructor removed are left out of lists, counts and the printout. */
     public function recipients(): HasMany
     {
-        return $this->hasMany(AcknowledgementRecipient::class);
+        return $this->hasMany(AcknowledgementRecipient::class)->whereNull('acknowledgement_recipients.removed_at');
+    }
+
+    public function removedRecipients(): HasMany
+    {
+        return $this->hasMany(AcknowledgementRecipient::class)->whereNotNull('acknowledgement_recipients.removed_at');
     }
 
     public function scopeInCampus(Builder $query, ?int $campusId): Builder

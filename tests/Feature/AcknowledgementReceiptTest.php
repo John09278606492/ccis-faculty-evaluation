@@ -654,3 +654,61 @@ it('stops a class with receipts from being deleted', function () {
 
     expect(fn () => $offering->delete())->toThrow(ValidationException::class);
 });
+
+it('removes a student who stopped attending from the receipt, the class, the printout and their own list, and adds them back', function () {
+    extract(acknowledgementFixture());
+    $service = app(AcknowledgementForms::class);
+    $midterm = receiptFor($form, $offering, 'Midterm');
+    foreach ([$form, $midterm] as $receipt) {
+        $service->syncRoster($receipt);
+    }
+    $row = $form->recipients()->where('user_id', $student->id)->sole();
+    $this->actingAs($instructor);
+
+    Livewire::test(RecipientsRelationManager::class, ['ownerRecord' => $form, 'pageClass' => EditAcknowledgementForm::class])
+        ->assertTableActionHidden('removedStudents')
+        ->callTableAction('remove', $row, data: ['whole_class' => true])
+        ->assertHasNoTableActionErrors()
+        ->assertCanNotSeeTableRecords([$row]);
+
+    // Gone from both receipts of the class; the class sync and a visit do not bring the student back.
+    $service->syncRoster($form);
+    $service->addToOpenForms($student, $offering->campus->id);
+    expect($form->recipients()->count())->toBe(0)
+        ->and($midterm->recipients()->count())->toBe(0)
+        ->and($service->toSignCount($student, $offering->campus->id))->toBe(0)
+        ->and($service->studentSummary($student, $offering->campus->id)->sum('to_sign'))->toBe(0)
+        ->and($service->notifyWaiting($form, 'Reminder'))->toBe(0);
+    expect(fn () => $service->signAsStudent($form, $student, signatureStrokes(), null))->not->toThrow(Exception::class);
+    expect($row->refresh()->signed_at)->toBeNull();
+
+    $this->get(route('acknowledgements.print', ['forms' => $form->id]))->assertOk()->assertDontSee('CRUZ, ANA');
+
+    $this->actingAs($student);
+    Livewire::test(MyAcknowledgements::class)->assertCanNotSeeTableRecords([$form, $midterm]);
+
+    // Add back on one receipt only.
+    $this->actingAs($instructor);
+    Livewire::test(RecipientsRelationManager::class, ['ownerRecord' => $form, 'pageClass' => EditAcknowledgementForm::class])
+        ->assertTableActionVisible('removedStudents')
+        ->callTableAction('removedStudents', data: ['students' => [$student->id]])
+        ->assertHasNoTableActionErrors()
+        ->assertCanSeeTableRecords([$row]);
+    expect($form->recipients()->count())->toBe(1)->and($midterm->recipients()->count())->toBe(0);
+});
+
+it('removes several students at once, and only from this receipt when asked', function () {
+    extract(acknowledgementFixture());
+    $service = app(AcknowledgementForms::class);
+    $midterm = receiptFor($form, $offering, 'Midterm');
+    foreach ([$form, $midterm] as $receipt) {
+        $service->syncRoster($receipt);
+    }
+    $this->actingAs($instructor);
+
+    Livewire::test(RecipientsRelationManager::class, ['ownerRecord' => $form, 'pageClass' => EditAcknowledgementForm::class])
+        ->callTableBulkAction('removeSelected', $form->recipients()->get(), data: ['whole_class' => false])
+        ->assertHasNoTableBulkActionErrors();
+
+    expect($form->recipients()->count())->toBe(0)->and($midterm->recipients()->count())->toBe(1);
+});

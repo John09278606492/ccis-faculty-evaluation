@@ -213,9 +213,11 @@ class AcknowledgementForms
             ->where('year.campus_id', $campusId)
             ->where(fn ($query) => $query->where('class.is_active', true)->orWhereNotNull('form.id'))
             ->groupBy('class.id', 'course.code', 'course.name', 'class.section')
-            ->selectRaw("class.id, course.code, course.name, class.section, count(form.id) as total,
-                count(row.signed_at) as signed,
-                sum(case when form.status = 'active' and row.signed_at is null then 1 else 0 end) as to_sign")
+            // A form the instructor removed this student from does not count for them.
+            ->selectRaw("class.id, course.code, course.name, class.section,
+                count(case when row.removed_at is null then form.id end) as total,
+                count(case when row.removed_at is null then row.signed_at end) as signed,
+                sum(case when form.status = 'active' and row.removed_at is null and row.signed_at is null then 1 else 0 end) as to_sign")
             ->orderByDesc('to_sign')
             ->orderBy('course.code')
             ->get()
@@ -257,7 +259,7 @@ class AcknowledgementForms
             ->inCampus($campusId)
             ->where('status', 'active')
             ->whereIn('course_offering_id', DB::table('course_offering_student')->where('user_id', $student->id)->select('course_offering_id'))
-            ->whereIn('id', AcknowledgementRecipient::where('user_id', $student->id)->whereNull('signed_at')->select('acknowledgement_form_id'));
+            ->whereIn('id', AcknowledgementRecipient::where('user_id', $student->id)->whereNull('signed_at')->whereNull('removed_at')->select('acknowledgement_form_id'));
     }
 
     /**
@@ -278,6 +280,7 @@ class AcknowledgementForms
 
         return AcknowledgementRecipient::where('user_id', $student->id)
             ->whereNull('signed_at')
+            ->whereNull('removed_at')
             ->whereIn('acknowledgement_form_id', $this->signableForms($student, $campusId)->whereKey($formIds)->select('acknowledgement_forms.id'))
             ->update(['signature_path' => $path, 'signed_at' => $now, 'signed_by' => $student->id, 'signed_ip' => $ip, 'updated_at' => $now]);
     }
@@ -288,7 +291,9 @@ class AcknowledgementForms
             ->inCampus($campusId)
             ->where('status', 'active')
             ->whereIn('course_offering_id', DB::table('course_offering_student')->where('user_id', $student->id)->select('course_offering_id'))
-            ->whereNotIn('id', AcknowledgementRecipient::where('user_id', $student->id)->whereNotNull('signed_at')->select('acknowledgement_form_id'))
+            ->whereNotIn('id', AcknowledgementRecipient::where('user_id', $student->id)
+                ->where(fn ($query) => $query->whereNotNull('signed_at')->orWhereNotNull('removed_at'))
+                ->select('acknowledgement_form_id'))
             ->count();
     }
 
@@ -300,7 +305,7 @@ class AcknowledgementForms
         }
 
         $students = User::withoutGlobalScope('assigned_data')
-            ->whereIn('id', AcknowledgementRecipient::where('acknowledgement_form_id', $form->id)->whereNull('signed_at')->select('user_id'))
+            ->whereIn('id', AcknowledgementRecipient::where('acknowledgement_form_id', $form->id)->whereNull('signed_at')->whereNull('removed_at')->select('user_id'))
             ->get();
         if ($students->isEmpty()) {
             return 0;
@@ -365,6 +370,40 @@ class AcknowledgementForms
         return AcknowledgementRecipient::where('acknowledgement_form_id', $form->id)
             ->where('user_id', $student->id)
             ->whereNull('signed_at')
+            ->whereNull('removed_at')
             ->update(['signature_path' => $path, 'signed_at' => $now, 'signed_by' => $actor->id, 'signed_ip' => $ip, 'updated_at' => $now]) === 1;
+    }
+
+    /**
+     * Takes students off a receipt, for example when they stopped attending. With $wholeClass, also off the
+     * other receipts of the same class. The rows stay (with any signature), so they can be restored.
+     *
+     * @param  array<int, int>  $userIds
+     * @return int how many receipt rows were removed
+     */
+    public function removeStudents(AcknowledgementForm $form, array $userIds, bool $wholeClass = false): int
+    {
+        $formIds = $wholeClass
+            ? AcknowledgementForm::where('course_offering_id', $form->course_offering_id)->pluck('id')->all()
+            : [$form->id];
+        if ($wholeClass) {
+            foreach (AcknowledgementForm::whereKey($formIds)->whereKeyNot($form->id)->get() as $other) {
+                $this->syncRoster($other);
+            }
+        }
+
+        return AcknowledgementRecipient::whereIn('acknowledgement_form_id', $formIds)
+            ->whereIn('user_id', $userIds)
+            ->whereNull('removed_at')
+            ->update(['removed_at' => now(), 'updated_at' => now()]);
+    }
+
+    /** @param  array<int, int>  $userIds */
+    public function restoreStudents(AcknowledgementForm $form, array $userIds): int
+    {
+        return AcknowledgementRecipient::where('acknowledgement_form_id', $form->id)
+            ->whereIn('user_id', $userIds)
+            ->whereNotNull('removed_at')
+            ->update(['removed_at' => null, 'updated_at' => now()]);
     }
 }

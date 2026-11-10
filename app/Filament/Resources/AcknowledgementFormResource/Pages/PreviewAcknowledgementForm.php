@@ -67,8 +67,12 @@ class PreviewAcknowledgementForm extends Page
         ];
     }
 
+    /** Signatures plus removed students (weighted apart), so either change reloads the preview. */
     private function countSigned(): int
     {
-        return AcknowledgementRecipient::where('acknowledgement_form_id', $this->getRecord()->id)->whereNotNull('signed_at')->count();
+        $counts = AcknowledgementRecipient::where('acknowledgement_form_id', $this->getRecord()->id)
+            ->toBase()->selectRaw('count(signed_at) as signed, count(removed_at) as removed')->first();
+
+        return (int) $counts->signed + 10000 * (int) $counts->removed;
     }
 }

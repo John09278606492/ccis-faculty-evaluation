@@ -18,10 +18,12 @@ class AcknowledgementRecipient extends Model
         'signed_at',
         'signed_by',
         'signed_ip',
+        'removed_at',
     ];
 
     protected $casts = [
         'signed_at' => 'datetime',
+        'removed_at' => 'datetime',
     ];
 
     protected $hidden = ['signature_path', 'signed_ip'];
