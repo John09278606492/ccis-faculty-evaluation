@@ -16,9 +16,49 @@ class AdvisoryTask extends Model
 
     public const DEFAULT_CONSEQUENCE = 'Failure to submit on or before the due date means you will not be enrolled.';
 
-    protected $fillable = ['advisory_class_id', 'advising_semester_id', 'title', 'instructions', 'requirements', 'due_at', 'consequence', 'allow_late', 'status', 'created_by'];
+    /** File kinds an adviser can accept, with the content types the server detects for each. */
+    public const FILE_TYPES = [
+        'images' => ['label' => 'Screenshots and photos (JPG, PNG, WebP)', 'short' => 'JPG, PNG, WebP',
+            'mimes' => ['image/jpeg', 'image/png', 'image/webp']],
+        'pdf' => ['label' => 'PDF documents', 'short' => 'PDF',
+            'mimes' => ['application/pdf']],
+        'word' => ['label' => 'Word documents (DOC, DOCX)', 'short' => 'Word',
+            'mimes' => ['application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']],
+        'excel' => ['label' => 'Excel spreadsheets (XLS, XLSX)', 'short' => 'Excel',
+            'mimes' => ['application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']],
+        'powerpoint' => ['label' => 'PowerPoint presentations (PPT, PPTX)', 'short' => 'PowerPoint',
+            'mimes' => ['application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation']],
+    ];
 
-    protected $casts = ['requirements' => 'array', 'due_at' => 'datetime', 'allow_late' => 'boolean'];
+    public const DEFAULT_FILE_TYPES = ['images', 'pdf'];
+
+    protected $fillable = ['advisory_class_id', 'advising_semester_id', 'title', 'instructions', 'requirements', 'accepted_types', 'due_at', 'consequence', 'allow_late', 'status', 'created_by'];
+
+    protected $casts = ['requirements' => 'array', 'accepted_types' => 'array', 'due_at' => 'datetime', 'allow_late' => 'boolean'];
+
+    /** @return array<int, string> the chosen file kinds, or screenshots and PDF for tasks made before this choice existed */
+    public function fileTypes(): array
+    {
+        $types = array_values(array_intersect(array_keys(self::FILE_TYPES), $this->accepted_types ?? []));
+
+        return $types ?: self::DEFAULT_FILE_TYPES;
+    }
+
+    /** @return array<int, string> content types for the upload box and the server check */
+    public function acceptedMimes(): array
+    {
+        return array_values(array_unique(array_merge(...array_map(fn ($type) => self::FILE_TYPES[$type]['mimes'], $this->fileTypes()))));
+    }
+
+    public function acceptsMime(?string $mime): bool
+    {
+        return in_array($mime, $this->acceptedMimes(), true);
+    }
+
+    public function fileTypesLabel(): string
+    {
+        return implode(', ', array_map(fn ($type) => self::FILE_TYPES[$type]['short'], $this->fileTypes()));
+    }
 
     public function advisoryClass(): BelongsTo
     {

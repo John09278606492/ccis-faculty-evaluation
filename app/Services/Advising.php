@@ -157,8 +157,8 @@ class Advising
             }
             foreach ($files as $path) {
                 $disk = Storage::disk(self::DISK);
-                if (! $disk->exists($path) || $disk->size($path) > 10 * 1024 * 1024 || ! in_array($disk->mimeType($path), ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'], true)) {
-                    throw ValidationException::withMessages(['files' => 'Each file must be a screenshot (JPG, PNG, WebP) or PDF, up to 10 MB.']);
+                if (! $disk->exists($path) || $disk->size($path) > 10 * 1024 * 1024 || ! $task->acceptsMime($disk->mimeType($path))) {
+                    throw ValidationException::withMessages(['files' => 'Each file must be one of the accepted types ('.$task->fileTypesLabel().'), up to 10 MB.']);
                 }
             }
 

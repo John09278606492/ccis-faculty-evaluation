@@ -62,6 +62,12 @@ class AdvisoryTaskResource extends Resource implements HasShieldPermissions
             Forms\Components\TextInput::make('title')->required()->maxLength(255),
             Forms\Components\Textarea::make('instructions')->rows(4)->maxLength(20000)->columnSpanFull(),
             Forms\Components\TagsInput::make('requirements')->label('Requirements')->helperText('Enter each required screenshot or document, then press Enter.')->nestedRecursiveRules(['string', 'max:255'])->required()->columnSpanFull(),
+            Forms\Components\CheckboxList::make('accepted_types')->label('File types students can upload')
+                ->options(array_map(fn ($type) => $type['label'], AdvisoryTask::FILE_TYPES))
+                ->default(AdvisoryTask::DEFAULT_FILE_TYPES)
+                ->afterStateHydrated(fn (Forms\Components\CheckboxList $component, ?AdvisoryTask $record) => $record && ! $record->accepted_types ? $component->state($record->fileTypes()) : null)
+                ->required()->columns(2)->columnSpanFull()
+                ->helperText('Students can only pick files of the checked types. Each file can be up to 10 MB.'),
             Forms\Components\DateTimePicker::make('due_at')->label('Due date')->timezone('Asia/Manila')->seconds(false)->required(),
             Forms\Components\Toggle::make('allow_late')->label('Accept submissions after the deadline')->default(false),
             Forms\Components\TextInput::make('consequence')->label('Notice to students')->default(AdvisoryTask::DEFAULT_CONSEQUENCE)->maxLength(255)->columnSpanFull()

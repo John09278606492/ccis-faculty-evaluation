@@ -278,3 +278,59 @@ it('keeps the student role valid and serves adviser pages through real middlewar
     $this->get(AdvisoryTaskResource::getUrl())->assertOk();
     $this->get(AdvisoryTaskResource::getUrl('edit', ['record' => $task]))->assertOk();
 });
+
+it('lets the adviser choose which file types a task accepts, and enforces them on upload and on the server', function () {
+    extract(advisingFixture());
+    $service = app(Advising::class);
+
+    // Tasks made before the choice existed keep accepting screenshots and PDF.
+    expect($task->fileTypes())->toBe(AdvisoryTask::DEFAULT_FILE_TYPES)
+        ->and($task->acceptsMime('application/pdf'))->toBeTrue()
+        ->and($task->acceptsMime('application/vnd.openxmlformats-officedocument.wordprocessingml.document'))->toBeFalse();
+
+    $this->actingAs($instructor);
+    Livewire::test(CreateAdvisoryTask::class)
+        ->assertFormSet(['accepted_types' => AdvisoryTask::DEFAULT_FILE_TYPES])
+        ->fillForm([
+            'advisory_class_id' => $class->id, 'title' => 'Word only', 'requirements' => ['Advising form'],
+            'advising_semester_id' => $membership->semester_id, 'accepted_types' => ['word'],
+            'due_at' => now()->addDays(2)->format('Y-m-d H:i:s'), 'status' => 'open',
+        ])->call('create')->assertHasNoFormErrors();
+    $word = AdvisoryTask::where('title', 'Word only')->sole();
+    expect($word->accepted_types)->toBe(['word'])->and($word->fileTypesLabel())->toBe('Word');
+
+    Livewire::test(CreateAdvisoryTask::class)
+        ->fillForm([
+            'advisory_class_id' => $class->id, 'title' => 'Nothing', 'requirements' => ['Form'],
+            'advising_semester_id' => $membership->semester_id, 'accepted_types' => [],
+            'due_at' => now()->addDays(2)->format('Y-m-d H:i:s'), 'status' => 'open',
+        ])->call('create')->assertHasFormErrors(['accepted_types' => 'required']);
+
+    // A PDF is refused by a Word-only task, even if a stale page sends it.
+    $pdf = advisingUpload($word, $student);
+    expect(fn () => $service->submit($word, $student, [$pdf], null))->toThrow(ValidationException::class);
+
+    $path = $service->folder($word, $student).'/form.docx';
+    Storage::disk(Advising::DISK)->put($path, advisingDocx());
+    expect($service->submit($word, $student, [$path], null)->status)->toBe('submitted');
+
+    // The student sees which types are accepted.
+    $this->actingAs($student);
+    Livewire::test(MyAdvising::class)->mountTableAction('submit', $word)->assertSee('Accepted: Word');
+});
+
+/** A minimal genuine Word file, so the server detects it the way it detects a real upload. */
+function advisingDocx(): string
+{
+    $file = tempnam(sys_get_temp_dir(), 'docx');
+    $zip = new ZipArchive;
+    $zip->open($file, ZipArchive::OVERWRITE);
+    $zip->addFromString('[Content_Types].xml', '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>');
+    $zip->addFromString('_rels/.rels', '<?xml version="1.0"?><Relationships/>');
+    $zip->addFromString('word/document.xml', '<?xml version="1.0"?><document/>');
+    $zip->close();
+    $bytes = file_get_contents($file);
+    unlink($file);
+
+    return $bytes;
+}

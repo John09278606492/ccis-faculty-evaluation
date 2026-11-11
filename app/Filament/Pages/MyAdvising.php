@@ -62,13 +62,14 @@ class MyAdvising extends Page implements HasTable
                     ->modalSubmitAction(false)->modalCancelActionLabel('Close'),
                 Tables\Actions\Action::make('submit')->label('Submit files')->icon('heroicon-o-arrow-up-tray')
                     ->visible(fn (AdvisoryTask $record) => $record->acceptsSubmissions() && $this->submission($record)?->status !== 'approved')
-                    ->modalDescription('Send screenshots or PDFs for your adviser to review. Sending again replaces your previous files.')
+                    ->modalDescription(fn (AdvisoryTask $record) => 'Send your files for your adviser to review. Accepted: '.$record->fileTypesLabel().'. Sending again replaces your previous files.')
                     ->modalContent(fn (AdvisoryTask $record) => view('filament.partials.advisory-details', ['task' => $record, 'submission' => $this->submission($record)]))
                     ->stickyModalFooter()->form([
-                        Forms\Components\FileUpload::make('files')->label('Screenshots or PDF documents')->disk(Advising::DISK)
+                        Forms\Components\FileUpload::make('files')->label('Your files')->disk(Advising::DISK)
+                            ->helperText(fn (AdvisoryTask $record) => 'Accepted: '.$record->fileTypesLabel().'. Up to 10 files, 10 MB each.')
                             ->directory(fn (AdvisoryTask $record) => app(Advising::class)->folder($record, auth()->user()))
                             ->visibility('private')->multiple()->minFiles(1)->maxFiles(10)->maxSize(10240)
-                            ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp', 'application/pdf'])
+                            ->acceptedFileTypes(fn (AdvisoryTask $record) => $record->acceptedMimes())
                             ->required()->fetchFileInformation(false),
                         Forms\Components\Textarea::make('note')->label('Note for your adviser')->maxLength(5000),
                     ])->action(function (AdvisoryTask $record, array $data) {
