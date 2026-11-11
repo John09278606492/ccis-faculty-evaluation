@@ -24,7 +24,7 @@ beforeEach(function () {
     $this->actor = User::factory()->create(['is_student' => false]);
     $this->actor->assignRole('super_admin');
     $this->actor->campuses()->attach($this->campus);
-    foreach (['view_any_department', 'view_department', 'update_department', 'update_user', 'view_any_user'] as $permission) {
+    foreach (['view_any_department', 'view_department', 'update_department', 'update_user', 'view_any_user', DepartmentInstructors::TRANSFER_PERMISSION] as $permission) {
         $this->actor->givePermissionTo(Permission::findOrCreate($permission, 'web'));
     }
     $this->teacher = $this->class->instructor;
@@ -120,4 +120,106 @@ it('offers the same bulk action on edit and shows the assigned instructor roster
         ->assertCanSeeTableRecords([$this->teacher])->assertCanNotSeeTableRecords([$this->second])
         ->callTableAction('assignInstructors', data: ['ids' => [$this->second->id]])->assertHasNoTableActionErrors()
         ->assertCanSeeTableRecords([$this->teacher, $this->second]);
+});
+
+it('transfers instructors to another college or removes them while keeping classes and responses', function () {
+    $other = Department::create(['campus_id' => $this->campus->id, 'name' => 'CTAS', 'code' => 'CTAS', 'is_active' => true]);
+    User::whereKey([$this->teacher->id, $this->second->id])->update(['instructor_department_id' => $this->department->id]);
+    $this->class->students()->syncWithoutDetaching([$this->student->id]);
+    $response = FormSubmission::create(['form_id' => $this->class->form_id, 'course_offering_id' => $this->class->id, 'data' => ['teaching_quality' => 4, '_overall_comment' => 'Keep this']]);
+    $before = $response->fresh()->getRawOriginal();
+    $classBefore = $this->class->fresh()->getRawOriginal();
+    expect($this->service->destinations($this->actor, $this->campus, $this->department))->toHaveKey($other->id)->not->toHaveKey($this->department->id);
+
+    expect($this->service->transfer($this->actor, $this->campus, $this->department, [$this->teacher->id, $this->teacher->id], $other->id))->toBe(1)
+        ->and($this->teacher->fresh()->instructor_department_id)->toBe($other->id)
+        ->and($this->second->fresh()->instructor_department_id)->toBe($this->department->id)
+        ->and($this->class->fresh()->getRawOriginal())->toBe($classBefore)
+        ->and($response->fresh()->getRawOriginal())->toBe($before)
+        ->and($this->class->students()->whereKey($this->student->id)->exists())->toBeTrue();
+
+    expect($this->service->transfer($this->actor, $this->campus, $this->department, [$this->second->id], null))->toBe(1)
+        ->and($this->second->fresh()->instructor_department_id)->toBeNull()
+        ->and($this->service->options($this->actor, $this->campus, $other))->toHaveKey($this->second->id)
+        ->and(DB::table('access_audit_events')->where('action', 'home_department.transferred')->where('subject_id', $this->teacher->id)->count())->toBe(1)
+        ->and(DB::table('access_audit_events')->where('action', 'home_department.removed')->where('subject_id', $this->second->id)->count())->toBe(1);
+});
+
+it('rejects invalid transfer destinations and selections without moving anyone', function () {
+    $other = Department::create(['campus_id' => $this->campus->id, 'name' => 'CTAS', 'code' => 'CTAS', 'is_active' => true]);
+    $inactive = Department::create(['campus_id' => $this->campus->id, 'name' => 'Closed', 'code' => 'CLOSED', 'is_active' => false]);
+    $otherCampus = Campus::create(['name' => 'Other Campus', 'slug' => 'other-campus', 'is_active' => true]);
+    $foreign = Department::create(['campus_id' => $otherCampus->id, 'name' => 'Foreign', 'code' => 'FOREIGN', 'is_active' => true]);
+    $this->teacher->update(['instructor_department_id' => $this->department->id]);
+    $this->second->update(['instructor_department_id' => $other->id]);
+
+    foreach ([$this->department->id, $inactive->id, $foreign->id, 999999] as $destination) {
+        expect(fn () => $this->service->transfer($this->actor, $this->campus, $this->department, [$this->teacher->id], $destination))->toThrow(ValidationException::class);
+    }
+    // One instructor of another college or one student in the selection stops the whole transfer.
+    foreach ([$this->second->id, $this->student->id, 999999] as $bad) {
+        expect(fn () => $this->service->transfer($this->actor, $this->campus, $this->department, [$this->teacher->id, $bad], $other->id))->toThrow(ValidationException::class);
+    }
+    expect(fn () => $this->service->transfer($this->actor, $this->campus, $this->department, [], $other->id))->toThrow(ValidationException::class);
+    $this->teacher->assignRole(Role::findOrCreate('instructor', 'web'));
+    $this->department->update(['chairperson_id' => $this->teacher->id]);
+    expect(fn () => $this->service->transfer($this->actor, $this->campus, $this->department, [$this->teacher->id], $other->id))->toThrow(ValidationException::class, 'dean or chairperson');
+    expect($this->teacher->fresh()->instructor_department_id)->toBe($this->department->id)
+        ->and($this->second->fresh()->instructor_department_id)->toBe($other->id)
+        ->and(DB::table('access_audit_events')->where('action', 'like', 'home_department.%')->count())->toBe(0);
+});
+
+it('requires the transfer permission on top of managing the department', function () {
+    $other = Department::create(['campus_id' => $this->campus->id, 'name' => 'CTAS', 'code' => 'CTAS', 'is_active' => true]);
+    User::whereKey([$this->teacher->id, $this->second->id])->update(['instructor_department_id' => $this->department->id]);
+    $this->actor->removeRole('super_admin');
+    $this->actor->assignRole(Role::findOrCreate('chairperson', 'web'));
+    $this->actor->update(['is_instructor' => true, 'instructor_department_id' => $this->department->id]);
+    $this->actor->revokePermissionTo(DepartmentInstructors::TRANSFER_PERMISSION);
+    $this->department->update(['chairperson_id' => $this->actor->id]);
+    app(AssignedDataAccess::class)->actor = $this->actor;
+
+    expect($this->service->allowed($this->actor, $this->campus, $this->department))->toBeTrue()
+        ->and($this->service->canTransfer($this->actor, $this->campus, $this->department))->toBeFalse()
+        ->and($this->service->destinations($this->actor, $this->campus, $this->department))->toBe([]);
+    expect(fn () => $this->service->transfer($this->actor, $this->campus, $this->department, [$this->teacher->id], $other->id))->toThrow(HttpException::class);
+
+    $this->actor->givePermissionTo(Permission::findOrCreate(DepartmentInstructors::TRANSFER_PERMISSION, 'web'));
+    $this->second->givePermissionTo(Permission::findOrCreate('manage_access_assignments', 'web'));
+    // Not an account with more authority, not themselves, and not out of a college they do not manage.
+    expect(fn () => $this->service->transfer($this->actor, $this->campus, $this->department, [$this->second->id], $other->id))->toThrow(ValidationException::class);
+    expect(fn () => $this->service->transfer($this->actor, $this->campus, $this->department, [$this->actor->id], $other->id))->toThrow(ValidationException::class, 'own home department');
+    expect(fn () => $this->service->transfer($this->actor, $this->campus, $other, [$this->teacher->id], null))->toThrow(HttpException::class);
+    expect($this->service->transfer($this->actor, $this->campus, $this->department, [$this->teacher->id], $other->id))->toBe(1)
+        ->and($this->teacher->fresh()->instructor_department_id)->toBe($other->id)
+        ->and($this->second->fresh()->instructor_department_id)->toBe($this->department->id);
+    $this->actor->revokePermissionTo('update_user');
+    expect($this->service->canTransfer($this->actor->fresh(), $this->campus, $this->department))->toBeFalse();
+});
+
+it('offers transfer and detach on each roster row and for a selection of instructors', function () {
+    $other = Department::create(['campus_id' => $this->campus->id, 'name' => 'CTAS', 'code' => 'CTAS', 'is_active' => true]);
+    $third = User::factory()->create(['is_student' => false, 'is_instructor' => true]);
+    $third->campuses()->attach($this->campus);
+    $fourth = User::factory()->create(['is_student' => false, 'is_instructor' => true]);
+    $fourth->campuses()->attach($this->campus);
+    $fifth = User::factory()->create(['is_student' => false, 'is_instructor' => true]);
+    $fifth->campuses()->attach($this->campus);
+    User::whereKey([$this->teacher->id, $this->second->id, $third->id, $fourth->id, $fifth->id])->update(['instructor_department_id' => $this->department->id]);
+
+    Livewire::test(InstructorsRelationManager::class, ['ownerRecord' => $this->department, 'pageClass' => EditDepartment::class])->assertStatus(200)
+        ->assertTableActionVisible('transferInstructor', $this->teacher)->assertTableActionVisible('detachInstructor', $this->teacher)
+        ->callTableAction('detachInstructor', $this->teacher)->assertHasNoTableActionErrors()
+        ->assertCanNotSeeTableRecords([$this->teacher])
+        ->callTableAction('transferInstructor', $fourth, data: ['destination' => $other->id])->assertHasNoTableActionErrors()
+        ->callTableBulkAction('detachInstructors', [$fifth])->assertHasNoTableBulkActionErrors()
+        ->assertCanNotSeeTableRecords([$fourth, $fifth])
+        ->callTableBulkAction('transferInstructors', [$this->second, $third], data: ['destination' => $other->id])->assertHasNoTableBulkActionErrors()
+        ->assertCanNotSeeTableRecords([$this->second, $third]);
+    expect($this->teacher->fresh()->instructor_department_id)->toBeNull()
+        ->and($fifth->fresh()->instructor_department_id)->toBeNull()
+        ->and($fourth->fresh()->instructor_department_id)->toBe($other->id)
+        ->and($this->second->fresh()->instructor_department_id)->toBe($other->id)
+        ->and($third->fresh()->instructor_department_id)->toBe($other->id)
+        ->and(DB::table('access_audit_events')->where('action', 'home_department.removed')->count())->toBe(2);
 });

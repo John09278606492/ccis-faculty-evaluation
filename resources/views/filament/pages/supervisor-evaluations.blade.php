@@ -1,4 +1,4 @@
 <x-filament-panels::page>
-    <p class="text-sm text-gray-600 dark:text-gray-300">Only faculty evaluations explicitly assigned to you as a supervisor appear below. Being a Dean or Chairperson does not automatically assign evaluations. Click Complete Annex B to rate a faculty member. Completed evaluations remain listed.</p>
+    <p class="text-sm text-gray-600 dark:text-gray-300">Complete Annex B for your assigned faculty. Pending evaluations appear first; completed evaluations remain at the bottom.</p>
     {{ $this->table }}
 </x-filament-panels::page>
