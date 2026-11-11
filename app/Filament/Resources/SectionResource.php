@@ -106,6 +106,34 @@ class SectionResource extends Resource
             Tables\Actions\ViewAction::make()->label('Upload / Manage Students')->icon('heroicon-o-user-group')
                 ->url(fn (AcademicSection $record) => static::getUrl('view', ['record' => $record, 'activeRelationManager' => '0'])),
             Tables\Actions\EditAction::make(),
+            Tables\Actions\Action::make('copyToPeriod')
+                ->label('Copy to another period')
+                ->icon('heroicon-o-document-duplicate')
+                ->color('gray')
+                ->visible(fn (AcademicSection $record) => static::canEdit($record))
+                ->modalHeading(fn (AcademicSection $record) => "Copy {$record->name} to another period")
+                ->modalDescription('Creates the same section with the same students in the period you choose, for example 2nd Semester. This section, its classes and its history stay as they are.')
+                ->modalSubmitActionLabel('Copy section')
+                ->form([
+                    Forms\Components\Select::make('semester_id')->label('Academic Period')->required()
+                        ->options(fn (AcademicSection $record) => collect(AcademicPeriod::options(filament()->getTenant()))->except($record->semester_id)->all()),
+                    Forms\Components\TextInput::make('name')->label('Section name')->required()->maxLength(50)
+                        ->default(fn (AcademicSection $record) => $record->name)
+                        ->helperText('Change it if the section moves up, for example BSIT 3A to BSIT 4A.'),
+                ])
+                ->action(function (AcademicSection $record, array $data, Tables\Actions\Action $action) {
+                    try {
+                        $copy = app(AcademicSections::class)->copyToPeriod(auth()->user(), filament()->getTenant(), $record, (int) $data['semester_id'], $data['name']);
+                    } catch (\Illuminate\Validation\ValidationException $e) {
+                        \Filament\Notifications\Notification::make()->title(collect($e->errors())->flatten()->first())->danger()->send();
+                        $action->halt();
+                    }
+                    $count = $copy->students()->count();
+                    \Filament\Notifications\Notification::make()
+                        ->title("{$copy->name} created with {$count} ".str('student')->plural($count))
+                        ->body('Change the Academic Period filter above to see it.')
+                        ->success()->send();
+                }),
         ])->defaultSort('name');
     }
 
