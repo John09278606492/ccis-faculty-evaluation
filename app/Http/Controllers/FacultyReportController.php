@@ -46,7 +46,7 @@ class FacultyReportController extends Controller
         $offerings = app(AssignedDataAccess::class)->apply(app(ReportService::class)->facultyReportOfferings($scope['user_id'], $context), $request->user(), $offering->campus)
             ->where('user_id', $scope['user_id'])->with(['evaluationForm.fields', 'formSubmissions', 'course.department', 'teachingDepartment', 'supervisorEvaluators'])->get();
         if ($request->user()->id === $offering->user_id) {
-            $offerings = $offerings->filter(fn ($co) => EvaluationResultsRelease::isReleased($co));
+            $offerings = $offerings->filter(fn ($co) => EvaluationResultsRelease::canSeeScores($request->user(), $co));
         }
         $rows = collect();
         $setRows = collect();

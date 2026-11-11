@@ -90,7 +90,7 @@ class ReportService
             ->with(['teachingDepartment', 'course.department', 'semester.schoolYear', 'evaluationForm.fields', 'formSubmissions', 'students' => fn ($q) => $q->withTrashed()])
             ->withCount(['students' => fn ($q) => $q->withTrashed(), 'formSubmissions' => fn ($q) => $q->whereColumn('form_submissions.form_id', 'course_offerings.form_id')])->get();
         if (auth()->id() === $evaluatee->id) {
-            $offerings = $offerings->filter(fn ($co) => EvaluationResultsRelease::isReleased($co));
+            $offerings = $offerings->filter(fn ($co) => EvaluationResultsRelease::canSeeScores(auth()->user(), $co));
         }
         if (! empty($context['evaluation_type'])) {
             $offerings = $offerings->filter(fn ($co) => app(EvaluationScoring::class)->instrument($co) === $context['evaluation_type']);
