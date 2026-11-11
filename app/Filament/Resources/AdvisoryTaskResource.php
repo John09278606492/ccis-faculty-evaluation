@@ -88,12 +88,19 @@ class AdvisoryTaskResource extends Resource implements HasShieldPermissions
         ])->defaultSort('due_at')->filters([
             Tables\Filters\SelectFilter::make('advisory_class_id')->label('Section')->options(fn () => static::classOptions()),
             Tables\Filters\SelectFilter::make('status')->options(AdvisoryTask::STATUSES),
-        ])->actions([Tables\Actions\EditAction::make()->label('Open & review')]);
+        ])
+            ->recordUrl(fn (AdvisoryTask $record) => static::getUrl('submissions', ['record' => $record]))
+            ->actions([
+                Tables\Actions\Action::make('submissions')->label('Submissions')->icon('heroicon-o-inbox-arrow-down')->button()
+                    ->url(fn (AdvisoryTask $record) => static::getUrl('submissions', ['record' => $record])),
+                Tables\Actions\EditAction::make()->label('Edit task'),
+            ]);
     }
 
+    /** Submissions have their own pages, apart from the task settings. */
     public static function getRelations(): array
     {
-        return [AdvisoryTaskResource\RelationManagers\SubmissionsRelationManager::class];
+        return [];
     }
 
     public static function getPages(): array
@@ -102,6 +109,8 @@ class AdvisoryTaskResource extends Resource implements HasShieldPermissions
             'index' => AdvisoryTaskResource\Pages\ListAdvisoryTasks::route('/'),
             'create' => AdvisoryTaskResource\Pages\CreateAdvisoryTask::route('/create'),
             'edit' => AdvisoryTaskResource\Pages\EditAdvisoryTask::route('/{record}/edit'),
+            'submissions' => AdvisoryTaskResource\Pages\ManageSubmissions::route('/{record}/submissions'),
+            'review' => AdvisoryTaskResource\Pages\ReviewSubmission::route('/{record}/submissions/{submission}'),
         ];
     }
 }

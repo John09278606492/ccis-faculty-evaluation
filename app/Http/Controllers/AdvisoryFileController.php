@@ -24,9 +24,15 @@ class AdvisoryFileController extends Controller
         abort_unless(is_string($path) && str_starts_with($path, $prefix) && ! str_contains($path, '..'), 404);
         $disk = Storage::disk(Advising::DISK);
         abort_unless($disk->exists($path), 404);
+        $name = 'advising-file-'.($index + 1).'.'.pathinfo($path, PATHINFO_EXTENSION);
+        $headers = ['Cache-Control' => 'private, no-store', 'X-Content-Type-Options' => 'nosniff'];
 
-        return $disk->download($path, 'advising-file-'.($index + 1).'.'.pathinfo($path, PATHINFO_EXTENSION), [
-            'Cache-Control' => 'private, no-store', 'X-Content-Type-Options' => 'nosniff',
-        ]);
+        // Screenshots and PDFs can be shown on the review page; anything else is always a download.
+        $mime = $disk->mimeType($path);
+        if (request()->boolean('inline') && in_array($mime, ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'], true)) {
+            return $disk->response($path, $name, [...$headers, 'Content-Type' => $mime, 'X-Frame-Options' => 'SAMEORIGIN']);
+        }
+
+        return $disk->download($path, $name, $headers);
     }
 }

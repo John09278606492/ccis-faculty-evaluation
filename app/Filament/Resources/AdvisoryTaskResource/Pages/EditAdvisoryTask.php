@@ -27,7 +27,9 @@ class EditAdvisoryTask extends EditRecord
 
     protected function getHeaderActions(): array
     {
-        return [Action::make('remind')->label('Remind waiting students')->icon('heroicon-o-bell')->requiresConfirmation()
+        return [Action::make('submissions')->label('Student submissions')->icon('heroicon-o-inbox-arrow-down')
+            ->url(fn () => AdvisoryTaskResource::getUrl('submissions', ['record' => $this->record])),
+            Action::make('remind')->label('Remind waiting students')->icon('heroicon-o-bell')->requiresConfirmation()
             ->visible(fn () => auth()->user()->can('update', $this->record) && $this->record->acceptsSubmissions())
             ->action(function () {
                 $this->authorizeAccess();

@@ -186,7 +186,7 @@ class Advising
     /** Approve, or return to the student with a note on what to fix. */
     public function review(AdvisorySubmission $submission, string $status, ?string $feedback, User $actor): void
     {
-        Gate::forUser($actor)->authorize('update', $submission->task);
+        Gate::forUser($actor)->authorize('update', $submission->loadMissing('task')->task);
         if ($status === 'returned' && blank($feedback)) {
             throw ValidationException::withMessages(['feedback' => 'Explain what the student needs to change.']);
         }

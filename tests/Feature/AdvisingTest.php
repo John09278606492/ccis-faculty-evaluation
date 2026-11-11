@@ -6,7 +6,8 @@ use App\Filament\Resources\AdvisoryClassResource\Pages\ManageAdvisoryClasses;
 use App\Filament\Resources\AdvisoryTaskResource;
 use App\Filament\Resources\AdvisoryTaskResource\Pages\CreateAdvisoryTask;
 use App\Filament\Resources\AdvisoryTaskResource\Pages\EditAdvisoryTask;
-use App\Filament\Resources\AdvisoryTaskResource\RelationManagers\SubmissionsRelationManager;
+use App\Filament\Resources\AdvisoryTaskResource\Pages\ManageSubmissions;
+use App\Filament\Resources\AdvisoryTaskResource\Pages\ReviewSubmission;
 use App\Models\AcademicSection;
 use App\Models\AdvisoryClass;
 use App\Models\AdvisoryTask;
@@ -156,7 +157,7 @@ it('renders adviser pages and the submissions review table', function () {
     ])->call('create')->assertHasNoFormErrors();
     expect(AdvisoryTask::where('title', 'Second advising task')->sole()->submissions()->count())->toBe(1);
     Livewire::test(EditAdvisoryTask::class, ['record' => $task->id])->assertSuccessful();
-    Livewire::test(SubmissionsRelationManager::class, ['ownerRecord' => $task, 'pageClass' => EditAdvisoryTask::class])->assertSuccessful();
+    Livewire::test(ManageSubmissions::class, ['record' => $task->id])->assertSuccessful();
     $other = User::factory()->create(['is_instructor' => true]);
     $other->givePermissionTo($instructor->getAllPermissions());
     $this->actingAs($other);
@@ -220,8 +221,8 @@ it('claims a free section as the signed-in adviser and preserves review feedback
     ])->assertHasNoActionErrors();
     expect(AdvisoryClass::where('academic_section_id', $next->id)->sole()->adviser_id)->toBe($instructor->id);
     $row = app(Advising::class)->submit($task, $student, [advisingUpload($task, $student)], null);
-    Livewire::test(SubmissionsRelationManager::class, ['ownerRecord' => $task, 'pageClass' => EditAdvisoryTask::class])
-        ->callTableAction('review', $row, data: ['status' => 'returned', 'feedback' => 'Please include your grades.'])->assertHasNoTableActionErrors();
+    Livewire::test(ReviewSubmission::class, ['record' => $task->id, 'submission' => $row->id])
+        ->fillForm(['status' => 'returned', 'feedback' => 'Please include your grades.'])->call('save')->assertHasNoFormErrors();
     $this->actingAs($student);
     Livewire::test(MyAdvising::class)->mountTableAction('details', $task)
         ->assertSee('Please include your grades.')->assertSee('Grades screenshot')->assertSee(AdvisoryTask::DEFAULT_CONSEQUENCE);
@@ -334,3 +335,48 @@ function advisingDocx(): string
 
     return $bytes;
 }
+
+it('reviews submissions on their own pages, apart from the task settings, one by one or in bulk', function () {
+    extract(advisingFixture());
+    $service = app(Advising::class);
+    $second = User::factory()->create(['is_student' => true, 'name' => 'Zed Student']);
+    $second->givePermissionTo('page_MyAdvising');
+    StudentSectionMembership::create(['user_id' => $second->id, 'department_id' => $membership->department_id, 'semester_id' => $membership->semester_id, 'section' => 'BSIT 3A']);
+    $service->syncRoster($task);
+    $first = $service->submit($task, $student, [advisingUpload($task, $student)], 'Here are my grades');
+    $other = $service->submit($task, $second, [advisingUpload($task, $second)], null);
+    $this->actingAs($instructor);
+
+    // The task's edit page no longer lists students; it links to the submissions page.
+    expect(AdvisoryTaskResource::getRelations())->toBe([]);
+    Livewire::test(EditAdvisoryTask::class, ['record' => $task->id])->assertActionVisible('submissions')->assertDontSee($first->student_name);
+    Livewire::test(ManageSubmissions::class, ['record' => $task->id])->assertCanSeeTableRecords([$first, $other]);
+
+    // One student's page shows the files inline and saves a status, then moves to the next one waiting.
+    Livewire::test(ReviewSubmission::class, ['record' => $task->id, 'submission' => $first->id])
+        ->assertSee('Here are my grades')
+        ->assertSee(route('advising.file', ['submission' => $first->id, 'index' => 0]).'?inline=1', false)
+        ->fillForm(['status' => 'returned', 'feedback' => ''])->call('save')->assertHasFormErrors(['feedback' => 'required'])
+        ->fillForm(['status' => 'approved'])->call('save')->assertHasNoFormErrors()
+        ->assertRedirect(ReviewSubmission::getUrl(['record' => $task, 'submission' => $other->id]));
+    expect($first->fresh()->status)->toBe('approved')->and($first->fresh()->reviewed_by)->toBe($instructor->id);
+    $this->get(route('advising.file', ['submission' => $first->id, 'index' => 0]).'?inline=1')
+        ->assertOk()->assertHeader('Content-Type', 'application/pdf');
+    expect($this->get(route('advising.file', ['submission' => $first->id, 'index' => 0]).'?inline=1')->headers->get('Content-Disposition'))->toStartWith('inline')
+        ->and($this->get(route('advising.file', ['submission' => $first->id, 'index' => 0]))->headers->get('Content-Disposition'))->toStartWith('attachment');
+
+    // Bulk status update skips students who have not submitted.
+    $waiting = $task->submissions()->where('status', 'pending')->get();
+    Livewire::test(ManageSubmissions::class, ['record' => $task->id])
+        ->callTableBulkAction('setStatus', $task->submissions()->get(), data: ['status' => 'returned', 'feedback' => 'Grades are cut off'])
+        ->assertHasNoTableBulkActionErrors();
+    expect($other->fresh()->status)->toBe('returned')->and($other->fresh()->feedback)->toBe('Grades are cut off');
+    $waiting->each(fn ($row) => expect($row->fresh()->status)->toBe('pending'));
+
+    // Another adviser cannot open these pages.
+    $outsider = User::factory()->create(['is_instructor' => true]);
+    $outsider->givePermissionTo($instructor->getAllPermissions());
+    $outsider->campuses()->attach($campus);
+    $this->actingAs($outsider);
+    expect(fn () => Livewire::test(ReviewSubmission::class, ['record' => $task->id, 'submission' => $first->id]))->toThrow(Exception::class);
+});
