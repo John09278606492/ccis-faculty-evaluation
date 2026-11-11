@@ -23,18 +23,46 @@ class Advising
     public const DISK = 'local';
 
     /** Sections of the campus that have no adviser yet, newest term first. */
-    public function freeSections(?int $campusId): array
+    public function freeSections(?int $campusId, ?int $exceptClassId = null, ?int $semesterId = null): array
     {
         return DB::table('academic_sections as section')
             ->join('semesters as semester', 'semester.id', '=', 'section.semester_id')
             ->join('school_years as year', 'year.id', '=', 'semester.school_year_id')
             ->where('year.campus_id', $campusId)
-            ->where('section.is_active', true)
-            ->whereNotIn('section.id', AdvisoryClass::select('academic_section_id'))
+            ->where(fn ($q) => $q->where('section.is_active', true)
+                ->when($exceptClassId, fn ($q) => $q->orWhereIn('section.id', AdvisoryClass::whereKey($exceptClassId)->select('academic_section_id'))))
+            ->whereNotIn('section.id', AdvisoryClass::when($exceptClassId, fn ($q) => $q->whereKeyNot($exceptClassId))->select('academic_section_id'))
+            ->when($semesterId, fn ($q) => $q->where('semester.id', $semesterId))
             ->orderByDesc('semester.is_active')->orderByDesc('year.name')->orderBy('section.name')
             ->get(['section.id', 'section.name', 'semester.name as semester', 'year.name as year'])
             ->mapWithKeys(fn ($row) => [$row->id => "{$row->name} — {$row->semester} ({$row->year})"])
             ->all();
+    }
+
+    /** Change the roster source only before students have submitted work. */
+    public function changeSection(AdvisoryClass $class, int $sectionId, User $actor): AdvisoryClass
+    {
+        Gate::forUser($actor)->authorize('update', $class);
+
+        return DB::transaction(function () use ($class, $sectionId) {
+            $class = AdvisoryClass::whereKey($class->id)->lockForUpdate()->firstOrFail();
+            $tasks = $class->tasks()->lockForUpdate()->get();
+            if ($class->academic_section_id === $sectionId) {
+                return $class;
+            }
+            if (! array_key_exists($sectionId, $this->freeSections($this->campusIdOf($class), $class->id))) {
+                throw ValidationException::withMessages(['academic_section_id' => 'Choose an available section in this campus.']);
+            }
+            if (AdvisorySubmission::whereIn('advisory_task_id', $tasks->modelKeys())->whereNotNull('submitted_at')->exists()) {
+                throw ValidationException::withMessages(['academic_section_id' => 'Students have already submitted work for this section. Add a new advisory section for the new semester to keep their submissions in the correct term.']);
+            }
+            $class->update(['academic_section_id' => $sectionId]);
+            foreach ($tasks as $task) {
+                $this->syncRoster($task);
+            }
+
+            return $class;
+        });
     }
 
     public function campusIdOf(AdvisoryClass $class): ?int

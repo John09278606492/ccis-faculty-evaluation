@@ -5,6 +5,14 @@ claim an existing section in the selected campus and term. The signed-in staff
 member becomes its adviser. Each section has one adviser; a section with tasks
 cannot be released, so its submission history stays intact.
 
+Use a section's **Edit** button to select its school year, semester and section.
+Available sections are filtered to that term, and the current selection stays
+available while editing. Changing the section refreshes existing tasks' untouched
+student rosters. Once students have submitted work, add a new advisory section for
+the next term instead: existing submissions must stay with their original class.
+Missing semesters and sections can be created under Academic Management → School
+Years and Sections.
+
 Use **Advising Tasks → Create** to choose a claimed section, enter requirements,
 instructions, a deadline in Philippine time and the notice students should see.
 The default notice says failure to submit by the deadline means the student will

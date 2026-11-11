@@ -11,6 +11,7 @@ use App\Models\AcademicSection;
 use App\Models\AdvisoryClass;
 use App\Models\AdvisoryTask;
 use App\Models\Campus;
+use App\Models\Semester;
 use App\Models\StudentSectionMembership;
 use App\Models\User;
 use App\Services\Advising;
@@ -167,7 +168,9 @@ it('claims a free section as the signed-in adviser and preserves review feedback
         'name' => 'BSIT 3B', 'is_active' => true,
     ]);
     $this->actingAs($instructor);
-    Livewire::test(ManageAdvisoryClasses::class)->callAction('create', data: ['academic_section_id' => $next->id])->assertHasNoActionErrors();
+    Livewire::test(ManageAdvisoryClasses::class)->callAction('create', data: [
+        'school_year_id' => $next->semester->school_year_id, 'semester_id' => $next->semester_id, 'academic_section_id' => $next->id,
+    ])->assertHasNoActionErrors();
     expect(AdvisoryClass::where('academic_section_id', $next->id)->sole()->adviser_id)->toBe($instructor->id);
     $row = app(Advising::class)->submit($task, $student, [advisingUpload($task, $student)], null);
     Livewire::test(SubmissionsRelationManager::class, ['ownerRecord' => $task, 'pageClass' => EditAdvisoryTask::class])
@@ -175,6 +178,46 @@ it('claims a free section as the signed-in adviser and preserves review feedback
     $this->actingAs($student);
     Livewire::test(MyAdvising::class)->mountTableAction('details', $task)
         ->assertSee('Please include your grades.')->assertSee('Grades screenshot')->assertSee(AdvisoryTask::DEFAULT_CONSEQUENCE);
+});
+
+it('edits the advisory semester and section and refreshes untouched task rosters', function () {
+    extract(advisingFixture());
+    app(Advising::class)->syncRoster($task);
+    $semester = Semester::create([
+        'school_year_id' => $class->section->semester->school_year_id, 'name' => 'Second Semester',
+        'start_date' => '2027-01-01', 'end_date' => '2027-05-31', 'is_active' => true,
+    ]);
+    $nextStudent = User::factory()->create(['is_student' => true]);
+    $nextMembership = StudentSectionMembership::create([
+        'user_id' => $nextStudent->id, 'department_id' => $membership->department_id,
+        'semester_id' => $semester->id, 'section' => 'BSIT 3A',
+    ]);
+    $this->actingAs($instructor);
+    Livewire::test(ManageAdvisoryClasses::class)->mountTableAction('edit', $class)
+        ->assertTableActionDataSet(['school_year_id' => $semester->school_year_id, 'semester_id' => $membership->semester_id, 'academic_section_id' => $membership->academic_section_id])
+        ->setTableActionData(['school_year_id' => $semester->school_year_id, 'semester_id' => $semester->id, 'academic_section_id' => $nextMembership->academic_section_id])
+        ->callMountedTableAction()->assertHasNoTableActionErrors();
+    expect($class->refresh()->academic_section_id)->toBe($nextMembership->academic_section_id)
+        ->and($task->submissions()->pluck('user_id')->all())->toBe([$nextStudent->id]);
+});
+
+it('keeps submissions in their original term and rejects sections claimed by another adviser', function () {
+    extract(advisingFixture());
+    $next = AcademicSection::create([
+        'department_id' => $membership->department_id, 'semester_id' => $membership->semester_id, 'name' => 'BSIT 3B', 'is_active' => true,
+    ]);
+    $this->actingAs($instructor);
+    $service = app(Advising::class);
+    $row = $service->submit($task, $student, [advisingUpload($task, $student)], null);
+    Livewire::test(ManageAdvisoryClasses::class)->callTableAction('edit', $class, data: [
+        'school_year_id' => $class->section->semester->school_year_id, 'semester_id' => $next->semester_id, 'academic_section_id' => $next->id,
+    ])->assertHasTableActionErrors(['academic_section_id']);
+    expect($class->refresh()->academic_section_id)->toBe($membership->academic_section_id)->and($row->refresh()->status)->toBe('submitted');
+    expect($service->changeSection($class, $class->academic_section_id, $instructor)->id)->toBe($class->id);
+    $row->delete();
+    AdvisoryClass::create(['academic_section_id' => $next->id, 'adviser_id' => User::factory()->create()->id]);
+    expect(fn () => $service->changeSection($class, $next->id, $instructor))->toThrow(ValidationException::class);
+    expect(fn () => $service->changeSection($class, $next->id, $student))->toThrow(AuthorizationException::class);
 });
 
 it('keeps the student role valid and serves adviser pages through real middleware', function () {
