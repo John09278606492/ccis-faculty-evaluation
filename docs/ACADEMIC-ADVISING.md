@@ -8,13 +8,22 @@ cannot be released, so its submission history stays intact.
 Use a section's **Edit** button to select its school year, semester and section.
 Available sections are filtered to that term, and the current selection stays
 available while editing. Changing the section refreshes existing tasks' untouched
-student rosters. Once students have submitted work, add a new advisory section for
-the next term instead: existing submissions must stay with their original class.
+student rosters. Once students have submitted work, keep that roster source so
+their submissions remain with their original class. Add another advisory section
+only when using a different student list. To change the enrollment semester while
+keeping the same students, edit the task's **Advising for** field instead.
 Missing semesters and sections can be created under Academic Management → School
 Years and Sections.
 
 Use **Advising Tasks → Create** to choose a claimed section, enter requirements,
 instructions, a deadline in Philippine time and the notice students should see.
+Set **Advising for** to the semester the students are preparing to enroll in.
+For example, keep **Student list semester = First Semester** on the advisory
+section and choose **Advising for = Second Semester** on its task. This uses the
+first-semester student list without changing their academic records, grades or
+membership. Existing tasks can have their advising semester corrected through
+**Open & review**. The advising semester is displayed to students in their task
+list, requirements and dashboard. Only semesters in the current campus are allowed.
 The default notice says failure to submit by the deadline means the student will
 not be enrolled. This is a displayed notice: the module does not automatically
 change anyone's enrollment or grades.

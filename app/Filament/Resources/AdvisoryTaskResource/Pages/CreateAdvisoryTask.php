@@ -13,6 +13,7 @@ class CreateAdvisoryTask extends CreateRecord
     protected function mutateFormDataBeforeCreate(array $data): array
     {
         abort_unless(array_key_exists((int) $data['advisory_class_id'], AdvisoryTaskResource::classOptions()), 403);
+        abort_unless(array_key_exists((int) $data['advising_semester_id'], AdvisoryTaskResource::semesterOptions()), 403);
 
         return [...$data, 'created_by' => auth()->id()];
     }

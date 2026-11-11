@@ -49,7 +49,7 @@ class AdvisoryClassResource extends Resource implements HasShieldPermissions
     public static function form(Form $form): Form
     {
         return $form->schema([
-            Forms\Components\Select::make('school_year_id')->label('School year')
+            Forms\Components\Select::make('school_year_id')->label('Student list school year')
                 ->options(fn () => DB::table('school_years')->where('campus_id', filament()->getTenant()?->id)->orderByDesc('name')->pluck('name', 'id')->all())
                 ->afterStateHydrated(function (Forms\Components\Select $component, ?AdvisoryClass $record) {
                     if ($record) {
@@ -61,7 +61,8 @@ class AdvisoryClassResource extends Resource implements HasShieldPermissions
                     $set('semester_id', null);
                     $set('academic_section_id', null);
                 }),
-            Forms\Components\Select::make('semester_id')->label('Semester')
+            Forms\Components\Select::make('semester_id')->label('Student list semester')
+                ->helperText('Keep First Semester here if that is where the students are recorded. Choose Second Semester in the task’s Advising for field.')
                 ->options(fn (Forms\Get $get) => DB::table('semesters')->where('school_year_id', $get('school_year_id'))
                     ->whereIn('school_year_id', DB::table('school_years')->where('campus_id', filament()->getTenant()?->id)->select('id'))
                     ->orderBy('start_date')->pluck('name', 'id')->all())
@@ -85,7 +86,7 @@ class AdvisoryClassResource extends Resource implements HasShieldPermissions
     {
         return $table->columns([
             Tables\Columns\TextColumn::make('section.name')->label('Section')->searchable(),
-            Tables\Columns\TextColumn::make('section.semester.name')->label('Semester'),
+            Tables\Columns\TextColumn::make('section.semester.name')->label('Student list semester'),
             Tables\Columns\TextColumn::make('section.semester.schoolYear.name')->label('School year'),
             Tables\Columns\TextColumn::make('adviser.name')->label('Adviser'),
             Tables\Columns\TextColumn::make('students_count')->label('Students'),
@@ -93,7 +94,7 @@ class AdvisoryClassResource extends Resource implements HasShieldPermissions
         ])->actions([
             Tables\Actions\EditAction::make()
                 ->modalHeading('Edit advisory section')
-                ->modalDescription('Change the school year, semester and section. If students have already submitted work, add a new advisory section for the new term instead.')
+                ->modalDescription('These fields select the student list. For second-semester advising using first-semester students, keep this list and change the task’s Advising for field instead.')
                 ->using(function (AdvisoryClass $record, array $data, Tables\Actions\EditAction $action) {
                     try {
                         return app(Advising::class)->changeSection($record, (int) $data['academic_section_id'], auth()->user());

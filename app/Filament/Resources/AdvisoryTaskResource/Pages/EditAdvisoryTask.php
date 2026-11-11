@@ -18,6 +18,13 @@ class EditAdvisoryTask extends EditRecord
         app(Advising::class)->syncRoster($this->record);
     }
 
+    protected function mutateFormDataBeforeSave(array $data): array
+    {
+        abort_unless(array_key_exists((int) $data['advising_semester_id'], AdvisoryTaskResource::semesterOptions()), 403);
+
+        return $data;
+    }
+
     protected function getHeaderActions(): array
     {
         return [Action::make('remind')->label('Remind waiting students')->icon('heroicon-o-bell')->requiresConfirmation()

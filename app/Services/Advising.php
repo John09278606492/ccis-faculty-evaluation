@@ -224,13 +224,14 @@ class Advising
 
     private function bell($students, AdvisoryTask $task, string $title, string $tone): void
     {
+        $task->loadMissing('advisingSemester.schoolYear');
         $campusId = $this->campusIdOf($task->advisoryClass);
         $due = $task->due_at ? ' · Due '.$task->due_at->timezone('Asia/Manila')->format('M j, Y g:ia') : '';
 
         // One transaction, so a whole section costs one disk commit on SQLite.
         DB::transaction(fn () => BellNotification::make()
             ->title($title)
-            ->body($task->title.$due)
+            ->body($task->title.' · '.$task->advising_term.$due)
             ->{$tone}()
             ->actions([NotificationAction::make('open')->label('Open My Advising')->url("/{$campusId}/my-advising")->markAsRead()])
             ->sendToDatabase($students));

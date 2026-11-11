@@ -45,10 +45,11 @@ class MyAdvising extends Page implements HasTable
     public function table(Table $table): Table
     {
         return $table->query(app(Advising::class)->tasksFor(auth()->user(), filament()->getTenant()?->id)
-            ->with(['advisoryClass.section', 'submissions' => fn ($q) => $q->where('user_id', auth()->id())]))
+            ->with(['advisoryClass.section', 'advisingSemester.schoolYear', 'submissions' => fn ($q) => $q->where('user_id', auth()->id())]))
             ->defaultSort('due_at')->columns([
                 Tables\Columns\TextColumn::make('title')->wrap()->searchable(),
                 Tables\Columns\TextColumn::make('advisoryClass.section.name')->label('Section'),
+                Tables\Columns\TextColumn::make('advising_term')->label('Advising for')->wrap(),
                 Tables\Columns\TextColumn::make('due_at')->dateTime('M j, Y g:ia', timezone: 'Asia/Manila'),
                 Tables\Columns\TextColumn::make('submission_status')->label('Your status')->badge()
                     ->state(fn (AdvisoryTask $record) => $this->submission($record)?->status ?? 'pending')

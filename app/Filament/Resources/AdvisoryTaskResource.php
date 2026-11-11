@@ -10,6 +10,7 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 
 class AdvisoryTaskResource extends Resource implements HasShieldPermissions
 {
@@ -40,13 +41,24 @@ class AdvisoryTaskResource extends Resource implements HasShieldPermissions
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()->whereIn('advisory_class_id', AdvisoryClassResource::getEloquentQuery()->select('advisory_classes.id')->reorder())
-            ->with('advisoryClass.section')->withCount(['submissions', 'submissions as submitted_count' => fn ($q) => $q->whereIn('status', ['submitted', 'approved'])]);
+            ->with(['advisoryClass.section', 'advisingSemester.schoolYear'])->withCount(['submissions', 'submissions as submitted_count' => fn ($q) => $q->whereIn('status', ['submitted', 'approved'])]);
+    }
+
+    public static function semesterOptions(): array
+    {
+        return DB::table('semesters as semester')->join('school_years as year', 'year.id', '=', 'semester.school_year_id')
+            ->where('year.campus_id', filament()->getTenant()?->id)->orderByDesc('year.name')->orderBy('semester.start_date')
+            ->get(['semester.id', 'semester.name', 'year.name as year'])
+            ->mapWithKeys(fn ($row) => [$row->id => $row->name.' — '.$row->year])->all();
     }
 
     public static function form(Form $form): Form
     {
         return $form->schema([
             Forms\Components\Select::make('advisory_class_id')->label('Advisory section')->options(fn () => static::classOptions())->searchable()->required()->disabledOn('edit'),
+            Forms\Components\Select::make('advising_semester_id')->label('Advising for')->options(fn () => static::semesterOptions())->searchable()->required()
+                ->in(fn () => array_keys(static::semesterOptions()))
+                ->helperText('The semester students are preparing to enroll in, for example Second Semester. Their student records and section membership stay unchanged. Add a missing term under Academic Management → School Years.'),
             Forms\Components\TextInput::make('title')->required()->maxLength(255),
             Forms\Components\Textarea::make('instructions')->rows(4)->maxLength(20000)->columnSpanFull(),
             Forms\Components\TagsInput::make('requirements')->label('Requirements')->helperText('Enter each required screenshot or document, then press Enter.')->nestedRecursiveRules(['string', 'max:255'])->required()->columnSpanFull(),
@@ -63,6 +75,7 @@ class AdvisoryTaskResource extends Resource implements HasShieldPermissions
         return $table->columns([
             Tables\Columns\TextColumn::make('title')->searchable()->wrap(),
             Tables\Columns\TextColumn::make('advisoryClass.section.name')->label('Section'),
+            Tables\Columns\TextColumn::make('advising_term')->label('Advising for')->wrap(),
             Tables\Columns\TextColumn::make('due_at')->dateTime('M j, Y g:ia', timezone: 'Asia/Manila')->sortable(),
             Tables\Columns\TextColumn::make('progress')->state(fn ($record) => "{$record->submitted_count} / {$record->submissions_count}")->label('Submitted'),
             Tables\Columns\TextColumn::make('status')->badge(),

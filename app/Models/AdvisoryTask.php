@@ -16,7 +16,7 @@ class AdvisoryTask extends Model
 
     public const DEFAULT_CONSEQUENCE = 'Failure to submit on or before the due date means you will not be enrolled.';
 
-    protected $fillable = ['advisory_class_id', 'title', 'instructions', 'requirements', 'due_at', 'consequence', 'allow_late', 'status', 'created_by'];
+    protected $fillable = ['advisory_class_id', 'advising_semester_id', 'title', 'instructions', 'requirements', 'due_at', 'consequence', 'allow_late', 'status', 'created_by'];
 
     protected $casts = ['requirements' => 'array', 'due_at' => 'datetime', 'allow_late' => 'boolean'];
 
@@ -28,6 +28,18 @@ class AdvisoryTask extends Model
     public function submissions(): HasMany
     {
         return $this->hasMany(AdvisorySubmission::class);
+    }
+
+    public function advisingSemester(): BelongsTo
+    {
+        return $this->belongsTo(Semester::class, 'advising_semester_id')->withoutGlobalScope('assigned_data');
+    }
+
+    public function getAdvisingTermAttribute(): string
+    {
+        return $this->advisingSemester
+            ? $this->advisingSemester->name.' · '.$this->advisingSemester->schoolYear?->name
+            : 'Not set';
     }
 
     public function isPastDue(): bool

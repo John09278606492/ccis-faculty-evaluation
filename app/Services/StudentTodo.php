@@ -27,7 +27,7 @@ class StudentTodo
             : collect();
 
         $advising = \App\Filament\Pages\MyAdvising::canAccess()
-            ? app(Advising::class)->toDo($student, $campusId)->with('advisoryClass.section')->orderBy('due_at')->get()
+            ? app(Advising::class)->toDo($student, $campusId)->with(['advisoryClass.section', 'advisingSemester.schoolYear'])->orderBy('due_at')->get()
             : collect();
 
         return ['assessments' => $assessments, 'receipts' => $receipts, 'advising' => $advising, 'total' => $assessments->count() + $receipts->sum('count') + $advising->count()];

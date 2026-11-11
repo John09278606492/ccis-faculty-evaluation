@@ -11,6 +11,7 @@ use App\Models\AcademicSection;
 use App\Models\AdvisoryClass;
 use App\Models\AdvisoryTask;
 use App\Models\Campus;
+use App\Models\SchoolYear;
 use App\Models\Semester;
 use App\Models\StudentSectionMembership;
 use App\Models\User;
@@ -40,7 +41,7 @@ function advisingFixture(): array
     $student->givePermissionTo(Permission::findOrCreate('page_MyAdvising', 'web'));
     $membership = StudentSectionMembership::create(['user_id' => $student->id, 'department_id' => $offering->course->department_id, 'semester_id' => $offering->semester_id, 'section' => 'BSIT 3A']);
     $class = AdvisoryClass::create(['academic_section_id' => $membership->academic_section_id, 'adviser_id' => $instructor->id, 'created_by' => $instructor->id]);
-    $task = AdvisoryTask::create(['advisory_class_id' => $class->id, 'title' => 'Enrollment advising', 'requirements' => ['Grades screenshot', 'Advising form PDF'], 'due_at' => now()->addDay(), 'consequence' => AdvisoryTask::DEFAULT_CONSEQUENCE, 'status' => 'open']);
+    $task = AdvisoryTask::create(['advisory_class_id' => $class->id, 'advising_semester_id' => $membership->semester_id, 'title' => 'Enrollment advising', 'requirements' => ['Grades screenshot', 'Advising form PDF'], 'due_at' => now()->addDay(), 'consequence' => AdvisoryTask::DEFAULT_CONSEQUENCE, 'status' => 'open']);
     Filament::setCurrentPanel(Filament::getPanel('admin'));
     Filament::setTenant($campus, isQuiet: true);
     Storage::fake(Advising::DISK);
@@ -150,6 +151,7 @@ it('renders adviser pages and the submissions review table', function () {
     Livewire::test(ManageAdvisoryClasses::class)->assertSuccessful()->assertCanSeeTableRecords([$class]);
     Livewire::test(CreateAdvisoryTask::class)->assertSuccessful()->fillForm([
         'advisory_class_id' => $class->id, 'title' => 'Second advising task', 'requirements' => ['Registration form'],
+        'advising_semester_id' => $membership->semester_id,
         'due_at' => now()->addDays(2)->format('Y-m-d H:i:s'), 'status' => 'open',
     ])->call('create')->assertHasNoFormErrors();
     expect(AdvisoryTask::where('title', 'Second advising task')->sole()->submissions()->count())->toBe(1);
@@ -159,6 +161,51 @@ it('renders adviser pages and the submissions review table', function () {
     $other->givePermissionTo($instructor->getAllPermissions());
     $this->actingAs($other);
     expect(AdvisoryClassResource::getEloquentQuery()->count())->toBe(0)->and(AdvisoryTaskResource::getEloquentQuery()->count())->toBe(0);
+});
+
+it('uses the first semester roster for second semester advising without moving student records or submissions', function () {
+    extract(advisingFixture());
+    $semester = Semester::create([
+        'school_year_id' => $class->section->semester->school_year_id, 'name' => 'Second Semester',
+        'start_date' => '2027-01-01', 'end_date' => '2027-05-31', 'is_active' => true,
+    ]);
+    $row = app(Advising::class)->submit($task, $student, [advisingUpload($task, $student)], null);
+    $firstSemester = $membership->semester_id;
+    $originalFiles = $row->files;
+    $this->actingAs($instructor);
+    Livewire::test(EditAdvisoryTask::class, ['record' => $task->id])->fillForm(['advising_semester_id' => $semester->id])
+        ->call('save')->assertHasNoFormErrors();
+    expect($task->refresh()->advising_semester_id)->toBe($semester->id)
+        ->and($membership->refresh()->semester_id)->toBe($firstSemester)
+        ->and($class->refresh()->academic_section_id)->toBe($membership->academic_section_id)
+        ->and($row->refresh()->files)->toBe($originalFiles)
+        ->and($row->status)->toBe('submitted');
+    $this->actingAs($student);
+    Livewire::test(MyAdvising::class)->assertCanSeeTableRecords([$task])->assertSee('Second Semester')
+        ->mountTableAction('details', $task)->assertSee('Advising for:')->assertSee('Second Semester');
+    expect(app(StudentTodo::class)->for($student, $campus->id)['advising'])->toHaveCount(0);
+    $row->update(['status' => 'returned']);
+    expect(app(StudentTodo::class)->for($student, $campus->id)['advising']->sole()->advising_term)->toContain('Second Semester');
+});
+
+it('rejects a target advising semester from another campus', function () {
+    extract(advisingFixture());
+    $foreignCampus = Campus::create(['name' => 'Foreign campus', 'slug' => 'foreign', 'is_active' => true]);
+    $year = SchoolYear::create(['campus_id' => $foreignCampus->id, 'name' => '2026-2027', 'start_date' => '2026-06-01', 'end_date' => '2027-05-31', 'is_current' => true]);
+    $semester = Semester::create(['school_year_id' => $year->id, 'name' => 'Second Semester', 'start_date' => '2027-01-01', 'end_date' => '2027-05-31', 'is_active' => true]);
+    $this->actingAs($instructor);
+    Livewire::test(EditAdvisoryTask::class, ['record' => $task->id])->fillForm(['advising_semester_id' => $semester->id])
+        ->call('save')->assertHasFormErrors(['advising_semester_id']);
+    expect($task->refresh()->advising_semester_id)->toBe($membership->semester_id);
+});
+
+it('backfills the original advising term when upgrading existing task data', function () {
+    extract(advisingFixture());
+    $migration = require database_path('migrations/2026_11_11_000002_add_advising_semester_to_tasks.php');
+    $migration->down();
+    $migration->up();
+    expect($task->refresh()->advising_semester_id)->toBe($membership->semester_id)
+        ->and($membership->refresh()->semester_id)->toBe($class->section->semester_id);
 });
 
 it('claims a free section as the signed-in adviser and preserves review feedback', function () {

@@ -84,7 +84,7 @@
             @foreach ($todo['advising'] as $task)
                 <a class="stu-todo-item" href="{{ \App\Filament\Pages\MyAdvising::getUrl() }}">
                     <span class="stu-todo-icon is-exam" aria-hidden="true"><x-heroicon-o-academic-cap /></span>
-                    <span class="stu-todo-text"><strong>{{ $task->title }}</strong><span>{{ $task->advisoryClass->name }}@if ($task->due_at) · Due {{ $task->due_at->timezone('Asia/Manila')->format('M j, g:ia') }}@endif</span></span>
+                    <span class="stu-todo-text"><strong>{{ $task->title }}</strong><span>{{ $task->advisoryClass->name }} · {{ $task->advising_term }}@if ($task->due_at) · Due {{ $task->due_at->timezone('Asia/Manila')->format('M j, g:ia') }}@endif</span></span>
                     <span>Submit files</span>
                 </a>
             @endforeach
