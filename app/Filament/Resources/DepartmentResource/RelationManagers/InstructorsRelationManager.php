@@ -29,8 +29,8 @@ class InstructorsRelationManager extends RelationManager
                 Tables\Columns\TextColumn::make('employee_id')->label('Employee ID')->searchable()->placeholder('Not provided'),
                 Tables\Columns\TextColumn::make('position')->label('Position')->placeholder('Not provided'),
             ])->headerActions([AssignDepartmentInstructors::make(table: true, department: $this->getOwnerRecord())])
-            ->actions([TransferDepartmentInstructors::make($this->getOwnerRecord())])
-            ->bulkActions([TransferDepartmentInstructors::bulk($this->getOwnerRecord())])
+            ->actions([TransferDepartmentInstructors::make($this->getOwnerRecord()), TransferDepartmentInstructors::detach($this->getOwnerRecord())])
+            ->bulkActions([TransferDepartmentInstructors::bulk($this->getOwnerRecord()), TransferDepartmentInstructors::detachBulk($this->getOwnerRecord())])
             ->emptyStateHeading('No home department instructors yet')
             ->emptyStateDescription('Use Add instructors to select existing accounts together.');
     }

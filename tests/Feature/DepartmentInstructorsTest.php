@@ -197,19 +197,29 @@ it('requires the transfer permission on top of managing the department', functio
     expect($this->service->canTransfer($this->actor->fresh(), $this->campus, $this->department))->toBeFalse();
 });
 
-it('offers transfer on each roster row and for a selection of instructors', function () {
+it('offers transfer and detach on each roster row and for a selection of instructors', function () {
     $other = Department::create(['campus_id' => $this->campus->id, 'name' => 'CTAS', 'code' => 'CTAS', 'is_active' => true]);
     $third = User::factory()->create(['is_student' => false, 'is_instructor' => true]);
     $third->campuses()->attach($this->campus);
-    User::whereKey([$this->teacher->id, $this->second->id, $third->id])->update(['instructor_department_id' => $this->department->id]);
+    $fourth = User::factory()->create(['is_student' => false, 'is_instructor' => true]);
+    $fourth->campuses()->attach($this->campus);
+    $fifth = User::factory()->create(['is_student' => false, 'is_instructor' => true]);
+    $fifth->campuses()->attach($this->campus);
+    User::whereKey([$this->teacher->id, $this->second->id, $third->id, $fourth->id, $fifth->id])->update(['instructor_department_id' => $this->department->id]);
 
     Livewire::test(InstructorsRelationManager::class, ['ownerRecord' => $this->department, 'pageClass' => EditDepartment::class])->assertStatus(200)
-        ->assertTableActionVisible('transferInstructor', $this->teacher)
-        ->callTableAction('transferInstructor', $this->teacher, data: ['destination' => 'none'])->assertHasNoTableActionErrors()
+        ->assertTableActionVisible('transferInstructor', $this->teacher)->assertTableActionVisible('detachInstructor', $this->teacher)
+        ->callTableAction('detachInstructor', $this->teacher)->assertHasNoTableActionErrors()
         ->assertCanNotSeeTableRecords([$this->teacher])
+        ->callTableAction('transferInstructor', $fourth, data: ['destination' => $other->id])->assertHasNoTableActionErrors()
+        ->callTableBulkAction('detachInstructors', [$fifth])->assertHasNoTableBulkActionErrors()
+        ->assertCanNotSeeTableRecords([$fourth, $fifth])
         ->callTableBulkAction('transferInstructors', [$this->second, $third], data: ['destination' => $other->id])->assertHasNoTableBulkActionErrors()
         ->assertCanNotSeeTableRecords([$this->second, $third]);
     expect($this->teacher->fresh()->instructor_department_id)->toBeNull()
+        ->and($fifth->fresh()->instructor_department_id)->toBeNull()
+        ->and($fourth->fresh()->instructor_department_id)->toBe($other->id)
         ->and($this->second->fresh()->instructor_department_id)->toBe($other->id)
-        ->and($third->fresh()->instructor_department_id)->toBe($other->id);
+        ->and($third->fresh()->instructor_department_id)->toBe($other->id)
+        ->and(DB::table('access_audit_events')->where('action', 'home_department.removed')->count())->toBe(2);
 });
