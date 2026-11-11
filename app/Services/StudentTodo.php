@@ -12,7 +12,7 @@ use Illuminate\Support\Collection;
 /** What a student should do now, for the top of their dashboard: open assessments and receipts to sign. */
 class StudentTodo
 {
-    /** @return array{assessments: Collection, receipts: Collection, total: int} */
+    /** @return array{assessments: Collection, receipts: Collection, advising: Collection, total: int} */
     public function for(User $student, ?int $campusId): array
     {
         $assessments = $this->assessments($student, $campusId);
@@ -26,7 +26,11 @@ class StudentTodo
                 ])
             : collect();
 
-        return ['assessments' => $assessments, 'receipts' => $receipts, 'total' => $assessments->count() + $receipts->sum('count')];
+        $advising = \App\Filament\Pages\MyAdvising::canAccess()
+            ? app(Advising::class)->toDo($student, $campusId)->with('advisoryClass.section')->orderBy('due_at')->get()
+            : collect();
+
+        return ['assessments' => $assessments, 'receipts' => $receipts, 'advising' => $advising, 'total' => $assessments->count() + $receipts->sum('count') + $advising->count()];
     }
 
     /** Assessments open right now that the student can start or must finish, soonest deadline first. */

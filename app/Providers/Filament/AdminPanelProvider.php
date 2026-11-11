@@ -91,6 +91,7 @@ class AdminPanelProvider extends PanelProvider
                 NavigationGroup::make('My Learning')->icon('heroicon-o-academic-cap'),
                 NavigationGroup::make('My Work')->icon('heroicon-o-inbox-stack'),
                 NavigationGroup::make('Academic Management')->icon('heroicon-o-building-library'),
+                NavigationGroup::make('Academic Advising')->icon('heroicon-o-user-group'),
                 NavigationGroup::make('Faculty Evaluation')->icon('heroicon-o-clipboard-document-list'),
                 NavigationGroup::make('Evaluation Reports')->icon('heroicon-o-chart-bar'),
                 NavigationGroup::make('Assessments')->icon('heroicon-o-pencil-square')->collapsed(),

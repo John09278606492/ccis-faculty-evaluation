@@ -42,6 +42,7 @@
                 <p>{{ collect([
                     $todo['assessments']->count() ? $todo['assessments']->count().' '.str('assessment')->plural($todo['assessments']->count()).' open' : null,
                     $todo['receipts']->sum('count') ? $todo['receipts']->sum('count').' '.str('receipt')->plural($todo['receipts']->sum('count')).' to sign' : null,
+                    $todo['advising']->count() ? $todo['advising']->count().' advising tasks' : null,
                 ])->filter()->join(' · ') }}</p>
             </div>
         </div>
@@ -78,12 +79,22 @@
                 </a>
             @endforeach
         @endif
+        @if ($todo['advising']->isNotEmpty())
+            <div class="stu-todo-group">Academic advising</div>
+            @foreach ($todo['advising'] as $task)
+                <a class="stu-todo-item" href="{{ \App\Filament\Pages\MyAdvising::getUrl() }}">
+                    <span class="stu-todo-icon is-exam" aria-hidden="true"><x-heroicon-o-academic-cap /></span>
+                    <span class="stu-todo-text"><strong>{{ $task->title }}</strong><span>{{ $task->advisoryClass->name }}@if ($task->due_at) · Due {{ $task->due_at->timezone('Asia/Manila')->format('M j, g:ia') }}@endif</span></span>
+                    <span>Submit files</span>
+                </a>
+            @endforeach
+        @endif
     @else
         <div class="stu-todo-done">
             <span class="stu-todo-icon" aria-hidden="true"><x-heroicon-o-check-circle /></span>
             <div class="stu-todo-text">
                 <strong id="stu-todo-title">You're all caught up</strong>
-                <span>No open assessments and no receipts to sign right now.</span>
+                <span>No open assessments, advising requirements or receipts to sign right now.</span>
             </div>
         </div>
     @endif

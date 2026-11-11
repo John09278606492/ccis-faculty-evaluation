@@ -50,6 +50,8 @@ Route::middleware([ResolveEvaluationStudent::class, 'throttle:evaluation-access'
 | Staff pages opened from the panel: form previews, reports, printouts and downloads
 */
 Route::middleware('auth')->group(function () {
+    Route::get('/advising-submissions/{submission}/files/{index}', \App\Http\Controllers\AdvisoryFileController::class)
+        ->whereNumber('index')->middleware('throttle:60,1')->name('advising.file');
     Route::get('/form-preview/{form}', [EvaluationController::class, 'preview'])->name('form.preview');
 
     Route::get('/evaluation-reports/{offering}', [FacultyReportController::class, 'show'])->name('evaluation.report');
