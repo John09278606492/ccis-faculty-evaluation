@@ -45,8 +45,15 @@ class StudentSignInController extends Controller
             Auth::guard(Filament::getPanel('admin')->getAuthGuard())->login($student);
             session()->forget(['student_sign_in_token', 'student_sign_in_code']);
             session()->regenerate();
+            $url = $request->destination ?: '/';
 
-            return response()->json(['state' => 'approved', 'url' => $request->destination ?: '/']);
+            // Outside an exam room, a student with no PIN is offered one, so this is their last wait.
+            if (! $student->pin_issued_at && ! $request->quiz_id) {
+                session()->put(['student_pin_setup' => $student->id, 'student_pin_next' => $url]);
+                $url = route('student.create-pin', absolute: false);
+            }
+
+            return response()->json(['state' => 'approved', 'url' => $url]);
         });
     }
 }

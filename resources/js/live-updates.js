@@ -8,6 +8,8 @@ let booted = false;
 let staff = false;
 let liveReady = false;
 let subscribedChannels = new Set();
+let checkingFallback = false;
+let pollingOnly = false;
 const panelRefresh = new PanelRefreshQueue({
     components: () => window.Livewire?.all() || [],
     focused: () => document.activeElement,
@@ -51,6 +53,16 @@ function connect() {
     }
     const config = JSON.parse(configElement.textContent);
     staff = Boolean(config.staff);
+    pollingOnly = config.transport === 'polling';
+    if (pollingOnly) {
+        echo?.disconnect();
+        echo = null;
+        window.Echo = undefined;
+        liveReady = false;
+        activeChannel = config.channel;
+        status('Automatic updates active');
+        return;
+    }
     if (echo && activeChannel === config.channel) {
         // A page change (also fired once on the first load) brings fresh data from the server,
         // so nothing to refresh. Refreshing here re-rendered tables before their scripts loaded.
@@ -113,10 +125,20 @@ function boot() {
     document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshRelatedViews(); });
     window.addEventListener('online', () => { echo?.connector.pusher.connect(); refreshRelatedViews(); });
     // Reverb is primary; a temporary socket outage still catches up automatically.
-    setInterval(() => {
-        if (!document.hidden && navigator.onLine && activeChannel && !liveReady) {
-            status('Auto updates active — reconnecting live connection…');
-            refreshRelatedViews();
+    setInterval(async () => {
+        if (document.hidden || !navigator.onLine || !activeChannel || liveReady || checkingFallback) return;
+        checkingFallback = true;
+        try {
+            // An old campus IP may still look "online" to the browser. Probe first
+            // rather than queueing more component refreshes against an unreachable server.
+            const response = await fetch('/up', { cache: 'no-store', signal: AbortSignal.timeout(3000) });
+            if (!response.ok) throw new Error('Server unavailable');
+            status(pollingOnly ? 'Automatic updates active' : 'Auto updates active — reconnecting live connection…');
+            if (!liveReady) refreshRelatedViews();
+        } catch {
+            status('Connection lost — check your Wi-Fi or campus address.');
+        } finally {
+            checkingFallback = false;
         }
     }, 20000);
 }

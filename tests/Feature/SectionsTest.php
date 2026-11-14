@@ -252,6 +252,29 @@ it('requires unique section names per department and period and keeps populated 
     expect($other->students()->count())->toBe(0)->and($this->section->students()->count())->toBe(1);
 });
 
+it('copies a populated section and its students to another period, leaving the original as it was', function () {
+    $semester = Semester::create(['school_year_id' => $this->offering->semester->school_year_id, 'name' => 'Second Semester', 'start_date' => '2027-01-01', 'end_date' => '2027-05-31', 'is_active' => true]);
+    $this->sections->add($this->actor, $this->campus, $this->section, [$this->student->id]);
+
+    Livewire::test(ListSections::class)
+        // The new period became the current one, so show the period the section is in.
+        ->filterTable('semester_id', $this->offering->semester_id)
+        ->callTableAction('copyToPeriod', $this->section, data: ['semester_id' => $semester->id, 'name' => $this->section->name])
+        ->assertHasNoTableActionErrors();
+
+    $copy = AcademicSection::where('semester_id', $semester->id)->sole();
+    expect($copy->name)->toBe($this->section->name)
+        ->and($copy->students()->pluck('users.id')->all())->toBe([$this->student->id])
+        ->and($this->section->fresh()->semester_id)->toBe($this->offering->semester_id)
+        ->and($this->section->students()->count())->toBe(1)
+        ->and(app(\App\Services\Advising::class)->freeSections($this->campus->id, null, $semester->id))->toHaveKey($copy->id);
+
+    // A second copy into the same period, or into its own period, is refused.
+    expect(fn () => $this->sections->copyToPeriod($this->actor, $this->campus, $this->section, $semester->id))->toThrow(ValidationException::class)
+        ->and(fn () => $this->sections->copyToPeriod($this->actor, $this->campus, $this->section, $this->section->semester_id, 'BSIT 9Z'))->toThrow(ValidationException::class)
+        ->and(AcademicSection::where('semester_id', $semester->id)->count())->toBe(1);
+});
+
 it('lets a viewer read a section without exposing upload or roster-edit actions', function () {
     $this->role->revokePermissionTo(['manage_academic_students', 'import_academic_students']);
     $this->actor->unsetRelation('roles')->unsetRelation('permissions');

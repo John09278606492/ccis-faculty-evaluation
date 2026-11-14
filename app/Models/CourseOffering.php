@@ -51,7 +51,7 @@ class CourseOffering extends Model
     protected static function booted(): void
     {
         static::deleting(function (self $offering) {
-            if ($offering->formSubmissions()->exists() || $offering->quizzes()->exists()) {
+            if ($offering->formSubmissions()->exists() || $offering->quizzes()->exists() || $offering->acknowledgementForms()->exists()) {
                 throw ValidationException::withMessages(['assignment' => 'This class has evaluation or assessment records. Archive it instead of deleting it.']);
             }
         });
@@ -147,6 +147,11 @@ class CourseOffering extends Model
     public function quizzes(): HasMany
     {
         return $this->hasMany(Quiz::class);
+    }
+
+    public function acknowledgementForms(): HasMany
+    {
+        return $this->hasMany(AcknowledgementForm::class);
     }
 
     /**

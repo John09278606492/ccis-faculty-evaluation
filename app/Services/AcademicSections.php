@@ -50,7 +50,7 @@ class AcademicSections
             if ($section) {
                 $members = StudentSectionMembership::where('academic_section_id', $section->id);
                 if ((clone $members)->exists() && ((int) $data['semester_id'] !== $section->semester_id || (int) $data['department_id'] !== $section->department_id)) {
-                    throw ValidationException::withMessages(['semester_id' => 'Create a new section for a different department or academic period. Existing section students and evaluation history are preserved.']);
+                    throw ValidationException::withMessages(['semester_id' => 'This section already has students, so it stays in its academic period to keep their classes and history. To use it in another period, go back to the Sections list and choose "Copy to another period" on this section.']);
                 }
                 $oldGroup = $section->department_id.'~'.$section->semester_id.'~'.rawurlencode($section->name);
                 $section->update($data);
@@ -69,6 +69,43 @@ class AcademicSections
             }
 
             return AcademicSection::create($data);
+        });
+    }
+
+    /**
+     * The same section and students in another academic period (for example 2nd Semester).
+     * The original section, its classes and its history are left as they are.
+     */
+    public function copyToPeriod(User $actor, Campus $campus, AcademicSection $section, int $semesterId, ?string $name = null): AcademicSection
+    {
+        $section = $this->section($actor, $campus, $section->id, true);
+        $data = Validator::make([
+            'semester_id' => $semesterId,
+            'name' => TeachingClassRosterImports::section((string) ($name ?: $section->name)),
+        ], [
+            'semester_id' => ['required', Rule::in(array_keys(AcademicPeriod::options($campus))), Rule::notIn([$section->semester_id])],
+            'name' => ['required', 'string', 'max:50', Rule::unique('academic_sections', 'name')
+                ->where('department_id', $section->department_id)->where('semester_id', $semesterId)],
+        ], [
+            'semester_id.not_in' => 'Choose a different academic period than the one this section is already in.',
+            'name.unique' => 'That academic period already has a section with this name.',
+        ])->validate();
+
+        return DB::transaction(function () use ($section, $data) {
+            $copy = AcademicSection::create(['department_id' => $section->department_id, 'semester_id' => $data['semester_id'], 'name' => $data['name'], 'is_active' => true]);
+            $now = now();
+            $rows = DB::table('student_section_memberships as member')
+                ->join('users', 'users.id', '=', 'member.user_id')
+                ->where('member.academic_section_id', $section->id)
+                ->whereNull('users.deleted_at')
+                ->pluck('member.user_id')
+                ->map(fn ($userId) => ['user_id' => $userId, 'department_id' => $copy->department_id, 'semester_id' => $copy->semester_id,
+                    'section' => $copy->name, 'academic_section_id' => $copy->id, 'created_at' => $now, 'updated_at' => $now]);
+            foreach ($rows->chunk(200) as $chunk) {
+                DB::table('student_section_memberships')->insertOrIgnore($chunk->all());
+            }
+
+            return $copy;
         });
     }
 

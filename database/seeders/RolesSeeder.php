@@ -16,14 +16,17 @@ use Spatie\Permission\PermissionRegistrar;
 class RolesSeeder extends Seeder
 {
     public const INSTRUCTOR = [
+        'view_any_advisory::class', 'view_advisory::class', 'create_advisory::class', 'update_advisory::class', 'delete_advisory::class',
+        'view_any_advisory::task', 'view_advisory::task', 'create_advisory::task', 'update_advisory::task', 'delete_advisory::task',
         'view_any_course::offering', 'view_course::offering', 'update_course::offering',
         'view_any_quiz', 'view_quiz', 'create_quiz', 'update_quiz', 'delete_quiz', 'replicate_quiz',
+        'view_any_acknowledgement::form', 'view_acknowledgement::form', 'create_acknowledgement::form', 'update_acknowledgement::form', 'delete_acknowledgement::form',
         'page_QuizBuilder', 'page_ClassRecords', 'page_MyEvaluationResults', 'page_MyProfilePage',
         'widget_InstructorEvaluationSummaryWidget',
     ];
 
     public const STUDENT = [
-        'page_MyEvaluations', 'page_MyQuizzes', 'page_TakeQuiz', 'page_MyProfilePage',
+        'page_MyEvaluations', 'page_MyQuizzes', 'page_MyAcknowledgements', 'page_MyAdvising', 'page_TakeQuiz', 'page_MyProfilePage',
         'widget_StudentPendingEvaluationsWidget',
     ];
 

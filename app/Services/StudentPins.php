@@ -20,6 +20,17 @@ class StudentPins
         return str_pad((string) random_int(0, 10 ** self::LENGTH - 1), self::LENGTH, '0', STR_PAD_LEFT);
     }
 
+    /** Rejects PINs a classmate could guess: one repeated digit, a run like 123456, or the student's own ID. */
+    public static function isEasyToGuess(string $pin, ?string $studentId = null): bool
+    {
+        $digits = array_map('intval', str_split($pin));
+        $steps = array_unique(array_map(fn ($a, $b) => ($b - $a + 10) % 10, array_slice($digits, 0, -1), array_slice($digits, 1)));
+        $idDigits = preg_replace('/\D/', '', (string) $studentId);
+
+        return (count($steps) === 1 && in_array($steps[0], [0, 1, 9], true))
+            || ($idDigits !== '' && str_contains($idDigits, $pin));
+    }
+
     /**
      * @param  Collection<int, User>  $students
      * @return Collection<int, array{student: User, pin: string}>

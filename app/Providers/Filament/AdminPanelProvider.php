@@ -91,6 +91,7 @@ class AdminPanelProvider extends PanelProvider
                 NavigationGroup::make('My Learning')->icon('heroicon-o-academic-cap'),
                 NavigationGroup::make('My Work')->icon('heroicon-o-inbox-stack'),
                 NavigationGroup::make('Academic Management')->icon('heroicon-o-building-library'),
+                NavigationGroup::make('Academic Advising')->icon('heroicon-o-user-group'),
                 NavigationGroup::make('Faculty Evaluation')->icon('heroicon-o-clipboard-document-list'),
                 NavigationGroup::make('Evaluation Reports')->icon('heroicon-o-chart-bar'),
                 NavigationGroup::make('Assessments')->icon('heroicon-o-pencil-square')->collapsed(),
@@ -135,6 +136,7 @@ class AdminPanelProvider extends PanelProvider
             )
             ->databaseNotifications()
             ->renderHook(PanelsRenderHook::HEAD_START, fn () => view('filament.partials.light-first'))
+            ->renderHook(PanelsRenderHook::HEAD_END, fn () => view('filament.partials.liquid-buttons'))
             ->renderHook(PanelsRenderHook::CONTENT_START, fn () => Blade::render('@livewire("workspace-context")'))
             ->renderHook(PanelsRenderHook::BODY_END, fn () => view('filament.partials.live-connection'))
             ->renderHook(PanelsRenderHook::BODY_START, fn () => filled(config('classroom.login.title')) ? view('filament.partials.login-brand') : '', scopes: Login::class)
