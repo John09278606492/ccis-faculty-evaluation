@@ -27,6 +27,14 @@ beforeEach(function () {
     $this->actingAs($this->staff);
 });
 
+it('loads updated comment wording when reopening an individual copy', function () {
+    $url = app(EvaluationCopies::class)->previewUrl($this->staff, $this->campus, [$this->first->id]);
+    $this->first->update(['data' => [...$this->first->data, '_overall_comment' => 'Earlier wording.']]);
+    $this->get($url)->assertOk()->assertSee('Earlier wording.');
+    $this->first->update(['data' => [...$this->first->data, '_overall_comment' => 'Updated wording.']]);
+    $this->get($url)->assertOk()->assertSee('Updated wording.')->assertDontSee('Earlier wording.');
+});
+
 it('prints only the selected responses and hides identity by default', function () {
     $service = app(EvaluationCopies::class);
     $url = $service->previewUrl($this->staff, $this->campus, [$this->first->id]);
@@ -80,10 +88,11 @@ it('prints the submitted instrument snapshot instead of rewriting historical cri
     $this->get($url)->assertOk()->assertSee($original)->assertDontSee('Changed after the submitted copy');
 });
 
-it('reveals identity only with permission and prevents another user reusing a selection', function () {
+it('conceals identity even with reveal permission and prevents another user reusing a selection', function () {
     $url = app(EvaluationCopies::class)->previewUrl($this->staff, $this->campus, [$this->first->id, $this->second->id]);
     $this->staff->givePermissionTo(Permission::findOrCreate('view_evaluator_identity_form', 'web'));
-    $this->get($url.'&identity=1')->assertOk()->assertSee('Private Student Name')->assertSee('PRIVATE-001')->assertSee('Identity unavailable');
+    $this->get($url)->assertOk()->assertDontSee('Show Identity')->assertDontSee('Private Student Name')->assertDontSee('PRIVATE-001');
+    $this->get($url.'&identity=1')->assertForbidden();
     $other = User::factory()->create(['is_student' => false]);
     $other->campuses()->attach($this->campus);
     $other->givePermissionTo('page_EvaluationResults');
@@ -105,14 +114,15 @@ it('includes Annex B copies and supports the selected-copy modal', function () {
     Livewire::test(IndividualEvaluationCopies::class, ['faculty' => $this->assignment->user_id])->mountTableAction('printAll')->assertSee('<iframe', false);
 });
 
-it('resolves an existing keyed anonymous response only when identity reveal is authorized', function () {
+it('does not reveal a keyed anonymous response through an identity query parameter', function () {
     $student = User::factory()->create(['is_student' => true, 'student_id' => 'LEGACY-STUDENT']);
     $student->campuses()->attach($this->campus);
     $this->second->update(['submission_fingerprint' => hash_hmac('sha256', "evaluation:{$this->assignment->id}:user:{$student->id}", config('evaluations.fingerprint_key'))]);
     $url = app(EvaluationCopies::class)->previewUrl($this->staff, $this->campus, [$this->second->id]);
     $this->get($url)->assertOk()->assertDontSee('LEGACY-STUDENT');
     $this->staff->givePermissionTo(Permission::findOrCreate('view_evaluator_identity_form', 'web'));
-    $this->get($url.'&identity=1')->assertOk()->assertSee('LEGACY-STUDENT')->assertSee($student->name);
+    $this->get($url)->assertOk()->assertDontSee('LEGACY-STUDENT')->assertDontSee($student->name);
+    $this->get($url.'&identity=1')->assertForbidden();
     $otherCampus = Campus::create(['name' => 'Other campus', 'slug' => 'copy-other', 'is_active' => true]);
     $this->staff->campuses()->attach($otherCampus);
     expect(fn () => app(EvaluationCopies::class)->previewUrl($this->staff, $otherCampus, [$this->first->id]))->toThrow(HttpException::class);
