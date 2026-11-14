@@ -46,7 +46,7 @@ class FacultyReportController extends Controller
         $offerings = app(AssignedDataAccess::class)->apply(app(ReportService::class)->facultyReportOfferings($scope['user_id'], $context), $request->user(), $offering->campus)
             ->where('user_id', $scope['user_id'])->with(['evaluationForm.fields', 'formSubmissions', 'course.department', 'teachingDepartment', 'supervisorEvaluators'])->get();
         if ($request->user()->id === $offering->user_id) {
-            $offerings = $offerings->filter(fn ($co) => EvaluationResultsRelease::isReleased($co));
+            $offerings = $offerings->filter(fn ($co) => EvaluationResultsRelease::canSeeScores($request->user(), $co));
         }
         $rows = collect();
         $setRows = collect();
@@ -57,8 +57,15 @@ class FacultyReportController extends Controller
             }
             $score = app(EvaluationScoring::class)->assignment($assignment, $assignment->formSubmissions);
             $comments = app(ReportService::class)->getAggregatedComments(collect([$assignment->id]));
+            $commentEntries = $assignment->formSubmissions->where('form_id', $assignment->form_id)->sortBy('id')->map(function ($submission) {
+                $parts = array_filter([$submission->data['_overall_comment'] ?? '', ...array_values($submission->data['_field_comments'] ?? [])], fn ($text) => is_string($text) && trim($text) !== '');
+                $text = implode("\n", $parts);
+
+                return ['text' => $text, 'placeholder' => app(ReportService::class)->meaningfulComments([$text]) === []];
+            })->values()->all();
             $rows->push(['assignment' => $assignment, 'form' => $form, 'instrument' => $score['instrument'],
-                'comments' => array_merge($comments['overall_comments'], ...array_values($comments['field_comments'])), 'count' => $score['count'],
+                'comment_entries' => $commentEntries,
+                'comments' => app(ReportService::class)->meaningfulComments(array_merge($comments['overall_comments'], ...array_values($comments['field_comments']))), 'count' => $score['count'],
                 'mean_total' => $score['mean_total'], 'mean_5' => $score['mean_5'], 'maximum' => $score['maximum'], 'percentage' => $score['percentage'],
                 'items' => $score['fields']->map(fn ($field) => ['label' => $field['label'], 'section' => $field['section'], 'mean' => $field['native_avg']])]);
             if ($score['instrument'] === 'SET') {

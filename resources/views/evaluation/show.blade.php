@@ -338,7 +338,7 @@
                         <span class="text-gray-400 font-normal text-sm">(optional)</span>
                     @endif
                 </label>
-                <p class="text-sm text-gray-500 mb-3">Share any overall feedback about the {{ strtolower($courseOffering->evaluatee_label ?? 'faculty') }} or the course.</p>
+                <p class="text-sm text-gray-500 mb-3">Share any overall feedback about the {{ strtolower($courseOffering->evaluatee_label ?? 'faculty') }} or the course. Text only; emojis are removed automatically.</p>
                 <textarea
                     name="overall_comment"
                     rows="4"
@@ -557,5 +557,6 @@
     </script>
     @endif
     @include('evaluation.partials.sticky-rating-guide')
+    @include('evaluation.partials.plain-comments')
 </body>
 </html>

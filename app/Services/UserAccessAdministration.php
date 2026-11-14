@@ -123,8 +123,15 @@ class UserAccessAdministration
     public function validateRolePermissions(User $actor, Campus $campus, array $permissions): void
     {
         abort_unless($actor->canAccessTenant($campus), 403);
-        $valid = Permission::where('guard_name', 'web')->whereIn('name', $permissions)->pluck('name')->all();
-        abort_unless(count(array_unique($permissions)) === count($valid), 403, 'Unknown permission selected.');
+        // Shield lists registered features before their permission rows are created.
+        // Accept that server-defined catalogue; never accept arbitrary client names.
+        $valid = Permission::where('guard_name', 'web')->pluck('name');
+        foreach (\BezhanSalleh\FilamentShield\Facades\FilamentShield::getResources() as $resource) {
+            $valid = $valid->merge(array_keys(\App\Filament\Resources\RoleResource::getResourcePermissionOptions($resource)));
+        }
+        $valid = $valid->merge(array_keys(\App\Filament\Resources\RoleResource::getPageOptions()))
+            ->merge(array_keys(\App\Filament\Resources\RoleResource::getWidgetOptions()));
+        abort_unless(collect($permissions)->every(fn ($name) => is_string($name) && $valid->containsStrict($name)), 403, 'Unknown permission selected.');
         if (! $actor->isSuperAdmin()) {
             abort_unless(array_diff($permissions, $actor->getAllPermissions()->pluck('name')->all()) === [], 403, 'You cannot delegate permissions outside your own authority.');
         }

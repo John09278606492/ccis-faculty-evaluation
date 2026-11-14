@@ -66,11 +66,17 @@ class EvaluationResultsRelease
         if (! $campus || ! $viewer->canAccessTenant($campus)) {
             return false;
         }
-        if ($viewer->id === $offering->user_id) {
-            return self::isReleased($offering);
+        if (self::canReview($viewer, $offering)) {
+            return true;
         }
 
-        return $viewer->can('page_EvaluationResults')
+        return $viewer->id === $offering->user_id && self::isReleased($offering);
+    }
+
+    /** Reporting authority applies equally to one's own and other faculty results. */
+    public static function canReview(?User $viewer, CourseOffering $offering): bool
+    {
+        return $viewer && ! $viewer->isStudent() && $viewer->can('page_EvaluationResults')
             && app(AssignedDataAccess::class)->managesOffering($viewer, $offering);
     }
 
