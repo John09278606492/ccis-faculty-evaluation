@@ -380,3 +380,23 @@ it('reviews submissions on their own pages, apart from the task settings, one by
     $this->actingAs($outsider);
     expect(fn () => Livewire::test(ReviewSubmission::class, ['record' => $task->id, 'submission' => $first->id]))->toThrow(Exception::class);
 });
+
+it('drops a deleted student account, such as a duplicate, from the task list but keeps work it already sent', function () {
+    extract(advisingFixture());
+    $service = app(Advising::class);
+    $duplicate = User::factory()->create(['is_student' => true, 'name' => 'Duplicate Account']);
+    $sender = User::factory()->create(['is_student' => true, 'name' => 'Deleted After Sending']);
+    $sender->givePermissionTo('page_MyAdvising');
+    foreach ([$duplicate, $sender] as $user) {
+        StudentSectionMembership::create(['user_id' => $user->id, 'department_id' => $membership->department_id, 'semester_id' => $membership->semester_id, 'section' => 'BSIT 3A']);
+    }
+    $service->syncRoster($task);
+    $service->submit($task, $sender, [advisingUpload($task, $sender)], null);
+    expect($task->submissions()->count())->toBe(3);
+
+    $duplicate->delete();
+    $sender->delete();
+    $service->syncRoster($task);
+
+    expect($task->submissions()->pluck('user_id')->sort()->values()->all())->toBe(collect([$student->id, $sender->id])->sort()->values()->all());
+});

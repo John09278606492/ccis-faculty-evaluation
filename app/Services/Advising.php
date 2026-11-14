@@ -99,9 +99,12 @@ class Advising
             ])->all());
         }
 
+        // Untouched rows of students who left the section or whose account was deleted (for example a duplicate).
         AdvisorySubmission::where('advisory_task_id', $task->id)
             ->where('status', 'pending')
-            ->whereNotIn('user_id', $members)
+            ->where(fn ($query) => $query
+                ->whereNotIn('user_id', $members)
+                ->orWhereIn('user_id', DB::table('users')->whereNotNull('deleted_at')->select('id')))
             ->delete();
     }
 
