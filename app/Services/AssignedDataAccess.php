@@ -76,6 +76,32 @@ class AssignedDataAccess
             && $this->offerings($campus, $this->departmentIds($actor, $campus))->where('id', $offering->id)->exists();
     }
 
+    /** Home-department leadership can review faculty teaching elsewhere, without managing those classes. */
+    private function reportOfferings(User $actor, Campus $campus, ?array $ids)
+    {
+        $query = $this->offerings($campus, $ids);
+        if (! $actor->isStudent() && $actor->can('page_EvaluationResults') && $actor->canAccessTenant($campus)) {
+            $heads = DB::table('departments')->select('id')->where('campus_id', $campus->id)->where('is_active', true)
+                ->where(fn ($q) => $q->where('supervisor_id', $actor->id)->orWhere('chairperson_id', $actor->id));
+            $home = DB::table('course_offerings')->select('id')->whereIn('semester_id', $this->semesters($campus))
+                ->whereIn('user_id', DB::table('users')->select('users.id')->where('is_instructor', true)->where('is_student', false)->whereNull('deleted_at')
+                    ->whereIn('instructor_department_id', $heads)->whereIn('id', DB::table('campus_user')->select('user_id')->where('campus_id', $campus->id)));
+
+            return DB::table('course_offerings')->select('id')->where(fn ($q) => $q->whereIn('id', $query)->orWhereIn('id', $home));
+        }
+
+        return $query;
+    }
+
+    public function reviewsOffering(User $actor, CourseOffering $offering): bool
+    {
+        $offering->loadMissing('semester.schoolYear.campus');
+        $campus = $offering->campus;
+
+        return $campus && $actor->canAccessTenant($campus)
+            && $this->reportOfferings($actor, $campus, $this->departmentIds($actor, $campus))->where('id', $offering->id)->exists();
+    }
+
     public function apply(Builder $query, User $actor, Campus $campus): Builder
     {
         if (! $actor->canAccessTenant($campus)) {
@@ -90,6 +116,7 @@ class AssignedDataAccess
         }
         $departments = $this->departments($campus, $ids);
         $offerings = $this->offerings($campus, $ids);
+        $reports = $this->reportOfferings($actor, $campus, $ids);
         switch ($table) {
             case 'academic_sections':
                 $query->whereIn('academic_sections.department_id', $departments)->whereIn('academic_sections.semester_id', $this->semesters($campus));
@@ -98,7 +125,8 @@ class AssignedDataAccess
                 $query->whereIn('departments.id', $departments);
                 break;
             case 'courses':
-                $query->whereIn('courses.department_id', $departments);
+                $query->where(fn ($q) => $q->whereIn('courses.department_id', $departments)
+                    ->orWhereIn('courses.id', DB::table('course_offerings')->select('course_id')->whereIn('id', $reports)));
                 break;
             case 'rating_criteria':
                 $query->where('rating_criteria.campus_id', $campus->id);
@@ -114,9 +142,11 @@ class AssignedDataAccess
                 $query->whereIn('semesters.id', $this->semesters($campus));
                 break;
             case 'course_offerings':
-                $query->where(fn ($q) => $q->whereIn('course_offerings.id', $offerings)->orWhereIn('course_offerings.id', $delegated()));
+                $query->where(fn ($q) => $q->whereIn('course_offerings.id', $reports)->orWhereIn('course_offerings.id', $delegated()));
                 break;
             case 'form_submissions':
+                $query->whereIn('form_submissions.course_offering_id', $reports);
+                break;
             case 'ratings':
             case 'quizzes':
                 $query->whereIn($table.'.course_offering_id', $offerings);
@@ -137,6 +167,7 @@ class AssignedDataAccess
                 $query->whereIn('forms.id', DB::table('campus_form')->select('form_id')->where('campus_id', $campus->id));
                 if ($ids !== null) {
                     $query->where(fn ($q) => $q->whereIn('forms.id', DB::table('department_form')->select('form_id')->whereIn('department_id', $departments))
+                        ->orWhereIn('forms.id', DB::table('course_offerings')->select('form_id')->whereIn('id', $reports))
                         ->orWhereIn('forms.id', DB::table('course_offerings')->select('form_id')->whereIn('id', $delegated()))
                         ->when($ids !== [], fn ($q) => $q->orWhereNotIn('forms.id', DB::table('department_form')->select('form_id'))));
                 }

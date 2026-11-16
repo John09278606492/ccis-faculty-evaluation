@@ -40,6 +40,9 @@ class ReportService
             ->when($context['semester_id'] ?? null, fn ($q, $id) => $q->where('semester_id', $id))
             ->when($context['form_id'] ?? null, fn ($q, $id) => $q->where('form_id', $id))
             ->when($context['department_id'] ?? null, fn ($q, $id) => $q->where(fn ($q) => $q->where('teaching_department_id', $id)
+                ->when(auth()->user() && Department::withoutGlobalScope('assigned_data')->whereKey($id)
+                    ->where(fn ($q) => $q->where('chairperson_id', auth()->id())->orWhere('supervisor_id', auth()->id()))->exists(),
+                    fn ($q) => $q->orWhereHas('evaluatee', fn ($q) => $q->where('instructor_department_id', $id)))
                 ->orWhere(fn ($q) => $q->whereNull('teaching_department_id')->where(fn ($q) => $q->whereHas('course', fn ($q) => $q->where('department_id', $id))
                     ->orWhere(fn ($q) => $q->whereNull('course_id')->whereHas('evaluatee', fn ($q) => $q->where('instructor_department_id', $id)))))))
             ->when($context['evaluation_cycle_id'] ?? null, fn ($q, $id) => $q->where('evaluation_cycle_id', $id));

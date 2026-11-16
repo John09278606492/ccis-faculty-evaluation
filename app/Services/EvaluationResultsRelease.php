@@ -77,7 +77,7 @@ class EvaluationResultsRelease
     public static function canReview(?User $viewer, CourseOffering $offering): bool
     {
         return $viewer && ! $viewer->isStudent() && $viewer->can('page_EvaluationResults')
-            && app(AssignedDataAccess::class)->managesOffering($viewer, $offering);
+            && app(AssignedDataAccess::class)->reviewsOffering($viewer, $offering);
     }
 
     public static function ownOfferings(User $user): Collection
