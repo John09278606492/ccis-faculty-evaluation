@@ -9,6 +9,7 @@ use App\Models\FormSubmission;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 class ReportService
 {
@@ -106,14 +107,9 @@ class ReportService
             if (app(EvaluationScoring::class)->instrument($co) !== 'SET') {
                 continue;
             }
-            $enrolled += $co->students->count();
-            $fingerprints = $submissions->pluck('submission_fingerprint')->filter()->flip();
-            $legacy = $submissions->pluck('user_id')->filter()->flip();
-            foreach ($co->students as $student) {
-                if ($fingerprints->has(app(EvaluationSubmissionIdentity::class)->fingerprint($co, request(), $student)) || $legacy->has($student->id)) {
-                    $completed++;
-                }
-            }
+            $completion = $this->assignmentCompletion($co);
+            $enrolled += $completion['expected'];
+            $completed += $completion['completed'];
         }
         $instruments = app(EvaluationScoring::class)->instruments($rows);
         $ratedTypes = collect($instruments)->filter(fn ($row) => $row['count'] > 0);
@@ -127,16 +123,21 @@ class ReportService
 
     public function assignmentCompletion(CourseOffering $assignment): array
     {
-        $assignment->loadMissing('historicalStudents', 'evaluationForm');
+        $assignment->loadMissing('evaluationForm');
         if (app(EvaluationScoring::class)->instrument($assignment) !== 'SET') {
             return ['expected' => 0, 'completed' => 0, 'percentage' => null];
         }
-        $submissions = $assignment->formSubmissions()->where('form_id', $assignment->form_id)->get(['id', 'submission_fingerprint', 'user_id']);
+        $submissions = $assignment->relationLoaded('formSubmissions')
+            ? $assignment->formSubmissions->where('form_id', $assignment->form_id)
+            : $assignment->formSubmissions()->where('form_id', $assignment->form_id)->get(['id', 'submission_fingerprint', 'user_id']);
         $fingerprints = $submissions->pluck('submission_fingerprint')->filter()->flip();
         $legacy = $submissions->pluck('user_id')->filter()->flip();
-        $completed = $assignment->historicalStudents->filter(fn ($student) => $legacy->has($student->id)
-            || $fingerprints->has(app(EvaluationSubmissionIdentity::class)->fingerprint($assignment, request(), $student)))->count();
-        $expected = $assignment->historicalStudents->count();
+        // Count the authorized class roster, not the viewer's accessible student accounts.
+        // This includes historical/deleted accounts without exposing names or expanding student access.
+        $ids = DB::table('course_offering_student')->where('course_offering_id', $assignment->id)->distinct()->pluck('user_id');
+        $completed = $ids->filter(fn ($id) => $legacy->has($id)
+            || $fingerprints->has(app(EvaluationSubmissionIdentity::class)->forUser($assignment, (int) $id)))->count();
+        $expected = $ids->count();
 
         return ['expected' => $expected, 'completed' => $completed, 'percentage' => $expected ? round($completed / $expected * 100, 1) : null];
     }
