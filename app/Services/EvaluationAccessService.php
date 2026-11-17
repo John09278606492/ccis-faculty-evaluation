@@ -82,7 +82,7 @@ class EvaluationAccessService
             throw new AuthorizationException('You do not have access to this campus.');
         }
 
-        if ($user->isStudent() && ! $courseOffering->students()->whereKey($user->getKey())->exists()) {
+        if ($user->isStudent() && ! \Illuminate\Support\Facades\DB::table('course_offering_student')->where('course_offering_id', $courseOffering->id)->where('user_id', $user->getKey())->exists()) {
             throw new AuthorizationException('You are not enrolled in this course offering.');
         }
         if ($user->isStudent() && app(EvaluationSections::class)->requiresSection($courseOffering)

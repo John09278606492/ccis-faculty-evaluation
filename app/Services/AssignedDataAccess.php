@@ -80,7 +80,7 @@ class AssignedDataAccess
     private function reportOfferings(User $actor, Campus $campus, ?array $ids)
     {
         $query = $this->offerings($campus, $ids);
-        if (! $actor->isStudent() && $actor->can('page_EvaluationResults') && $actor->canAccessTenant($campus)) {
+        if (! $actor->isStudent() && ($actor->can('page_EvaluationResults') || $actor->can('page_StudentEvaluationProgress')) && $actor->canAccessTenant($campus)) {
             $heads = DB::table('departments')->select('id')->where('campus_id', $campus->id)->where('is_active', true)
                 ->where(fn ($q) => $q->where('supervisor_id', $actor->id)->orWhere('chairperson_id', $actor->id));
             $home = DB::table('course_offerings')->select('id')->whereIn('semester_id', $this->semesters($campus))
