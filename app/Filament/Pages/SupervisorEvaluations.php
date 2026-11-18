@@ -32,14 +32,20 @@ class SupervisorEvaluations extends Page implements HasTable
     public function mount(): void
     {
         abort_unless(static::canAccess(), 403);
+        app(SupervisorEvaluationAssignments::class)->prepareChairperson(auth()->user(), filament()->getTenant());
     }
 
+    /** Department chairpersons always see this page, even before any of their faculty has a task. */
     public static function canAccess(): bool
     {
         $user = auth()->user();
+        $campus = filament()->getTenant();
+        if (! $user || $user->is_student || ! $campus || ! $user->canAccessTenant($campus)) {
+            return false;
+        }
+        $evaluators = app(FacultySupervisorEvaluators::class);
 
-        return $user && ! $user->is_student && filament()->getTenant() && $user->canAccessTenant(filament()->getTenant())
-            && app(FacultySupervisorEvaluators::class)->taskIds($user, filament()->getTenant())->exists();
+        return $evaluators->chairedDepartments($user, $campus)->exists() || $evaluators->taskIds($user, $campus)->exists();
     }
 
     private function submitted(CourseOffering $assignment): bool
@@ -69,6 +75,6 @@ class SupervisorEvaluations extends Page implements HasTable
                 Tables\Actions\Action::make('evaluate')->label('Complete Annex B')->icon('heroicon-o-pencil-square')
                     ->visible(fn ($record) => ! $this->submitted($record) && $record->isEvaluationAvailable())->url(fn ($record) => route('evaluate.course-offering', $record)),
             ])->emptyStateHeading('No faculty evaluations assigned to your account')
-            ->emptyStateDescription('Supervisor evaluators are selected per faculty under Teaching Classes → Evaluators → Assign Evaluators by Section. Deans and chairpersons must also be selected explicitly. Tasks appear once the evaluation is published.');
+            ->emptyStateDescription('A department chairperson rates the faculty of that department and anyone teaching a class there. Other supervisors are added per faculty under Teaching Classes. Tasks appear once the evaluation is published.');
     }
 }

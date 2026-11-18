@@ -55,7 +55,7 @@ class EvaluationAccessService
             $assigned = app(FacultySupervisorEvaluators::class)->taskIds($user, $courseOffering->campus)->where('task.id', $courseOffering->id)->exists();
             if (! $assigned || $courseOffering->user_id === $user->id
                 || ! $user->campuses()->whereKey($campusId)->exists()) {
-                throw new AuthorizationException('Only supervisor evaluators explicitly assigned to this faculty may complete Annex B. Self-evaluation is not allowed.');
+                throw new AuthorizationException('Only the department chairperson or a supervisor assigned to this faculty may complete Annex B. Self-evaluation is not allowed.');
             }
 
             return $form;

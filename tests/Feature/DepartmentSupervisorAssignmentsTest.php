@@ -124,7 +124,8 @@ it('fixes cycle readiness in the background and creates working Annex B tasks on
     $service = app(EvaluationCycles::class);
     $cycle = $service->save($this->actor, $this->campus, ['name' => 'Bulk review', 'department_id' => $this->department->id,
         'semester_id' => $this->class->semester_id, 'student_form_id' => $a->id, 'supervisor_form_id' => $b->id, 'starts_at' => null, 'ends_at' => null, 'assignment_ids' => [$this->class->id]]);
-    expect($service->readiness($cycle)['errors'])->not->toBeEmpty();
+    // The department chairperson already covers the class; filling it in explicitly changes nothing about readiness.
+    expect($service->readiness($cycle)['errors'])->toBe([]);
     Livewire::test(EditEvaluationCycle::class, ['record' => $cycle->id])->callAction(['review', 'departmentSupervisorsInReview'])->assertHasNoActionErrors();
     $task = BackgroundTask::where('kind', 'supervisor-bulk')->sole();
     app(BackgroundTasks::class)->run($task->id);

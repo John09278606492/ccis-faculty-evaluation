@@ -23,6 +23,8 @@ class WorkspaceSummary
         }
         $scope = app(AssignedDataAccess::class);
         $departments = $scope->apply(Department::query(), $user, $campus)->where('is_active', true)->with(['supervisor', 'chairperson'])->get();
+        // A chairperson's automatic tasks are counted on first sign-in, before they open My Supervisor Tasks.
+        app(SupervisorEvaluationAssignments::class)->prepareChairperson($user, $campus, $period);
         $pending = app(SupervisorEvaluationAssignments::class)->forViewer($user, $campus)
             ->with(['evaluationCycle', 'evaluationForm'])->get()->filter(fn ($a) => $a->isEvaluationAvailable()
                 && ! $a->formSubmissions()->withoutGlobalScope('assigned_data')->where('form_id', $a->form_id)

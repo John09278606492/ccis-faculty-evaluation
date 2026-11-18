@@ -219,6 +219,8 @@ it('requires rating criteria rather than section headers before a cycle can publ
 
 it('requires a supervisor other than the faculty being evaluated', function () {
     extract(cycleFixture());
+    // Without a chairperson, a class is covered only by a selected supervisor who is not the faculty.
+    $department->update(['chairperson_id' => null]);
     $faculty = $offering->evaluatee;
     $faculty->campuses()->attach($campus);
     $faculty->assignRole(Role::findOrCreate('instructor', 'web'));
