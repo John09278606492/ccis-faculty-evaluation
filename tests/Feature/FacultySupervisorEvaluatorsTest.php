@@ -359,3 +359,47 @@ it('lists pending supervisor tasks before completed tasks after a submission', f
     $this->post(route('evaluate.store', $done), ['fields' => $answers])->assertRedirect(route('evaluate.success', $done));
     Livewire::test(SupervisorEvaluations::class)->assertCanSeeTableRecords([$pending, $done], inOrder: true);
 });
+
+it('lets a scoped home-department chairperson open and submit their tasks through real web requests', function () {
+    extract(facultySupervisorFixture());
+    // The other college's Annex B form ($b) is reserved for $department, which this chairperson's data scope cannot see.
+    $faculty = $offering->evaluatee;
+    $faculty->update(['is_instructor' => true, 'instructor_department_id' => $host->id]);
+    $chair = User::factory()->create(['is_student' => false, 'instructor_department_id' => $host->id]);
+    $chair->assignRole(Role::findOrCreate('chairperson', 'web'));
+    $chair->campuses()->attach($campus);
+    $host->update(['chairperson_id' => $chair->id]);
+    app(FacultySupervisorEvaluators::class)->save($owner, $offering, [$extra->id]);
+    $cycles = app(EvaluationCycles::class);
+    $cycles->publish($owner, $cycles->save($owner, $campus, $data));
+
+    $this->actingAs($chair)->get(SupervisorEvaluations::getUrl(tenant: $campus))->assertOk()->assertSee($faculty->name);
+    $task = CourseOffering::where('evaluation_type', 'SEF')->where('teaching_department_id', $host->id)->sole();
+    $allowed = $task->evaluationForm->departments()->pluck('departments.id');
+    expect($task->form_id)->not->toBe($b->id)
+        ->and($allowed->isEmpty() || $allowed->contains($host->id))->toBeTrue();
+
+    $answers = $task->evaluationForm->fields()->pluck('name')->mapWithKeys(fn ($name) => [$name => 4])->all();
+    $this->get(route('evaluate.course-offering', $task))->assertOk();
+    $this->post(route('evaluate.store', $task), ['fields' => $answers])->assertRedirect(route('evaluate.success', $task));
+    expect($task->formSubmissions()->count())->toBe(1);
+    // Visiting again creates nothing new.
+    $this->get(SupervisorEvaluations::getUrl(tenant: $campus))->assertOk();
+    expect(CourseOffering::where('evaluation_type', 'SEF')->where('teaching_department_id', $host->id)->count())->toBe(1);
+});
+
+it('does not give a chairperson automatic tasks from a closed evaluation', function () {
+    extract(facultySupervisorFixture());
+    $chair = User::factory()->create(['is_student' => false]);
+    $chair->assignRole('supervisor');
+    $chair->campuses()->attach($campus);
+    $department->update(['chairperson_id' => $chair->id]);
+    $cycles = app(EvaluationCycles::class);
+    $cycle = $cycles->save($owner, $campus, $data);
+    $cycles->publish($owner, $cycle);
+    $task = $cycle->assignments()->where('evaluation_type', 'SEF')->sole();
+    expect(app(SupervisorEvaluationAssignments::class)->forViewer($chair, $campus)->pluck('id')->all())->toBe([$task->id]);
+    $cycles->close($owner, $cycle->fresh());
+    expect(app(SupervisorEvaluationAssignments::class)->forViewer($chair, $campus)->count())->toBe(0)
+        ->and(app(FacultySupervisorEvaluators::class)->forTask($task->fresh())->pluck('users.id')->all())->toBe([$chair->id]);
+});

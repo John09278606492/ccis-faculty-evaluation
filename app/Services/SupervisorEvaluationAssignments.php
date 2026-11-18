@@ -6,6 +6,7 @@ use App\Models\Campus;
 use App\Models\CourseOffering;
 use App\Models\Department;
 use App\Models\EvaluationCycle;
+use App\Models\Form;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
@@ -87,8 +88,14 @@ class SupervisorEvaluationAssignments
             if ($existing) {
                 return;
             }
-            $form = $cycle?->supervisorForm ?? $campus->forms()->where('is_active', true)->where('settings->annex', 'B')
-                ->where(fn ($q) => $q->whereDoesntHave('departments')->orWhereHas('departments', fn ($d) => $d->where('departments.id', $department->id)))->first();
+            // Choose the form without the signed-in user's data scope: that scope hides other colleges' departments, which
+            // made a form reserved for another college look unrestricted and get picked, and Annex B access then refused it.
+            $form = $cycle?->supervisor_form_id ? Form::withoutGlobalScope('assigned_data')->find($cycle->supervisor_form_id) : null;
+            $form ??= Form::withoutGlobalScope('assigned_data')->where('is_active', true)->where('settings->annex', 'B')
+                ->whereHas('campuses', fn ($q) => $q->whereKey($campus->id))
+                ->where(fn ($q) => $q->whereDoesntHave('departments', fn ($d) => $d->withoutGlobalScope('assigned_data'))
+                    ->orWhereHas('departments', fn ($d) => $d->withoutGlobalScope('assigned_data')->where('departments.id', $department->id)))
+                ->orderBy('id')->first();
             if (! $form) {
                 $form = app(EvaluationTemplates::class)->create('B', $campus);
                 $form->update(['name' => 'Annex B — '.$department->code.' Supervisor Evaluation', 'is_active' => true]);
@@ -113,7 +120,7 @@ class SupervisorEvaluationAssignments
     {
         return $query->where('teaching_department_id', $department->id)
             ->orWhere(fn ($fallback) => $fallback->whereNull('teaching_department_id')
-                ->where(fn ($fallback) => $fallback->whereHas('course', fn ($course) => $course->where('department_id', $department->id))
-                    ->orWhere(fn ($general) => $general->whereNull('course_id')->whereHas('evaluatee', fn ($faculty) => $faculty->where('instructor_department_id', $department->id)))));
+                ->where(fn ($fallback) => $fallback->whereHas('course', fn ($course) => $course->withoutGlobalScope('assigned_data')->where('department_id', $department->id))
+                    ->orWhere(fn ($general) => $general->whereNull('course_id')->whereHas('evaluatee', fn ($faculty) => $faculty->withoutGlobalScope('assigned_data')->where('instructor_department_id', $department->id)))));
     }
 }

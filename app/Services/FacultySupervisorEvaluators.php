@@ -73,7 +73,10 @@ class FacultySupervisorEvaluators
         return Department::withoutGlobalScope('assigned_data')->where('campus_id', $campus->id)->where('is_active', true)->where('chairperson_id', $user->id);
     }
 
-    /** The chairperson who rates this task's faculty automatically, unless that is the faculty themself. Mirrors the second rule in taskIds(). */
+    /**
+     * The chairperson who rates this task's faculty automatically, unless that is the faculty themself. Same rule as the
+     * second one in taskIds(), except that closed evaluations still name the chairperson, so reports show who rated.
+     */
     public function automaticChairpersonId(CourseOffering $task): ?int
     {
         $task->loadMissing(['course', 'evaluatee' => fn ($q) => $q->withoutGlobalScope('assigned_data')]);
@@ -109,8 +112,11 @@ class FacultySupervisorEvaluators
                         ->orWhere(fn ($q) => $q->whereNull('source.evaluation_cycle_id')->whereNull('task.evaluation_cycle_id')));
             })->orWhereExists(function ($q) use ($user, $campus) {
                 // Chairperson of the task's department, which is the faculty's home department or one they teach in that period.
+                // Closed or archived evaluations are left out, so an old sample never reappears as a new task.
                 $q->selectRaw('1')->from('departments as lead')
                     ->where('lead.chairperson_id', $user->id)->where('lead.is_active', true)->where('lead.campus_id', $campus->id)
+                    ->where(fn ($q) => $q->whereNull('task.evaluation_cycle_id')
+                        ->orWhereIn('task.evaluation_cycle_id', DB::table('evaluation_cycles')->select('id')->whereIn('status', ['draft', 'published'])))
                     ->whereRaw('lead.id = COALESCE(task.teaching_department_id, task_course.department_id, faculty.instructor_department_id)')
                     ->where(fn ($q) => $q->whereColumn('faculty.instructor_department_id', 'lead.id')
                         ->orWhereExists(fn ($q) => $q->selectRaw('1')->from('course_offerings as taught')
