@@ -6,6 +6,7 @@ use App\Models\CourseOffering;
 use App\Models\Form;
 use App\Models\User;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Facades\DB;
 
 class EvaluationAccessService
 {
@@ -82,7 +83,8 @@ class EvaluationAccessService
             throw new AuthorizationException('You do not have access to this campus.');
         }
 
-        if ($user->isStudent() && ! $courseOffering->students()->whereKey($user->getKey())->exists()) {
+        // Read the enrolment pivot directly, as the live hotfix of 2026-11-17 does, so no user query scope can hide a student's own enrolment.
+        if ($user->isStudent() && ! DB::table('course_offering_student')->where('course_offering_id', $courseOffering->id)->where('user_id', $user->getKey())->exists()) {
             throw new AuthorizationException('You are not enrolled in this course offering.');
         }
         if ($user->isStudent() && app(EvaluationSections::class)->requiresSection($courseOffering)
