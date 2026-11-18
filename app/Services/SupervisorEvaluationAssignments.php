@@ -80,6 +80,12 @@ class SupervisorEvaluationAssignments
     private function createTask(Campus $campus, int $facultyId, int $semesterId, int $departmentId, ?EvaluationCycle $cycle): void
     {
         DB::transaction(function () use ($campus, $facultyId, $semesterId, $departmentId, $cycle) {
+            // Serialize SQLite writers before inspecting existing tasks. Below PHP 8.4 Laravel starts SQLite transactions as
+            // DEFERRED, so a read-then-insert fails at once with "database is locked" when another request (the dashboard and
+            // My Supervisor Tasks preparing the same chairperson) commits in between. Writing first waits for the lock instead.
+            if (DB::getDriverName() === 'sqlite') {
+                DB::table('departments')->where('id', $departmentId)->update(['id' => $departmentId]);
+            }
             $department = Department::withoutGlobalScope('assigned_data')->whereKey($departmentId)->lockForUpdate()->firstOrFail();
             $existing = CourseOffering::withoutGlobalScope('assigned_data')->where('user_id', $facultyId)->where('semester_id', $semesterId)
                 ->when($cycle, fn ($q) => $q->where('evaluation_cycle_id', $cycle->id), fn ($q) => $q->whereNull('evaluation_cycle_id'))

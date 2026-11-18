@@ -403,3 +403,23 @@ it('does not give a chairperson automatic tasks from a closed evaluation', funct
     expect(app(SupervisorEvaluationAssignments::class)->forViewer($chair, $campus)->count())->toBe(0)
         ->and(app(FacultySupervisorEvaluators::class)->forTask($task->fresh())->pluck('users.id')->all())->toBe([$chair->id]);
 });
+
+it('takes the SQLite write lock before checking for an existing chairperson task', function () {
+    extract(facultySupervisorFixture());
+    // Below PHP 8.4 SQLite transactions are DEFERRED; a read before the insert fails at once when another request commits first.
+    $offering->evaluatee->update(['is_instructor' => true, 'instructor_department_id' => $host->id]);
+    $chair = User::factory()->create(['is_student' => false]);
+    $chair->assignRole('supervisor');
+    $chair->campuses()->attach($campus);
+    $host->update(['chairperson_id' => $chair->id]);
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+    app(SupervisorEvaluationAssignments::class)->prepareChairperson($chair, $campus, $offering->semester_id);
+    $queries = array_column(DB::getQueryLog(), 'query');
+    DB::disableQueryLog();
+    $lock = collect($queries)->search(fn ($sql) => str_starts_with($sql, 'update "departments" set "id"'));
+    $check = collect($queries)->search(fn ($sql) => str_contains($sql, 'from "course_offerings"') && str_contains($sql, 'exists'));
+    $insert = collect($queries)->search(fn ($sql) => str_starts_with($sql, 'insert into "course_offerings"'));
+    expect($lock)->not->toBeFalse()->and($insert)->not->toBeFalse()
+        ->and($lock)->toBeLessThan($check)->and($check)->toBeLessThan($insert);
+});
