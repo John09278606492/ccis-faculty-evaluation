@@ -112,3 +112,19 @@ it('shows department heads and allows swapping report signatories without changi
     $foreign->assignRole($role);
     $this->post(route('evaluation.report.save', $this->offering), ['prepared_id' => $foreign->id])->assertSessionHasErrors('prepared_id');
 });
+
+it('lays out Annex D like the official acknowledgement form and nothing more', function () {
+    FormSubmission::create(['form_id' => $this->form->id, 'course_offering_id' => $this->offering->id, 'data' => ['teaching_quality' => 4]]);
+    $this->post(route('evaluation.report.save', $this->offering), ['annex' => 'D', 'rank' => 'Instructor I', 'areas' => 'Use more worked examples']);
+    $response = $this->get(route('evaluation.report', ['offering' => $this->offering, 'annex' => 'D']))->assertOk();
+    $response->assertSeeInOrder(['FACULTY EVALUATION AND DEVELOPMENT ACKNOWLEDGEMENT FORM', 'A. FACULTY MEMBER INFORMATION', 'Name of Faculty Evaluated',
+        'Department/College', 'Current Faculty Rank', 'Instructor I', 'Semester/Term &amp; Academic Year', 'B. FACULTY EVALUATION SUMMARY', 'Overall Rating',
+        'Student Evaluation of Teachers (SET)', 'Supervisor’s Evaluation of Faculty (SEF)', '80.00%', 'Pending supervisor evaluation',
+        'C. Development Plan (to be jointly accomplished by the Supervisor and Faculty)', 'Areas for Improvement', 'Use more worked examples',
+        'Proposed Learning and Development Activities', 'Action Plan', 'I acknowledge that I have received and reviewed the faculty evaluation',
+        'SUPERVISOR', 'Signature', 'Name', 'Date Signed', 'FACULTY', 'Signature', 'Name', 'Date Signed'], false);
+    foreach (['Campus:', 'Department Leadership', 'FACULTY EVALUATION SUMMARY REPORT', 'Results by Evaluation Type', 'Benchmark Statement',
+        'Pending responses are not counted', 'maximum possible score', '<div class="annex">'] as $extra) {
+        $response->assertDontSee($extra, false);
+    }
+});

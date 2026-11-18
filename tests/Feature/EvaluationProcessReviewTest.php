@@ -106,8 +106,11 @@ it('includes primary and additional supervisor scores, comments, tally, CSV and 
     $this->actingAs($admin);
     foreach (['C', 'D'] as $annex) {
         $response = $this->get(route('evaluation.report', ['offering' => $class, 'annex' => $annex]))->assertOk()
-            ->assertSee('2 completed supervisor response(s)')->assertDontSee('PRIVATE-REVIEW-STUDENT')
-            ->assertHeader('Cache-Control', 'max-age=0, no-store, private');
+            ->assertDontSee('PRIVATE-REVIEW-STUDENT')->assertHeader('Cache-Control', 'max-age=0, no-store, private');
+        // Annex C states the response counts; Annex D, like the official form, shows only the overall ratings.
+        if ($annex === 'C') {
+            $response->assertSee('2 completed supervisor response(s)');
+        }
         expect($response->viewData('ratings')->all())->toBe(['SET' => 80.0, 'SEF' => 80.0]);
         if (getenv('RENDER_EVALUATION_REVIEW_QA')) {
             file_put_contents(storage_path('app/maintenance/evaluation-review-annex-'.strtolower($annex).'.html'), $response->getContent());

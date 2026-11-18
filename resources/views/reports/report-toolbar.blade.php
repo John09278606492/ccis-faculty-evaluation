@@ -15,7 +15,7 @@ window.addEventListener('beforeprint', function () {
         if (control.tagName === 'SELECT') {
             if (control.value) output.textContent = control.options[control.selectedIndex].text;
         } else {
-            output.textContent = control.value.trim() || '________________________';
+            output.textContent = control.value.trim() || (output.dataset.empty ?? '________________________');
         }
     });
 });
