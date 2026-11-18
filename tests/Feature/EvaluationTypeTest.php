@@ -32,7 +32,8 @@ it('separates report totals by assignment type even when assignments use the sam
     $staff->campuses()->attach($offering->campus);
     $staff->givePermissionTo(Permission::findOrCreate('page_EvaluationResults', 'web'));
     $response = $this->actingAs($staff)->get(route('evaluation.report', ['offering' => $offering, 'annex' => 'D']));
-    $response->assertOk()->assertSee('Results by Evaluation Type')->assertSee('Student Evaluation (SET)')->assertSee('Faculty / Peer Evaluation')->assertSee('80.00%')->assertSee('40.00%');
+    // Annex D shows only the SET and SEF overall ratings, as on the official form; the peer assignment stays separate in the data.
+    $response->assertOk()->assertSee('80.00%')->assertDontSee('40.00%')->assertDontSee('Results by Evaluation Type');
     expect($response->viewData('ratings')['SET'])->toBe(80.0)
         ->and($response->viewData('ratings')['SEF'])->toBeNull()
         ->and($response->viewData('rows')->pluck('instrument')->all())->toBe(['SET', 'PEER']);

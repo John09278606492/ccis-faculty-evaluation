@@ -57,20 +57,53 @@
 .bisu-login-form .fi-fo-checkbox label { color: #5f526e !important; font-size: 13px; }
 .bisu-login-other-access { color: #7a7288; font-size: 12px; }
 .bisu-login-other-access:empty { display: none; }
+.bisu-login.is-staff .bisu-login-other-access { margin-top: 10px; }
 .bisu-login-register { margin-top: 24px; text-align: center; font-size: 12px; }
 .bisu-login-help { display: flex; align-items: flex-start; gap: 8px; margin-top: 32px; padding-top: 22px; border-top: 1px solid #eae7ef; color: #817889; font-size: 12px; line-height: 1.8; }
 .bisu-login-help svg { width: 16px; height: 16px; margin-top: 2px; }
 .bisu-login-footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; width: 100%; max-width: 560px; align-self: center; margin-top: auto; padding-top: 16px; color: #89818f; font-size: 10px; line-height: 1.7; }
 .bisu-login-footer a { display: flex; align-items: center; gap: 5px; color: #6d5c81; }
 .bisu-login-footer svg { width: 12px; height: 12px; }
-.bisu-login.is-staff .bisu-login-content { padding-top: 0; padding-bottom: 24px; }
-.bisu-login.is-staff .bisu-login-heading { margin-top: 22px; }
-.bisu-login.is-staff .bisu-login-access { margin-top: 22px; margin-bottom: 22px; }
+/* Both tabs share the spacing above the tabs, so switching never moves the heading; only the staff form below it is tighter. */
 .bisu-login.is-staff .bisu-login-staff-note { margin-bottom: 18px; }
 .bisu-login.is-staff .bisu-login-help { margin-top: 24px; padding-top: 16px; }
 .bisu-login.is-staff .bisu-login-register { margin-top: 16px; }
+/* Desktop is exactly one screen tall: the campus side never stretches, and the sign-in side scrolls on its own if it must. */
+@media (min-width: 960px) {
+    .bisu-login { height: 100svh; min-height: 0; }
+    .bisu-login-campus { min-height: 0; overflow: hidden; }
+    .bisu-login-pane { min-height: 0; overflow-y: auto; padding-top: clamp(24px, 4vh, 44px); }
+    .bisu-login-content { margin: clamp(0px, 3vh, 40px) auto 0; padding: 0 0 24px; }
+}
 @media (max-width: 1199px) and (min-width: 960px) { .bisu-login-location-label { display: none; } .bisu-login-campus { --campus-gutter: 36px; } .bisu-login-message h1 { font-size: 37px; } .bisu-login-pane { padding-left: 36px; padding-right: 36px; } }
-@media (min-width: 960px) and (max-height: 800px) { .bisu-login-message { margin-top: 34px; padding-bottom: 14px; } .bisu-login-message h1 { font-size: clamp(32px, 3vw, 48px); } .bisu-login-heading { margin-top: 24px; } .bisu-login-content { padding-top: 4px; padding-bottom: 24px; } }
+@media (min-width: 960px) and (max-height: 800px) { .bisu-login-message { margin-top: 34px; padding-bottom: 14px; } .bisu-login-message h1 { font-size: clamp(32px, 3vw, 48px); } }
+/* Laptop screens: fit the Faculty & staff form, Google sign-in and footer without scrolling. */
+@media (min-width: 960px) and (max-height: 900px) {
+    .bisu-login-pane { padding-top: 24px; }
+    .bisu-login-content { margin-top: 0; padding-bottom: 16px; }
+    .bisu-login-heading { margin-top: 18px; }
+    .bisu-login-heading h2 { margin-top: 8px; }
+    .bisu-login-heading > p:last-child { margin-top: 6px; }
+    .bisu-login-access { margin: 18px 0 24px; }
+    .bisu-login.is-staff .bisu-login-access { margin-bottom: 18px; }
+    .bisu-login.is-staff .bisu-login-staff-note { margin-bottom: 14px; }
+    .bisu-login.is-staff .bisu-login-form { gap: 14px !important; }
+    .bisu-login.is-staff .bisu-login-form .fi-input { min-height: 44px; }
+    .bisu-login.is-staff .bisu-login-help { margin-top: 16px; padding-top: 12px; }
+}
+/* Short laptop screens (1366×768): the campus side already shows the university, so the product row gives way. */
+@media (min-width: 960px) and (max-height: 780px) {
+    .bisu-login-pane { padding-top: 18px; }
+    .bisu-login-product { display: none; }
+    .bisu-login-heading { margin-top: 4px; }
+    .bisu-login-heading h2 { margin-top: 6px; font-size: 28px; }
+    .bisu-login-access { margin: 14px 0 20px; }
+    .bisu-login.is-staff .bisu-login-access { margin-bottom: 14px; }
+    .bisu-login.is-staff .bisu-login-staff-note { margin-bottom: 10px; }
+    .bisu-login.is-staff .bisu-login-form { gap: 12px !important; }
+    .bisu-login.is-staff .bisu-login-help { margin-top: 12px; padding-top: 10px; }
+    .bisu-login-footer { padding-top: 8px; }
+}
 @media (max-width: 959px) {
     .bisu-login { grid-template-columns: 1fr; }
     .bisu-login-campus { --campus-gutter: 30px; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: auto auto; padding: 26px var(--campus-gutter) 0; column-gap: 24px; }

@@ -39,7 +39,7 @@ class MyQuizzes extends Page implements HasTable
 
     public static function shouldRegisterNavigation(): bool
     {
-        return auth()->user()?->is_student && static::canAccess();
+        return config('classroom.show_assessments') && auth()->user()?->is_student && static::canAccess();
     }
 
     public function getSubheading(): ?string

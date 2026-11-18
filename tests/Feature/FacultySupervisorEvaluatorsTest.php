@@ -202,24 +202,94 @@ it('rejects an old evaluator draft after a concurrent supervisor change in the s
     expect($offering->supervisorEvaluators()->pluck('users.id')->all())->toBe([$head->id]);
 });
 
-it('does not prepare automatic evaluations for department leadership and requires explicit choices before opening', function () {
+it('makes the department chairperson the evaluator of faculty teaching there without selecting them per class', function () {
     extract(facultySupervisorFixture());
-    $department->update(['chairperson_id' => $head->id]);
+    $chair = User::factory()->create(['is_student' => false]);
+    $chair->assignRole('supervisor');
+    $chair->campuses()->attach($campus);
     $a->update(['is_active' => true]);
-    $service = app(SupervisorEvaluationAssignments::class);
-    $service->prepare($head, $campus);
-    $service->prepare($owner, $campus);
-    $service->prepareSource($offering);
-    expect(CourseOffering::where('evaluation_type', 'SEF')->count())->toBe(0);
     $cycles = app(EvaluationCycles::class);
     $cycle = $cycles->save($owner, $campus, $data);
-    expect($cycles->readiness($cycle)['heads'])->toBe(0)
-        ->and(implode(' ', $cycles->readiness($cycle)['errors']))->toContain('Select a supervisor evaluator');
-    expect(fn () => $cycles->publish($owner, $cycle))->toThrow(ValidationException::class);
-    expect($cycle->fresh()->status)->toBe('draft');
+    // Without a chairperson or a selected supervisor the evaluation cannot open.
+    expect(implode(' ', $cycles->readiness($cycle)['errors']))->toContain('Select a supervisor evaluator');
+    $department->update(['chairperson_id' => $chair->id]);
+    $cycle = $cycle->fresh();
+    expect($cycles->readiness($cycle)['errors'])->toBe([])->and($cycles->readiness($cycle)['heads'])->toBe(1);
+    $cycles->publish($owner, $cycle);
+    $task = $cycle->assignments()->where('evaluation_type', 'SEF')->sole();
+    expect(app(FacultySupervisorEvaluators::class)->forTask($task)->pluck('users.id')->all())->toBe([$chair->id])
+        ->and($offering->supervisorEvaluators()->count())->toBe(0);
+    $answers = $b->fields()->pluck('name')->mapWithKeys(fn ($name) => [$name => 5])->all();
+    $this->actingAs($chair)->get(route('evaluate.course-offering', $task))->assertOk();
+    $this->post(route('evaluate.store', $task), ['fields' => $answers])->assertRedirect();
+    expect($task->formSubmissions()->count())->toBe(1);
 });
 
-it('denies unselected deans chairpersons and administrators even when another supervisor has a published task', function () {
+it('still needs another supervisor when the chairperson teaches the class', function () {
+    extract(facultySupervisorFixture());
+    $teacher = $offering->evaluatee;
+    $teacher->assignRole('supervisor');
+    $teacher->campuses()->syncWithoutDetaching([$campus->id]);
+    $department->update(['chairperson_id' => $teacher->id]);
+    $cycles = app(EvaluationCycles::class);
+    $cycle = $cycles->save($owner, $campus, $data);
+    expect(implode(' ', $cycles->readiness($cycle)['errors']))->toContain('cannot evaluate themselves');
+    expect(fn () => $cycles->publish($owner, $cycle))->toThrow(ValidationException::class);
+    app(FacultySupervisorEvaluators::class)->save($owner, $offering, [$extra->id]);
+    $cycles->publish($owner, $cycle->fresh());
+    $task = $cycle->assignments()->where('evaluation_type', 'SEF')->sole();
+    expect(app(FacultySupervisorEvaluators::class)->forTask($task)->pluck('users.id')->all())->toBe([$extra->id]);
+});
+
+it('lets the home department chairperson rate their faculty who teach elsewhere and follows later changes', function () {
+    extract(facultySupervisorFixture());
+    $staff = function () use ($campus) {
+        $user = User::factory()->create(['is_student' => false]);
+        $user->assignRole('supervisor');
+        $user->campuses()->attach($campus);
+
+        return $user;
+    };
+    $faculty = $offering->evaluatee;
+    $faculty->update(['is_instructor' => true, 'instructor_department_id' => $host->id]);
+    [$homeChair, $teachingChair, $nextChair] = [$staff(), $staff(), $staff()];
+    $host->update(['chairperson_id' => $homeChair->id]);
+    $department->update(['chairperson_id' => $teachingChair->id]);
+    $cycles = app(EvaluationCycles::class);
+    $cycles->publish($owner, $cycles->save($owner, $campus, $data));
+    $service = app(SupervisorEvaluationAssignments::class);
+    Filament::setCurrentPanel(Filament::getPanel('admin'));
+    Filament::setTenant($campus, isQuiet: true);
+
+    // Opening My Supervisor Tasks prepares the home-department task once.
+    $this->actingAs($homeChair);
+    expect(SupervisorEvaluations::canAccess())->toBeTrue();
+    Livewire::test(SupervisorEvaluations::class)->assertOk();
+    Livewire::test(SupervisorEvaluations::class)->assertOk();
+    $homeTask = CourseOffering::where('evaluation_type', 'SEF')->where('teaching_department_id', $host->id)->sole();
+    $teachingTask = CourseOffering::where('evaluation_type', 'SEF')->where('teaching_department_id', $department->id)->sole();
+    expect($homeTask->user_id)->toBe($faculty->id)
+        ->and($service->forViewer($homeChair, $campus)->pluck('id')->all())->toBe([$homeTask->id])
+        ->and($service->forViewer($teachingChair, $campus)->pluck('id')->all())->toBe([$teachingTask->id])
+        ->and(app(FacultySupervisorEvaluators::class)->forTask($homeTask)->pluck('users.id')->all())->toBe([$homeChair->id]);
+    $answers = $homeTask->evaluationForm->fields()->pluck('name')->mapWithKeys(fn ($name) => [$name => 4])->all();
+    $this->get(route('evaluate.course-offering', $homeTask))->assertOk();
+    $this->post(route('evaluate.store', $homeTask), ['fields' => $answers])->assertRedirect();
+    expect($homeTask->formSubmissions()->count())->toBe(1);
+
+    // A new chairperson takes over at once and the previous one loses the task.
+    $host->update(['chairperson_id' => $nextChair->id]);
+    expect($service->forViewer($homeChair, $campus)->count())->toBe(0)
+        ->and($service->forViewer($nextChair, $campus)->pluck('id')->all())->toBe([$homeTask->id]);
+    $this->get(route('evaluate.course-offering', $homeTask))->assertForbidden();
+
+    // Moving the faculty to another home department ends that chairperson's authority; the teaching chairperson keeps theirs.
+    $faculty->update(['instructor_department_id' => null]);
+    expect($service->forViewer($nextChair, $campus)->count())->toBe(0)
+        ->and($service->forViewer($teachingChair, $campus)->pluck('id')->all())->toBe([$teachingTask->id]);
+});
+
+it('denies unselected deans and administrators while the department chairperson rates automatically', function () {
     extract(facultySupervisorFixture());
     $chair = User::factory()->create(['is_student' => false]);
     $chair->assignRole('supervisor');
@@ -233,7 +303,7 @@ it('denies unselected deans chairpersons and administrators even when another su
     $answers = $b->fields()->pluck('name')->mapWithKeys(fn ($name) => [$name => 5])->all();
     Filament::setCurrentPanel(Filament::getPanel('admin'));
     Filament::setTenant($campus, isQuiet: true);
-    foreach ([$head, $chair, $owner] as $unselected) {
+    foreach ([$head, $owner] as $unselected) {
         $this->actingAs($unselected);
         expect(SupervisorEvaluations::canAccess())->toBeFalse()
             ->and(app(SupervisorEvaluationAssignments::class)->forViewer($unselected, $campus)->count())->toBe(0)
@@ -242,6 +312,10 @@ it('denies unselected deans chairpersons and administrators even when another su
         $this->post(route('evaluate.store', $task), ['fields' => $answers])->assertForbidden();
     }
     expect($task->formSubmissions()->count())->toBe(0);
+    $this->actingAs($chair);
+    expect(SupervisorEvaluations::canAccess())->toBeTrue()
+        ->and(app(SupervisorEvaluationAssignments::class)->forViewer($chair, $campus)->pluck('id')->all())->toBe([$task->id]);
+    $this->get(route('evaluate.course-offering', $task))->assertOk();
     // A dean gains evaluator authority only through the same explicit selection as other staff.
     app(FacultySupervisorEvaluators::class)->save($owner, $offering, [$head->id, $extra->id]);
     $this->actingAs($head)->get(route('evaluate.course-offering', $task))->assertOk();
@@ -263,4 +337,89 @@ it('does not let a dean or chairperson role answer a legacy supervisor evaluatio
             ->toThrow(AuthorizationException::class, 'supervisors explicitly selected');
     }
     expect(app(EvaluationTemplates::class)->create('B', $campus)->evaluator_roles)->toBe([]);
+});
+
+it('lists pending supervisor tasks before completed tasks after a submission', function () {
+    extract(facultySupervisorFixture());
+    app(FacultySupervisorEvaluators::class)->save($owner, $offering, [$head->id]);
+    $cycles = app(EvaluationCycles::class);
+    $cycle = $cycles->save($owner, $campus, $data);
+    $cycles->publish($owner, $cycle);
+    $done = $cycle->assignments()->where('evaluation_type', 'SEF')->sole();
+    $other = $offering->fresh()->replicate();
+    $other->user_id = User::factory()->create(['is_student' => false, 'is_instructor' => true, 'instructor_department_id' => $department->id])->id;
+    $other->save();
+    $other->supervisorEvaluators()->sync([$head->id]);
+    app(SupervisorEvaluationAssignments::class)->prepareSource($other);
+    $pending = $cycle->assignments()->where('evaluation_type', 'SEF')->where('user_id', $other->user_id)->sole();
+    Filament::setCurrentPanel(Filament::getPanel('admin'));
+    Filament::setTenant($campus, isQuiet: true);
+    $this->actingAs($head);
+    $answers = $b->fields()->pluck('name')->mapWithKeys(fn ($name) => [$name => 4])->all();
+    $this->post(route('evaluate.store', $done), ['fields' => $answers])->assertRedirect(route('evaluate.success', $done));
+    Livewire::test(SupervisorEvaluations::class)->assertCanSeeTableRecords([$pending, $done], inOrder: true);
+});
+
+it('lets a scoped home-department chairperson open and submit their tasks through real web requests', function () {
+    extract(facultySupervisorFixture());
+    // The other college's Annex B form ($b) is reserved for $department, which this chairperson's data scope cannot see.
+    $faculty = $offering->evaluatee;
+    $faculty->update(['is_instructor' => true, 'instructor_department_id' => $host->id]);
+    $chair = User::factory()->create(['is_student' => false, 'instructor_department_id' => $host->id]);
+    $chair->assignRole(Role::findOrCreate('chairperson', 'web'));
+    $chair->campuses()->attach($campus);
+    $host->update(['chairperson_id' => $chair->id]);
+    app(FacultySupervisorEvaluators::class)->save($owner, $offering, [$extra->id]);
+    $cycles = app(EvaluationCycles::class);
+    $cycles->publish($owner, $cycles->save($owner, $campus, $data));
+
+    $this->actingAs($chair)->get(SupervisorEvaluations::getUrl(tenant: $campus))->assertOk()->assertSee($faculty->name);
+    $task = CourseOffering::where('evaluation_type', 'SEF')->where('teaching_department_id', $host->id)->sole();
+    $allowed = $task->evaluationForm->departments()->pluck('departments.id');
+    expect($task->form_id)->not->toBe($b->id)
+        ->and($allowed->isEmpty() || $allowed->contains($host->id))->toBeTrue();
+
+    $answers = $task->evaluationForm->fields()->pluck('name')->mapWithKeys(fn ($name) => [$name => 4])->all();
+    $this->get(route('evaluate.course-offering', $task))->assertOk();
+    $this->post(route('evaluate.store', $task), ['fields' => $answers])->assertRedirect(route('evaluate.success', $task));
+    expect($task->formSubmissions()->count())->toBe(1);
+    // Visiting again creates nothing new.
+    $this->get(SupervisorEvaluations::getUrl(tenant: $campus))->assertOk();
+    expect(CourseOffering::where('evaluation_type', 'SEF')->where('teaching_department_id', $host->id)->count())->toBe(1);
+});
+
+it('does not give a chairperson automatic tasks from a closed evaluation', function () {
+    extract(facultySupervisorFixture());
+    $chair = User::factory()->create(['is_student' => false]);
+    $chair->assignRole('supervisor');
+    $chair->campuses()->attach($campus);
+    $department->update(['chairperson_id' => $chair->id]);
+    $cycles = app(EvaluationCycles::class);
+    $cycle = $cycles->save($owner, $campus, $data);
+    $cycles->publish($owner, $cycle);
+    $task = $cycle->assignments()->where('evaluation_type', 'SEF')->sole();
+    expect(app(SupervisorEvaluationAssignments::class)->forViewer($chair, $campus)->pluck('id')->all())->toBe([$task->id]);
+    $cycles->close($owner, $cycle->fresh());
+    expect(app(SupervisorEvaluationAssignments::class)->forViewer($chair, $campus)->count())->toBe(0)
+        ->and(app(FacultySupervisorEvaluators::class)->forTask($task->fresh())->pluck('users.id')->all())->toBe([$chair->id]);
+});
+
+it('takes the SQLite write lock before checking for an existing chairperson task', function () {
+    extract(facultySupervisorFixture());
+    // Below PHP 8.4 SQLite transactions are DEFERRED; a read before the insert fails at once when another request commits first.
+    $offering->evaluatee->update(['is_instructor' => true, 'instructor_department_id' => $host->id]);
+    $chair = User::factory()->create(['is_student' => false]);
+    $chair->assignRole('supervisor');
+    $chair->campuses()->attach($campus);
+    $host->update(['chairperson_id' => $chair->id]);
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+    app(SupervisorEvaluationAssignments::class)->prepareChairperson($chair, $campus, $offering->semester_id);
+    $queries = array_column(DB::getQueryLog(), 'query');
+    DB::disableQueryLog();
+    $lock = collect($queries)->search(fn ($sql) => str_starts_with($sql, 'update "departments" set "id"'));
+    $check = collect($queries)->search(fn ($sql) => str_contains($sql, 'from "course_offerings"') && str_contains($sql, 'exists'));
+    $insert = collect($queries)->search(fn ($sql) => str_starts_with($sql, 'insert into "course_offerings"'));
+    expect($lock)->not->toBeFalse()->and($insert)->not->toBeFalse()
+        ->and($lock)->toBeLessThan($check)->and($check)->toBeLessThan($insert);
 });

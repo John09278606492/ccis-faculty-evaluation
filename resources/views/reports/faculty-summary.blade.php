@@ -1,42 +1,67 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Faculty Evaluation Summary — {{ $offering->evaluatee->name }}</title>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Faculty Evaluation and Development Acknowledgement Form — {{ $offering->evaluatee->name }}</title>
 <x-bisu-favicon />
-@include('reports.report-styles')</head><body>
+@include('reports.report-styles')
+{{-- Mirrors the official Annex D form: A4, half-inch margins, Arial, black borders, #D9E2F3 header shading. --}}
+<style>
+.annex-d{color:#000}.annex-d h1{font-size:16px;margin:4px 0 22px}.annex-d h2{font-size:14px;margin:22px 0 8px}
+.annex-d table{margin:6px 0 14px}.annex-d td{border:1px solid #000;padding:6px 8px;vertical-align:top}
+.annex-d .shaded{background:#d9e2f3}.annex-d .center{text-align:center;vertical-align:middle}
+.annex-d .info td{border:0;padding:3px 0;vertical-align:middle}.annex-d .colon{text-align:center}
+.annex-d .sign td{vertical-align:middle}.annex-d .signature-space{height:40px}
+.annex-d label{display:inline;font-weight:normal;margin:0}.annex-d .plan label{display:block;margin-bottom:6px}
+.annex-d .acknowledgement{font-weight:bold;margin:20px 0 8px}
+@page{size:A4 portrait;margin:12.7mm}
+@media print{
+    .annex-d{font-size:11pt;line-height:1.15}.annex-d h1{font-size:11pt;margin:0 0 5mm}.annex-d h2{font-size:11pt;margin:4mm 0 2mm}
+    .annex-d table{font-size:11pt;margin:1mm 0 3mm}.annex-d td{padding:1.2mm 1.8mm;border-color:#000;vertical-align:top}
+    .annex-d .center,.annex-d .sign td,.annex-d .info td{vertical-align:middle}.annex-d .info td{padding:.6mm 0}
+    .annex-d .shaded{background:#d9e2f3!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .annex-d label{font-size:11pt;margin:0}.annex-d .print-text{margin:0}
+    .annex-d .plan .print-text{min-height:26mm;margin-top:1mm}.annex-d .signature-space{height:7.5mm}.annex-d .sign{break-inside:avoid;page-break-inside:avoid}
+    .annex-d .acknowledgement{margin:4mm 0 2mm}
+}
+</style>
+</head><body>
 @include('reports.report-toolbar')
-<main class="sheet">
+<main class="sheet annex-d">
 @if(session('status'))<p class="notice no-print">{{ session('status') }}</p>@endif
 @if($errors->any())<div class="errors no-print">{{ $errors->first() }}</div>@endif
-<div class="annex">Annex D</div><h1>FACULTY EVALUATION AND DEVELOPMENT<br>ACKNOWLEDGEMENT FORM</h1>
+<h1>FACULTY EVALUATION AND DEVELOPMENT ACKNOWLEDGEMENT FORM</h1>
 <form method="post" action="{{ route('evaluation.report.save', ['offering' => $offering, ...request()->only(['department', 'form', 'cycle'])]) }}">@csrf<input type="hidden" name="annex" value="D">
+
 <h2>A. FACULTY MEMBER INFORMATION</h2>
-<div class="meta"><div><b>Name of Faculty Evaluated:</b> {{ $offering->evaluatee->name }}</div><div><b>Department/College:</b> {{ $offering->evaluatee->instructorDepartment?->name ?? '—' }}</div><div><b>Campus:</b> {{ $offering->campus->name }}</div><div><b>Semester/Term & Academic Year:</b> {{ $offering->semester->name }} / {{ $offering->semester->schoolYear->name }}</div></div>
-<label for="rank">Current Faculty Rank</label><input id="rank" name="rank" value="{{ old('rank', $details['rank'] ?? '') }}" @readonly(!$canEdit)><div class="print-text">{{ $details['rank'] ?? '________________________' }}</div>
-@include('reports.department-heads')
+<table class="info"><colgroup><col style="width:33%"><col style="width:3%"><col></colgroup><tbody>
+<tr><td>Name of Faculty Evaluated</td><td class="colon">:</td><td>{{ $offering->evaluatee->name }}</td></tr>
+<tr><td>Department/College</td><td class="colon">:</td><td>{{ $offering->evaluatee->instructorDepartment?->name }}</td></tr>
+<tr><td><label for="rank">Current Faculty Rank</label></td><td class="colon">:</td><td><input id="rank" name="rank" value="{{ old('rank', $details['rank'] ?? '') }}" @readonly(!$canEdit)><div class="print-text" data-empty="">{{ $details['rank'] ?? '' }}</div></td></tr>
+<tr><td>Semester/Term &amp; Academic Year</td><td class="colon">:</td><td>{{ $offering->semester->name }} / {{ $offering->semester->schoolYear->name }}</td></tr>
+</tbody></table>
+
 <h2>B. FACULTY EVALUATION SUMMARY</h2>
-<table><thead><tr><th>Overall Rating</th><th>Student Evaluation of Teachers (SET)</th><th>Supervisor’s Evaluation of Faculty (SEF)</th></tr></thead><tbody><tr><td>Computed rating (%)</td>@foreach(['SET','SEF'] as $instrument)<td class="numeric">{{ $ratings[$instrument] === null ? ($instrument === 'SEF' ? 'Pending supervisor evaluation' : 'No results available') : number_format($ratings[$instrument], 2).'%' }}</td>@endforeach</tr></tbody></table>
-<p class="muted">Each instrument is reported separately. Rating = (total score ÷ maximum possible score) × 100. For the original 15-item instruments, the maximum is 75. Summary percentages are weighted by the number of complete responses. No combined SET/SEF weighting is assumed.</p>
-<p class="muted">Based on {{ $rows->where('instrument', 'SET')->sum('count') }} completed student response(s) and {{ $rows->where('instrument', 'SEF')->sum('count') }} completed supervisor response(s). Pending responses are not counted as zero.</p>
-<h2>C. Development Plan</h2><p class="muted">To be jointly accomplished by the Supervisor and Faculty.</p>
+<table class="overall"><colgroup><col style="width:50%"><col style="width:50%"></colgroup><tbody>
+<tr><td colspan="2" class="center">Overall Rating</td></tr>
+<tr><td class="center shaded">Student Evaluation of Teachers (SET)</td><td class="center shaded">Supervisor’s Evaluation of Faculty (SEF)</td></tr>
+<tr>@foreach(['SET', 'SEF'] as $instrument)<td class="center">{{ $ratings[$instrument] === null ? ($instrument === 'SEF' ? 'Pending supervisor evaluation' : 'No results available') : number_format($ratings[$instrument], 2).'%' }}</td>@endforeach</tr>
+</tbody></table>
+
+<h2>C. Development Plan (to be jointly accomplished by the Supervisor and Faculty)</h2>
+<table class="plan"><tbody>
 @foreach(['areas' => 'Areas for Improvement', 'activities' => 'Proposed Learning and Development Activities', 'action_plan' => 'Action Plan'] as $key => $label)
-<div class="section"><label for="{{ $key }}">{{ $label }}</label><textarea id="{{ $key }}" name="{{ $key }}" @readonly(!$canEdit)>{{ old($key, $details[$key] ?? '') }}</textarea><div class="print-text">{{ $details[$key] ?? "________________________________________________________________________________\n\n________________________________________________________________________________" }}</div></div>
-@endforeach
-<p>I acknowledge that I have received and reviewed the faculty evaluation conducted for the period mentioned above. I understand that my signature below does not necessarily indicate agreement with the evaluation but confirms that I have been given the opportunity to discuss it with my supervisor.</p>
-<div class="signatures">@foreach(['supervisor' => 'SUPERVISOR', 'faculty' => 'FACULTY'] as $key => $label)<div><b>{{ $label }}</b><div class="signature"></div><span class="muted">Signature</span>@if($key === 'supervisor')@include('reports.signatory-select', ['label' => 'Supervisor'])@else<label for="{{ $key }}_name">Name</label><input id="{{ $key }}_name" name="{{ $key }}_name" value="{{ old($key.'_name', $details[$key.'_name'] ?? ($key === 'faculty' ? $offering->evaluatee->name : '')) }}" @readonly(!$canEdit)><div class="print-text">{{ $details[$key.'_name'] ?? ($key === 'faculty' ? $offering->evaluatee->name : '________________________') }}</div>@endif<label for="{{ $key }}_date">Date Signed</label><input id="{{ $key }}_date" type="date" name="{{ $key }}_date" value="{{ old($key.'_date', $details[$key.'_date'] ?? '') }}" @readonly(!$canEdit)><div class="print-text">{{ $details[$key.'_date'] ?? '________________________' }}</div></div>@endforeach</div>
-@if($canEdit)<p class="no-print"><button type="submit">Save Development Plan</button> <span class="muted">Save changes before printing. Signatures are completed on the printed form.</span></p>@endif
-</form>
-<section class="summary"><h1>FACULTY EVALUATION SUMMARY REPORT</h1><p><b>{{ $offering->evaluatee->name }}</b> · {{ $offering->semester->name }} / {{ $offering->semester->schoolYear->name }}</p>
-<h2>Results by Evaluation Type</h2>
-<table><thead><tr><th>Evaluation Type</th><th>Complete Responses</th><th>Rating (%)</th></tr></thead><tbody>
-@foreach($rows->groupBy('instrument') as $type => $group)
-@php($responseCount = $group->sum('count'))
-<tr><td>{{ \App\Support\EvaluationType::LABELS[$type] ?? 'Other / Unspecified' }}</td><td class="numeric">{{ $responseCount }}</td><td class="numeric">{{ $responseCount ? number_format($group->sum(fn ($row) => $row['percentage'] * $row['count']) / $responseCount, 2).'%' : 'No results available' }}</td></tr>
+<tr><td><label for="{{ $key }}">{{ $label }}</label><textarea id="{{ $key }}" name="{{ $key }}" @readonly(!$canEdit)>{{ old($key, $details[$key] ?? '') }}</textarea><div class="print-text" data-empty="">{{ $details[$key] ?? '' }}</div></td></tr>
 @endforeach
 </tbody></table>
-@forelse($rows as $row)
-<h2>{{ $row['form']->name }}</h2><p><b>{{ $row['assignment']->evaluation_type_label }}</b><br>{{ $row['assignment']->course?->code ?? 'Faculty assignment' }} · {{ $row['assignment']->section }} · {{ $row['count'] }} complete response(s)</p>
-<table><thead><tr><th>Mean Total</th><th>Maximum</th><th>Computed Rating</th></tr></thead><tbody><tr><td>{{ $row['mean_total'] === null ? '—' : number_format($row['mean_total'], 2) }}</td><td>{{ $row['maximum'] }}</td><td>{{ $row['percentage'] === null ? 'No results available' : number_format($row['percentage'], 2).'%' }}</td></tr></tbody></table>
-<table><thead><tr><th>Benchmark Statement</th><th>Mean Rating</th></tr></thead><tbody>@foreach($row['items']->groupBy('section') as $section => $items)<tr><th colspan="2">{{ $section ?: 'Criteria' }}</th></tr>@foreach($items as $item)<tr><td>{{ $item['label'] }}</td><td class="numeric">{{ $item['mean'] === null ? '—' : number_format($item['mean'], 2) }}</td></tr>@endforeach @endforeach</tbody></table>
-@empty<p>No evaluation results available.</p>@endforelse
-<p class="muted">Generated {{ now()->format('F j, Y g:i A') }}. Only current assigned forms and complete responses are included. Individual evaluator identities are omitted.</p></section>
+
+<p class="acknowledgement">I acknowledge that I have received and reviewed the faculty evaluation conducted for the period mentioned above. I understand that my signature below does not necessarily indicate agreement with the evaluation but confirms that I have been given the opportunity to discuss it with my supervisor.</p>
+<table class="sign"><colgroup><col style="width:14%"><col style="width:3%"><col></colgroup><tbody>
+@foreach(['supervisor' => 'SUPERVISOR', 'faculty' => 'FACULTY'] as $key => $label)
+<tr><td colspan="3" class="center shaded">{{ $label }}</td></tr>
+<tr><td>Signature</td><td class="colon">:</td><td class="signature-space"></td></tr>
+<tr><td>Name</td><td class="colon">:</td><td>@if($key === 'supervisor')@include('reports.signatory-select', ['label' => 'Supervisor name', 'bare' => true])@else<input id="faculty_name" name="faculty_name" aria-label="Faculty name" value="{{ old('faculty_name', $details['faculty_name'] ?? $offering->evaluatee->name) }}" @readonly(!$canEdit)><div class="print-text" data-empty="">{{ $details['faculty_name'] ?? $offering->evaluatee->name }}</div>@endif</td></tr>
+<tr><td>Date Signed</td><td class="colon">:</td><td><input id="{{ $key }}_date" type="date" name="{{ $key }}_date" aria-label="{{ ucfirst($key) }} date signed" value="{{ old($key.'_date', $details[$key.'_date'] ?? '') }}" @readonly(!$canEdit)><div class="print-text" data-empty="">{{ $details[$key.'_date'] ?? '' }}</div></td></tr>
+@endforeach
+</tbody></table>
+@if($canEdit)<p class="no-print"><button type="submit">Save Development Plan</button> <span class="muted">Save changes before printing. Signatures are completed on the printed form.</span></p>@endif
+</form>
 </main>@include('reports.live-preview')
 </body></html>

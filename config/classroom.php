@@ -1,6 +1,9 @@
 <?php
 
 return [
+    // Assessments run on their own site now; their menu entries stay hidden here unless this is turned on.
+    'show_assessments' => (bool) env('CLASSROOM_SHOW_ASSESSMENTS', false),
+
     // Shared hosting can refresh automatically without a persistent WebSocket server.
     'live_transport' => env('CLASSROOM_LIVE_TRANSPORT', 'reverb'),
 

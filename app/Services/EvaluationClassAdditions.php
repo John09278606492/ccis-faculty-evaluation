@@ -49,8 +49,8 @@ class EvaluationClassAdditions
         foreach ($plan['prepared']->whereNull('evaluation_cycle_id')->sortBy('id') as $class) {
             $ids = DB::table('course_offering_supervisor')->where('course_offering_id', $class->id)->orderBy('user_id')->pluck('user_id')->map(fn ($id) => (int) $id)->all();
             $usesDefault = ! $ids;
-            if ($usesDefault && $cycle->department->supervisor_id) {
-                $ids = [(int) $cycle->department->supervisor_id];
+            if ($usesDefault && $cycle->department->chairperson_id) {
+                $ids = [(int) $cycle->department->chairperson_id];
             }
             $heads = app(FacultySupervisorEvaluators::class)->candidates($class)->whereKey($ids)->get();
             if (! $ids || $heads->count() !== count($ids)) {

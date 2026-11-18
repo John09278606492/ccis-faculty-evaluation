@@ -3,6 +3,7 @@
 use App\Filament\Pages\EvaluationResults;
 use App\Models\FormSubmission;
 use App\Models\User;
+use App\Services\ReportService;
 use Filament\Facades\Filament;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Permission;
@@ -47,6 +48,34 @@ it('renders Annex C with weighted student ratings and anonymous qualitative comm
     expect($response->viewData('ratings')['SET'])->toBe(90.0);
 });
 
+it('retains every response for the Annex C placeholder visibility toggle', function () {
+    foreach (['Clear examples in class.', 'N/A', 'none', 'wala', '   '] as $comment) {
+        FormSubmission::create(['form_id' => $this->form->id, 'course_offering_id' => $this->offering->id,
+            'data' => ['teaching_quality' => 4, '_overall_comment' => $comment]]);
+    }
+
+    $response = $this->get(route('evaluation.report', $this->offering))->assertOk()
+        ->assertSee('Clear examples in class.')->assertSee('wala')->assertSee('N/A')
+        ->assertSee('[No comment provided]')->assertSee('id="placeholder-toggle"', false)
+        ->assertSee('data-placeholder="true"', false);
+    $entries = $response->viewData('rows')->flatMap(fn ($row) => $row['comment_entries']);
+    expect($entries)->toHaveCount(5)->and($entries->where('placeholder', true))->toHaveCount(4);
+
+    expect(app(ReportService::class)->meaningfulComments(['Clear examples in class.', 'N/A', 'none', 'wala', '  ', '...', 5]))
+        ->toBe(['Clear examples in class.']);
+});
+
+it('offers per-comment print selection without adding a banner to Annex C', function () {
+    FormSubmission::create(['form_id' => $this->form->id, 'course_offering_id' => $this->offering->id,
+        'data' => ['teaching_quality' => 4, '_overall_comment' => 'Helpful feedback.']]);
+
+    $this->get(route('evaluation.report', $this->offering))->assertOk()
+        ->assertSee('Helpful feedback.')
+        ->assertSee('data-comment-row', false)
+        ->assertSee('class="comment-pick"', false)
+        ->assertDontSee('FILTERED WORKING COPY', false);
+});
+
 it('preserves acknowledgement details when individual report metadata is saved', function () {
     $this->post(route('evaluation.report.save', $this->offering), ['annex' => 'D', 'action_plan' => 'Mentoring plan']);
     $this->post(route('evaluation.report.save', $this->offering), ['annex' => 'C', 'prepared_name' => 'Report Staff', 'rank' => 'Assistant Professor'])
@@ -82,4 +111,20 @@ it('shows department heads and allows swapping report signatories without changi
     $foreign = User::factory()->create(['is_student' => false]);
     $foreign->assignRole($role);
     $this->post(route('evaluation.report.save', $this->offering), ['prepared_id' => $foreign->id])->assertSessionHasErrors('prepared_id');
+});
+
+it('lays out Annex D like the official acknowledgement form and nothing more', function () {
+    FormSubmission::create(['form_id' => $this->form->id, 'course_offering_id' => $this->offering->id, 'data' => ['teaching_quality' => 4]]);
+    $this->post(route('evaluation.report.save', $this->offering), ['annex' => 'D', 'rank' => 'Instructor I', 'areas' => 'Use more worked examples']);
+    $response = $this->get(route('evaluation.report', ['offering' => $this->offering, 'annex' => 'D']))->assertOk();
+    $response->assertSeeInOrder(['FACULTY EVALUATION AND DEVELOPMENT ACKNOWLEDGEMENT FORM', 'A. FACULTY MEMBER INFORMATION', 'Name of Faculty Evaluated',
+        'Department/College', 'Current Faculty Rank', 'Instructor I', 'Semester/Term &amp; Academic Year', 'B. FACULTY EVALUATION SUMMARY', 'Overall Rating',
+        'Student Evaluation of Teachers (SET)', 'Supervisor’s Evaluation of Faculty (SEF)', '80.00%', 'Pending supervisor evaluation',
+        'C. Development Plan (to be jointly accomplished by the Supervisor and Faculty)', 'Areas for Improvement', 'Use more worked examples',
+        'Proposed Learning and Development Activities', 'Action Plan', 'I acknowledge that I have received and reviewed the faculty evaluation',
+        'SUPERVISOR', 'Signature', 'Name', 'Date Signed', 'FACULTY', 'Signature', 'Name', 'Date Signed'], false);
+    foreach (['Campus:', 'Department Leadership', 'FACULTY EVALUATION SUMMARY REPORT', 'Results by Evaluation Type', 'Benchmark Statement',
+        'Pending responses are not counted', 'maximum possible score', '<div class="annex">'] as $extra) {
+        $response->assertDontSee($extra, false);
+    }
 });

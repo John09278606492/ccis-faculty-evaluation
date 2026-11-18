@@ -37,7 +37,7 @@ beforeEach(function () {
     $this->head = User::factory()->create(['is_student' => false]);
     $this->head->assignRole('supervisor');
     $this->head->campuses()->attach($this->campus);
-    $this->department->update(['supervisor_id' => $this->head->id]);
+    $this->department->update(['chairperson_id' => $this->head->id]);
     $this->a = app(EvaluationTemplates::class)->create('A', $this->campus);
     $this->b = app(EvaluationTemplates::class)->create('B', $this->campus);
     $this->a->departments()->attach($this->department);
@@ -113,7 +113,7 @@ it('rejects stale rosters defaults forms or classes claimed by another evaluatio
     match ($change) {
         'roster' => $this->late->students()->detach(),
         'section' => $this->late->update(['evaluator_selection' => ['report_sections' => [$this->student->id => 'BSIT 3B']]]),
-        'default' => $this->department->update(['supervisor_id' => null]),
+        'default' => $this->department->update(['chairperson_id' => null]),
         'form' => $this->b->update(['name' => 'Changed instrument']),
         'subject' => $this->late->course->update(['code' => 'Changed course']),
         'faculty' => $this->late->evaluatee->update(['name' => 'Changed faculty']),
@@ -143,10 +143,10 @@ it('does not offer empty inactive overlapping ambiguous or self-supervised class
     $self = latePreparedClass();
     $self->evaluatee->campuses()->syncWithoutDetaching([$this->campus->id]);
     $self->evaluatee->assignRole('supervisor');
-    $this->department->update(['supervisor_id' => $self->user_id]);
+    $this->department->update(['chairperson_id' => $self->user_id]);
     $plan = $this->service->plan($this->actor, $this->campus, $this->cycle->id);
     expect($plan['rows'])->toBe([])->and($plan['excluded'])->toHaveCount(3);
-    $this->department->update(['supervisor_id' => $this->head->id]);
+    $this->department->update(['chairperson_id' => $this->head->id]);
     $duplicate = $this->original->replicate();
     $duplicate->evaluation_cycle_id = null;
     $duplicate->form_id = null;

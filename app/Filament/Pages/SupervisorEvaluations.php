@@ -32,14 +32,20 @@ class SupervisorEvaluations extends Page implements HasTable
     public function mount(): void
     {
         abort_unless(static::canAccess(), 403);
+        app(SupervisorEvaluationAssignments::class)->prepareChairperson(auth()->user(), filament()->getTenant());
     }
 
+    /** Department chairpersons always see this page, even before any of their faculty has a task. */
     public static function canAccess(): bool
     {
         $user = auth()->user();
+        $campus = filament()->getTenant();
+        if (! $user || $user->is_student || ! $campus || ! $user->canAccessTenant($campus)) {
+            return false;
+        }
+        $evaluators = app(FacultySupervisorEvaluators::class);
 
-        return $user && ! $user->is_student && filament()->getTenant() && $user->canAccessTenant(filament()->getTenant())
-            && app(FacultySupervisorEvaluators::class)->taskIds($user, filament()->getTenant())->exists();
+        return $evaluators->chairedDepartments($user, $campus)->exists() || $evaluators->taskIds($user, $campus)->exists();
     }
 
     private function submitted(CourseOffering $assignment): bool
@@ -52,7 +58,11 @@ class SupervisorEvaluations extends Page implements HasTable
     {
         $user = auth()->user();
 
-        return $table->query(app(SupervisorEvaluationAssignments::class)->forViewer($user, filament()->getTenant())
+        $query = app(SupervisorEvaluationAssignments::class)->forViewer($user, filament()->getTenant());
+        $completed = app(EvaluationSubmissionIdentity::class)->completedClassIds($user, (clone $query)->get(['course_offerings.id', 'course_offerings.form_id']));
+        $expression = $completed ? 'CASE WHEN course_offerings.id IN ('.implode(',', array_map('intval', $completed)).') THEN 1 ELSE 0 END' : '0';
+
+        return $table->query($query->select('course_offerings.*')->selectRaw($expression.' AS supervisor_completed')->orderBy('supervisor_completed')->orderBy('course_offerings.id')
             ->with(['evaluatee' => fn ($q) => $q->withoutGlobalScope('assigned_data'), 'course.department', 'teachingDepartment', 'semester.schoolYear', 'evaluationForm', 'evaluationCycle']))
             ->columns([
                 Tables\Columns\TextColumn::make('evaluatee.name')->label('Faculty')->searchable(),
@@ -65,6 +75,6 @@ class SupervisorEvaluations extends Page implements HasTable
                 Tables\Actions\Action::make('evaluate')->label('Complete Annex B')->icon('heroicon-o-pencil-square')
                     ->visible(fn ($record) => ! $this->submitted($record) && $record->isEvaluationAvailable())->url(fn ($record) => route('evaluate.course-offering', $record)),
             ])->emptyStateHeading('No faculty evaluations assigned to your account')
-            ->emptyStateDescription('Supervisor evaluators are selected per faculty under Teaching Classes → Evaluators → Assign Evaluators by Section. Deans and chairpersons must also be selected explicitly. Tasks appear once the evaluation is published.');
+            ->emptyStateDescription('A department chairperson rates the faculty of that department and anyone teaching a class there. Other supervisors are added per faculty under Teaching Classes. Tasks appear once the evaluation is published.');
     }
 }

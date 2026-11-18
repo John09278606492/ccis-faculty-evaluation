@@ -129,7 +129,7 @@ function boot() {
     window.addEventListener('offline', () => status('Connection lost — check your Wi-Fi or campus address.'));
     // Reverb is primary; a temporary socket outage still catches up automatically.
     setInterval(async () => {
-        if (document.hidden || !navigator.onLine || !activeChannel || liveReady || checkingFallback) return;
+        if (!pollingOnly || document.hidden || !navigator.onLine || !activeChannel || checkingFallback) return;
         checkingFallback = true;
         try {
             // An old campus IP may still look "online" to the browser. Probe first

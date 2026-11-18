@@ -61,7 +61,7 @@ class QuizResource extends Resource implements HasShieldPermissions
 
     public static function shouldRegisterNavigation(): bool
     {
-        return auth()->user()?->can('view_any_quiz') ?? false;
+        return config('classroom.show_assessments') && (auth()->user()?->can('view_any_quiz') ?? false);
     }
 
     /**

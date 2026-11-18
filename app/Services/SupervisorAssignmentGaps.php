@@ -32,8 +32,8 @@ class SupervisorAssignmentGaps
             $sets = $pivots->whereIn('course_offering_id', $classes->where('user_id', $class->user_id)->modelKeys())->groupBy('course_offering_id')
                 ->map(fn ($rows) => $rows->pluck('user_id')->map(fn ($id) => (int) $id)->sort()->values()->all())->unique(fn ($ids) => implode(',', $ids));
             $ids = $sets->count() === 1 ? $sets->first() : [];
-            if ($sets->isEmpty() && $department->supervisor_id && (int) $department->supervisor_id !== (int) $class->user_id) {
-                $ids = [(int) $department->supervisor_id];
+            if ($sets->isEmpty() && $department->chairperson_id && (int) $department->chairperson_id !== (int) $class->user_id) {
+                $ids = [(int) $department->chairperson_id];
             }
             if ($ids && app(FacultySupervisorEvaluators::class)->candidates($class)->whereKey($ids)->count() !== count($ids)) {
                 $ids = [];

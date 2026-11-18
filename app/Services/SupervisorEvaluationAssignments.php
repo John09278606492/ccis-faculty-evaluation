@@ -6,6 +6,7 @@ use App\Models\Campus;
 use App\Models\CourseOffering;
 use App\Models\Department;
 use App\Models\EvaluationCycle;
+use App\Models\Form;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
@@ -38,26 +39,76 @@ class SupervisorEvaluationAssignments
             || ($source->evaluation_cycle_id && $source->evaluationCycle?->status !== 'published')) {
             return;
         }
-        $departmentId = $source->teaching_department_id ?? $source->course->department_id;
-        DB::transaction(function () use ($source, $departmentId) {
+        $this->createTask($source->campus, (int) $source->user_id, (int) $source->semester_id, (int) ($source->teaching_department_id ?? $source->course->department_id), $source->evaluationCycle);
+    }
+
+    /**
+     * Creates the Annex B tasks a chairperson rates automatically in a period: faculty whose home department they chair,
+     * and faculty teaching a class in it. Safe to call on every visit; existing tasks are left as they are.
+     */
+    public function prepareChairperson(User $chair, Campus $campus, ?int $semesterId = null): void
+    {
+        $semesterId ??= AcademicPeriod::current($campus);
+        if (! $semesterId || $chair->is_student || ! $chair->canAccessTenant($campus)) {
+            return;
+        }
+        foreach (app(FacultySupervisorEvaluators::class)->chairedDepartments($chair, $campus)->get() as $department) {
+            $classes = DB::table('course_offerings as class')->join('courses as course', 'course.id', '=', 'class.course_id')
+                ->where('class.semester_id', $semesterId)->where('class.is_active', true)->where('class.user_id', '!=', $chair->id)
+                ->select('class.user_id', 'class.evaluation_cycle_id', DB::raw('COALESCE(class.teaching_department_id, course.department_id) as department_id'))->get();
+            $teaching = $classes->where('department_id', $department->id)->groupBy('user_id');
+            $home = DB::table('users')->where('instructor_department_id', $department->id)->where('is_instructor', true)->whereNull('deleted_at')
+                ->whereIn('id', $classes->pluck('user_id')->unique())->pluck('id');
+            $ownCycle = EvaluationCycle::where('department_id', $department->id)->where('semester_id', $semesterId)->whereIn('status', ['draft', 'published'])->latest('id')->first();
+            $withTask = DB::table('course_offerings as task')->join('forms', 'forms.id', '=', 'task.form_id')->where('forms.settings->annex', 'B')
+                ->where('task.semester_id', $semesterId)->where('task.teaching_department_id', $department->id)->pluck('task.user_id')->flip();
+            foreach ($teaching->keys()->merge($home)->unique() as $facultyId) {
+                if ($withTask->has($facultyId)) {
+                    continue;
+                }
+                // A task follows the evaluation its classes in this department belong to; a home-only task follows the department's own evaluation.
+                $cycleId = $teaching->get($facultyId)?->pluck('evaluation_cycle_id')->filter()->first() ?? $ownCycle?->id;
+                $cycle = $cycleId ? EvaluationCycle::find($cycleId) : null;
+                if ($cycle && $cycle->status !== 'published') {
+                    continue;
+                }
+                $this->createTask($campus, (int) $facultyId, $semesterId, (int) $department->id, $cycle);
+            }
+        }
+    }
+
+    private function createTask(Campus $campus, int $facultyId, int $semesterId, int $departmentId, ?EvaluationCycle $cycle): void
+    {
+        DB::transaction(function () use ($campus, $facultyId, $semesterId, $departmentId, $cycle) {
+            // Serialize SQLite writers before inspecting existing tasks. Below PHP 8.4 Laravel starts SQLite transactions as
+            // DEFERRED, so a read-then-insert fails at once with "database is locked" when another request (the dashboard and
+            // My Supervisor Tasks preparing the same chairperson) commits in between. Writing first waits for the lock instead.
+            if (DB::getDriverName() === 'sqlite') {
+                DB::table('departments')->where('id', $departmentId)->update(['id' => $departmentId]);
+            }
             $department = Department::withoutGlobalScope('assigned_data')->whereKey($departmentId)->lockForUpdate()->firstOrFail();
-            $cycle = $source->evaluationCycle;
-            $existing = CourseOffering::withoutGlobalScope('assigned_data')->where('user_id', $source->user_id)->where('semester_id', $source->semester_id)
+            $existing = CourseOffering::withoutGlobalScope('assigned_data')->where('user_id', $facultyId)->where('semester_id', $semesterId)
                 ->when($cycle, fn ($q) => $q->where('evaluation_cycle_id', $cycle->id), fn ($q) => $q->whereNull('evaluation_cycle_id'))
                 ->whereHas('evaluationForm', fn ($q) => $q->withoutGlobalScope('assigned_data')->where('settings->annex', 'B'))
                 ->where(fn ($q) => $this->inDepartment($q, $department))->exists();
             if ($existing) {
                 return;
             }
-            $form = $cycle?->supervisorForm ?? $source->campus->forms()->where('is_active', true)->where('settings->annex', 'B')
-                ->where(fn ($q) => $q->whereDoesntHave('departments')->orWhereHas('departments', fn ($d) => $d->where('departments.id', $department->id)))->first();
+            // Choose the form without the signed-in user's data scope: that scope hides other colleges' departments, which
+            // made a form reserved for another college look unrestricted and get picked, and Annex B access then refused it.
+            $form = $cycle?->supervisor_form_id ? Form::withoutGlobalScope('assigned_data')->find($cycle->supervisor_form_id) : null;
+            $form ??= Form::withoutGlobalScope('assigned_data')->where('is_active', true)->where('settings->annex', 'B')
+                ->whereHas('campuses', fn ($q) => $q->whereKey($campus->id))
+                ->where(fn ($q) => $q->whereDoesntHave('departments', fn ($d) => $d->withoutGlobalScope('assigned_data'))
+                    ->orWhereHas('departments', fn ($d) => $d->withoutGlobalScope('assigned_data')->where('departments.id', $department->id)))
+                ->orderBy('id')->first();
             if (! $form) {
-                $form = app(EvaluationTemplates::class)->create('B', $source->campus);
+                $form = app(EvaluationTemplates::class)->create('B', $campus);
                 $form->update(['name' => 'Annex B — '.$department->code.' Supervisor Evaluation', 'is_active' => true]);
                 $form->departments()->attach($department);
             }
-            CourseOffering::create(['semester_id' => $source->semester_id, 'course_id' => null, 'teaching_department_id' => $department->id,
-                'evaluation_cycle_id' => $cycle?->id, 'user_id' => $source->user_id, 'section' => 'SEF-'.$department->code,
+            CourseOffering::create(['semester_id' => $semesterId, 'course_id' => null, 'teaching_department_id' => $department->id,
+                'evaluation_cycle_id' => $cycle?->id, 'user_id' => $facultyId, 'section' => 'SEF-'.$department->code,
                 'form_id' => $form->id, 'evaluation_type' => 'SEF', 'is_active' => true]);
         });
     }
@@ -75,7 +126,7 @@ class SupervisorEvaluationAssignments
     {
         return $query->where('teaching_department_id', $department->id)
             ->orWhere(fn ($fallback) => $fallback->whereNull('teaching_department_id')
-                ->where(fn ($fallback) => $fallback->whereHas('course', fn ($course) => $course->where('department_id', $department->id))
-                    ->orWhere(fn ($general) => $general->whereNull('course_id')->whereHas('evaluatee', fn ($faculty) => $faculty->where('instructor_department_id', $department->id)))));
+                ->where(fn ($fallback) => $fallback->whereHas('course', fn ($course) => $course->withoutGlobalScope('assigned_data')->where('department_id', $department->id))
+                    ->orWhere(fn ($general) => $general->whereNull('course_id')->whereHas('evaluatee', fn ($faculty) => $faculty->withoutGlobalScope('assigned_data')->where('instructor_department_id', $department->id)))));
     }
 }

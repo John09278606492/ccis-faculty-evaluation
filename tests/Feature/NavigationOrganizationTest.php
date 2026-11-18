@@ -2,21 +2,26 @@
 
 use App\Filament\Pages\AccessAssignments;
 use App\Filament\Pages\BackgroundProcessing;
+use App\Filament\Pages\ClassRecords;
 use App\Filament\Pages\DepartmentReport;
 use App\Filament\Pages\EvaluationResults;
 use App\Filament\Pages\IndividualEvaluationCopies;
 use App\Filament\Pages\ManageSetting;
 use App\Filament\Pages\MyEvaluationResults;
+use App\Filament\Pages\MyQuizzes;
 use App\Filament\Pages\SupervisorEvaluations;
 use App\Filament\Pages\SystemHealth;
 use App\Filament\Resources\AcademicStudentResource;
 use App\Filament\Resources\CampusResource;
 use App\Filament\Resources\CourseResource;
 use App\Filament\Resources\DepartmentResource;
+use App\Filament\Resources\QuizResource;
 use App\Filament\Resources\RoleResource;
 use App\Filament\Resources\SchoolYearResource;
 use App\Filament\Resources\SectionResource;
 use App\Filament\Resources\UserResource;
+use App\Models\User;
+use Spatie\Permission\Models\Permission;
 
 it('keeps personal staff work together in My Work', function () {
     expect(SupervisorEvaluations::getNavigationGroup())->toBe('My Work')
@@ -53,4 +58,20 @@ it('keeps every evaluation report in the Evaluation Reports group, faculty resul
         ->and(EvaluationResults::getNavigationSort())->toBe(1)
         ->and(IndividualEvaluationCopies::getNavigationGroup())->toBe('Evaluation Reports')
         ->and(DepartmentReport::getNavigationGroup())->toBe('Evaluation Reports');
+});
+
+it('hides the assessment menu items unless assessments are turned on', function () {
+    $admin = User::factory()->create(['is_student' => false]);
+    $admin->givePermissionTo(Permission::findOrCreate('view_any_quiz', 'web'));
+    $this->actingAs($admin);
+    $student = User::factory()->create(['is_student' => true]);
+
+    expect(QuizResource::shouldRegisterNavigation())->toBeFalse()
+        ->and(ClassRecords::shouldRegisterNavigation())->toBeFalse();
+    $this->actingAs($student);
+    expect(MyQuizzes::shouldRegisterNavigation())->toBeFalse();
+
+    config(['classroom.show_assessments' => true]);
+    $this->actingAs($admin);
+    expect(QuizResource::shouldRegisterNavigation())->toBeTrue();
 });

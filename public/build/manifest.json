@@ -4,7 +4,7 @@
     "name": "vendor"
   },
   "resources/css/app.css": {
-    "file": "assets/css/app-FDGyGsNt.css",
+    "file": "assets/css/app-B__R_VCb.css",
     "src": "resources/css/app.css",
     "isEntry": true,
     "name": "app",
@@ -13,7 +13,7 @@
     ]
   },
   "resources/css/filament/admin/theme.css": {
-    "file": "assets/css/theme-MApM0JRr.css",
+    "file": "assets/css/theme-DoOqelmL.css",
     "src": "resources/css/filament/admin/theme.css",
     "isEntry": true,
     "name": "theme",
@@ -28,7 +28,7 @@
     "isEntry": true
   },
   "resources/js/live-updates.js": {
-    "file": "assets/js/live-updates-Btu4OOXd.js",
+    "file": "assets/js/live-updates-CnSqI8Ap.js",
     "name": "live-updates",
     "src": "resources/js/live-updates.js",
     "isEntry": true,
@@ -37,7 +37,7 @@
     ]
   },
   "resources/js/workspace-drafts.js": {
-    "file": "assets/js/workspace-drafts-zZHDXaWA.js",
+    "file": "assets/js/workspace-drafts-BtwoiEpb.js",
     "name": "workspace-drafts",
     "src": "resources/js/workspace-drafts.js",
     "isEntry": true

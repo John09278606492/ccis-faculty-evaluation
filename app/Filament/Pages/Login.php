@@ -176,7 +176,8 @@ class Login extends BaseLogin
     protected function getLoginFormComponent(): Component
     {
         return TextInput::make('login')
-            ->label(fn () => $this->showPasswordField ? 'Email or Student ID' : 'Student ID Number')
+            // Staff sign in by email; student accounts are refused here and use the Student access tab.
+            ->label(fn () => $this->showPasswordField ? 'Email' : 'Student ID Number')
             ->required()
             ->disabled(fn () => ! $this->showPasswordField && $this->studentIdentifier !== null)
             ->autocomplete()

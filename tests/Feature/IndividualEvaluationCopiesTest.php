@@ -186,6 +186,16 @@ it('counts only authorized teaching departments and blocks unrelated instructor 
     Livewire::test(IndividualEvaluationCopies::class, ['faculty' => $faculty->id])->assertNotFound();
 });
 
+it('has no identity Excel export even for identity-reveal permission holders', function () {
+    Filament::setCurrentPanel(Filament::getPanel('admin'));
+    Filament::setTenant($this->campus, isQuiet: true);
+    $this->staff->givePermissionTo(Permission::findOrCreate('view_evaluator_identity_form', 'web'));
+    Livewire::test(IndividualEvaluationCopies::class, ['faculty' => $this->assignment->user_id])
+        ->assertTableActionDoesNotExist('exportWithIdentity')
+        ->assertDontSee('Export with Identity');
+    expect(method_exists(IndividualEvaluationCopies::class, 'exportWithIdentity'))->toBeFalse()
+        ->and(method_exists(EvaluationCopies::class, 'identityRows'))->toBeFalse();
+});
 it('recalculates grouped counts when the academic period filter changes', function () {
     $period = $this->assignment->semester->replicate();
     $period->name = 'Another term';

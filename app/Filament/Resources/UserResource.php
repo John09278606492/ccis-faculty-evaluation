@@ -123,8 +123,12 @@ class UserResource extends Resource
                         Placeholder::make('registrar_id')->label('Source Faculty ID')
                             ->visible(fn (?User $record) => $record && FacultySourceLink::where('campus_id', filament()->getTenant()->id)->where('user_id', $record->id)->exists())
                             ->content(fn (?User $record) => FacultySourceLink::where('campus_id', filament()->getTenant()->id)->where('user_id', $record?->id)->pluck('external_id')->join(', ')),
+                        // Stored passwords are hashed and can never be shown; the eye only reveals what is typed here.
+                        // new-password stops the browser filling the admin's own saved password into this field.
                         TextInput::make('password')
-                            ->password()
+                            ->label(fn (string $operation): string => $operation === 'create' ? 'Password' : 'New Password')
+                            ->password()->revealable()->autocomplete('new-password')
+                            ->helperText(fn (string $operation): ?string => $operation === 'create' ? null : 'Leave empty to keep the current password. Saved passwords cannot be viewed; type a new one here or use Issue Temporary Password.')
                             ->required(fn (string $operation): bool => $operation === 'create')
                             ->dehydrated(fn (?string $state): bool => filled($state))
                             ->maxLength(255),
@@ -306,7 +310,8 @@ class UserResource extends Resource
                         ->action(function (User $record) {
                             abort_unless(static::canEdit($record), 403);
                             $password = Str::password(18);
-                            $record->update(['password' => $password, 'must_change_password' => true]);
+                            // must_change_password is guarded (not $fillable), so update() silently drops it; forceFill makes the one-time flag stick.
+                            $record->forceFill(['password' => $password, 'must_change_password' => true])->save();
                             Notification::make()->title('Temporary password: '.$password)->body('For '.$record->name.'. Copy it now; it will not be displayed again.')->success()->persistent()->send();
                         }),
                     Action::make('newPin')

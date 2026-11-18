@@ -99,6 +99,12 @@ class EvaluationCycles
             $errors[] = 'Choose a complete Annex B instrument with rating criteria.';
         }
         $allHeads = $cycle->assignments->whereNotNull('course_id')->flatMap(fn ($class) => $class->supervisorEvaluators)->unique('id');
+        // The department chairperson rates every faculty teaching here except themself, without being selected per class.
+        $chair = $cycle->department?->chairperson;
+        $chairValid = $chair && ! $chair->isStudent() && $chair->roles()->exists() && $chair->campuses()->whereKey($cycle->campus_id)->exists();
+        if ($chairValid && $cycle->assignments->whereNotNull('course_id')->contains(fn ($class) => (int) $class->user_id !== (int) $chair->id)) {
+            $allHeads = $allHeads->push($chair)->unique('id');
+        }
         foreach ($allHeads as $head) {
             if ($head->isStudent() || ! $head->roles()->exists() || ! $head->campuses()->whereKey($cycle->campus_id)->exists()) {
                 $errors[] = 'An assigned supervisor has no valid staff membership in this campus.';
@@ -118,11 +124,12 @@ class EvaluationCycles
             if ($class->students->isEmpty()) {
                 $errors[] = 'Assign evaluators to '.$class->display_name.'.';
             }
-            if (! $class->supervisorEvaluators->contains(fn ($head) => $head->id !== $class->user_id && ! $head->isStudent() && $head->roles()->exists() && $head->campuses()->whereKey($cycle->campus_id)->exists())) {
+            if (! ($chairValid && (int) $chair->id !== (int) $class->user_id)
+                && ! $class->supervisorEvaluators->contains(fn ($head) => $head->id !== $class->user_id && ! $head->isStudent() && $head->roles()->exists() && $head->campuses()->whereKey($cycle->campus_id)->exists())) {
                 $errors[] = 'Select a supervisor evaluator other than the faculty evaluated in '.$class->display_name.'. '
-                    .((int) $cycle->department?->supervisor_id === (int) $class->user_id
-                        ? 'The department supervisor teaches this class and cannot evaluate themselves. Choose another supervisor under Teaching Classes.'
-                        : 'Use Department Supervisor to fill missing choices in bulk, or select supervisors under Teaching Classes.');
+                    .((int) $cycle->department?->chairperson_id === (int) $class->user_id
+                        ? 'The chairperson teaches this class and cannot evaluate themselves. Choose another supervisor under Teaching Classes.'
+                        : 'Use Chairperson to fill missing choices in bulk, or select supervisors under Teaching Classes.');
             }
             if ($class->formSubmissions()->exists() && $class->form_id !== $cycle->student_form_id) {
                 $errors[] = 'Existing responses in '.$class->display_name.' require retaining the original instrument.';
@@ -155,6 +162,9 @@ class EvaluationCycles
             $heads = $cycle->assignments()->whereNotNull('course_id')->with('supervisorEvaluators')->get()->flatMap(fn ($class) => $class->supervisorEvaluators)->unique('id');
             foreach ($heads as $head) {
                 app(SupervisorEvaluationAssignments::class)->prepare($head, $cycle->campus, $cycle);
+            }
+            if ($cycle->department?->chairperson) {
+                app(SupervisorEvaluationAssignments::class)->prepareChairperson($cycle->department->chairperson, $cycle->campus, $cycle->semester_id);
             }
         });
     }
