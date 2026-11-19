@@ -81,6 +81,7 @@ class EvaluationController extends Controller
         $formFields = $form->fields()->where('type', '!=', 'section_header')->orderBy('order')->get();
         $validated = $request->validate($this->validationRules($form, $formFields), [
             'overall_comment.required' => 'An overall comment is required.',
+            'overall_comment.not_regex' => 'Please use text only. Emojis are not allowed in evaluation comments.',
         ]);
 
         $fingerprint = $this->identity->fingerprint($courseOffering, $request, $request->user());
@@ -193,7 +194,7 @@ class EvaluationController extends Controller
         $allowedKeys = $fieldNames === [] ? 'array' : 'array:'.implode(',', $fieldNames);
         $rules = [
             'fields' => ['sometimes', $allowedKeys],
-            'overall_comment' => ['nullable', 'string', 'max:5000'],
+            'overall_comment' => ['nullable', 'string', 'max:5000', 'not_regex:'.\App\Services\EvaluationCommentText::EMOJI_PATTERN],
         ];
 
         $scoringConfig = $form->scoring_config ?? [];

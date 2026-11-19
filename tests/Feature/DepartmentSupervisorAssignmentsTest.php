@@ -39,7 +39,7 @@ beforeEach(function () {
     $this->extra = User::factory()->create(['is_student' => false]);
     $this->extra->assignRole('supervisor');
     $this->extra->campuses()->attach($this->campus);
-    $this->department->update(['supervisor_id' => $this->head->id]);
+    $this->department->update(['chairperson_id' => $this->head->id]);
     $this->actingAs($this->actor);
     Filament::setCurrentPanel(Filament::getPanel('admin'));
     Filament::setTenant($this->campus, isQuiet: true);
@@ -81,9 +81,9 @@ it('uses the teaching department for visiting faculty and skips self evaluations
 it('rejects other campuses departments outside access students and changed department defaults', function () {
     $foreign = Campus::create(['name' => 'Foreign', 'slug' => 'foreign', 'is_active' => true]);
     expect(fn () => $this->bulk->apply($this->actor, $foreign, $this->payload))->toThrow(HttpException::class);
-    $this->department->update(['supervisor_id' => $this->extra->id]);
+    $this->department->update(['chairperson_id' => $this->extra->id]);
     expect(fn () => $this->bulk->apply($this->actor, $this->campus, $this->payload))->toThrow(ValidationException::class);
-    $this->department->update(['supervisor_id' => $this->head->id]);
+    $this->department->update(['chairperson_id' => $this->head->id]);
     $this->actor->removeRole('super_admin');
     expect(fn () => $this->bulk->apply($this->actor, $this->campus, $this->payload))->toThrow(HttpException::class);
     expect($this->bulk->allowed($this->student, $this->campus))->toBeFalse();
@@ -91,7 +91,7 @@ it('rejects other campuses departments outside access students and changed depar
 
 it('rechecks a queued assignment when the department supervisor changes before execution', function () {
     $task = $this->bulk->enqueue($this->actor, $this->campus, $this->department->id, $this->class->semester_id);
-    $this->department->update(['supervisor_id' => $this->extra->id]);
+    $this->department->update(['chairperson_id' => $this->extra->id]);
     app(BackgroundTasks::class)->run($task->id);
     expect($task->fresh()->status)->toBe('failed')->and($this->class->supervisorEvaluators()->count())->toBe(0);
 });
@@ -110,7 +110,7 @@ it('preserves supervisors from other departments even when their accounts are ou
 
 it('queues missing supervisor assignment when saving department leadership with bulk enabled', function () {
     Livewire::test(EditDepartment::class, ['record' => $this->department->id])
-        ->fillForm(['supervisor_id' => $this->extra->id, 'fill_missing_supervisors' => true, 'supervisor_academic_period' => $this->class->semester_id])
+        ->fillForm(['chairperson_id' => $this->extra->id, 'fill_missing_supervisors' => true, 'supervisor_academic_period' => $this->class->semester_id])
         ->call('save')->assertHasNoFormErrors();
     $task = BackgroundTask::where('kind', 'supervisor-bulk')->sole();
     expect($task->payload['supervisor_id'])->toBe($this->extra->id)->and($this->class->supervisorEvaluators()->count())->toBe(0);
@@ -129,10 +129,20 @@ it('fixes cycle readiness in the background and creates working Annex B tasks on
     $task = BackgroundTask::where('kind', 'supervisor-bulk')->sole();
     app(BackgroundTasks::class)->run($task->id);
     expect($task->fresh()->status)->toBe('completed', $task->fresh()->error ?? '')->and($service->readiness($cycle->fresh())['errors'])->toBe([]);
-    Livewire::test(EditEvaluationCycle::class, ['record' => $cycle->id])->mountAction('review')->assertSee('Use Department Supervisor');
+    Livewire::test(EditEvaluationCycle::class, ['record' => $cycle->id])->mountAction('review')->assertSee('Use Chairperson');
     $service->publish($this->actor, $cycle->fresh());
     $annexB = $cycle->assignments()->where('evaluation_type', 'SEF')->sole();
     expect(app(FacultySupervisorEvaluators::class)->taskIds($this->head, $this->campus)->where('task.id', $annexB->id)->exists())->toBeTrue();
     $this->actingAs($this->head)->get(route('evaluate.course-offering', $annexB))->assertOk();
     $this->actingAs($this->student)->get(route('evaluate.course-offering', $this->class))->assertOk();
+});
+
+it('uses the chairperson rather than the dean and leaves missing chairperson assignments pending', function () {
+    $this->department->update(['supervisor_id' => $this->extra->id, 'chairperson_id' => null]);
+    expect(fn () => $this->bulk->enqueue($this->actor, $this->campus, $this->department->id, $this->class->semester_id))->toThrow(ValidationException::class);
+    expect($this->class->supervisorEvaluators()->count())->toBe(0);
+    $this->department->update(['chairperson_id' => $this->head->id]);
+    $this->class->update(['user_id' => $this->extra->id]);
+    $this->bulk->apply($this->actor, $this->campus, $this->payload);
+    expect($this->class->supervisorEvaluators()->pluck('users.id')->all())->toBe([$this->head->id]);
 });

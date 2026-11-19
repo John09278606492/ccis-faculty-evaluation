@@ -120,9 +120,9 @@ class EvaluationCycles
             }
             if (! $class->supervisorEvaluators->contains(fn ($head) => $head->id !== $class->user_id && ! $head->isStudent() && $head->roles()->exists() && $head->campuses()->whereKey($cycle->campus_id)->exists())) {
                 $errors[] = 'Select a supervisor evaluator other than the faculty evaluated in '.$class->display_name.'. '
-                    .((int) $cycle->department?->supervisor_id === (int) $class->user_id
-                        ? 'The department supervisor teaches this class and cannot evaluate themselves. Choose another supervisor under Teaching Classes.'
-                        : 'Use Department Supervisor to fill missing choices in bulk, or select supervisors under Teaching Classes.');
+                    .((int) $cycle->department?->chairperson_id === (int) $class->user_id
+                        ? 'The chairperson teaches this class and cannot evaluate themselves. Choose another supervisor under Teaching Classes.'
+                        : 'Use Chairperson to fill missing choices in bulk, or select supervisors under Teaching Classes.');
             }
             if ($class->formSubmissions()->exists() && $class->form_id !== $cycle->student_form_id) {
                 $errors[] = 'Existing responses in '.$class->display_name.' require retaining the original instrument.';

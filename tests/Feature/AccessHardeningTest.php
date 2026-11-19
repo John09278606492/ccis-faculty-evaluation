@@ -5,6 +5,7 @@ use App\Filament\Resources\FormResource\Pages\EditForm;
 use App\Filament\Resources\FormResource\RelationManagers\SubmissionsRelationManager;
 use App\Filament\Resources\UserResource;
 use App\Filament\Resources\UserResource\Pages\EditUser;
+use App\Filament\Resources\UserResource\Pages\ListUsers;
 use App\Http\Middleware\ScopeAssignedData;
 use App\Models\Campus;
 use App\Models\CourseOffering;
@@ -17,6 +18,7 @@ use App\Services\AssignedDataAccess;
 use App\Services\ScopedAccountImport;
 use App\Services\UserAccessAdministration;
 use Filament\Facades\Filament;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -79,6 +81,24 @@ it('rechecks import scope without a Filament tenant and never adopts a foreign a
     expect(fn () => $service->resolve($this->actor, $options, 'instructor', ['employee_id' => 'NEW-123', 'email' => 'new@example.test']))->toThrow(HttpException::class);
 });
 
+it('forces a password change when issuing a temporary password', function () {
+    $subject = User::factory()->create(['is_student' => false, 'instructor_department_id' => $this->actor->instructor_department_id,
+        'password' => 'Original-pass-123', 'first_name' => 'Temp', 'last_name' => 'Target']);
+    $subject->campuses()->attach($this->campus);
+
+    $previous = Model::preventsLazyLoading();
+    Model::preventLazyLoading(false);
+    try {
+        Livewire::test(ListUsers::class)->callTableAction('issueTemporaryPassword', $subject)->assertHasNoTableActionErrors();
+    } finally {
+        Model::preventLazyLoading($previous);
+    }
+
+    $fresh = $subject->fresh();
+    expect($fresh->must_change_password)->toBeTrue()
+        ->and(Hash::check('Original-pass-123', $fresh->password))->toBeFalse();
+});
+
 it('denies another departments direct form preview', function () {
     $other = Department::create(['name' => 'Other', 'code' => 'OTHER', 'campus_id' => $this->campus->id, 'is_active' => true]);
     $form = Form::create(['name' => 'Restricted Form', 'slug' => 'restricted-form', 'is_active' => true]);
@@ -130,6 +150,19 @@ it('preserves protected global profile roles while editing delegated campus role
         ->fillForm(['first_name' => 'Updated', 'last_name' => 'Staff'])->call('save')->assertHasNoFormErrors();
     expect($subject->fresh()->hasRole('instructor'))->toBeTrue();
     expect($subject->fresh()->hasRole('local_form_reviewer'))->toBeTrue();
+});
+
+it('keeps the stored password unless a new one is typed and blocks browser autofill', function () {
+    $subject = User::factory()->create(['is_student' => false, 'instructor_department_id' => $this->actor->instructor_department_id, 'password' => 'Original-pass-123', 'first_name' => 'Pass', 'last_name' => 'Keeper']);
+    $subject->campuses()->attach($this->campus);
+    Livewire::test(EditUser::class, ['record' => $subject->id])
+        ->assertFormFieldExists('password', fn ($field) => $field->isPasswordRevealable() && $field->getAutocomplete() === 'new-password' && $field->getLabel() === 'New Password')
+        ->assertFormSet(['password' => null])
+        ->fillForm(['first_name' => 'Kept'])->call('save')->assertHasNoFormErrors();
+    expect(Hash::check('Original-pass-123', $subject->fresh()->password))->toBeTrue();
+    Livewire::test(EditUser::class, ['record' => $subject->id])
+        ->fillForm(['password' => 'Changed-pass-456'])->call('save')->assertHasNoFormErrors();
+    expect(Hash::check('Changed-pass-456', $subject->fresh()->password))->toBeTrue();
 });
 
 it('shows effective access and records explicit department assignments in the admin page', function () {

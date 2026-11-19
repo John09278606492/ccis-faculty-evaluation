@@ -9,6 +9,7 @@ use App\Models\FormSubmission;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 class ReportService
 {
@@ -40,6 +41,9 @@ class ReportService
             ->when($context['semester_id'] ?? null, fn ($q, $id) => $q->where('semester_id', $id))
             ->when($context['form_id'] ?? null, fn ($q, $id) => $q->where('form_id', $id))
             ->when($context['department_id'] ?? null, fn ($q, $id) => $q->where(fn ($q) => $q->where('teaching_department_id', $id)
+                ->when(auth()->user() && Department::withoutGlobalScope('assigned_data')->whereKey($id)
+                    ->where(fn ($q) => $q->where('chairperson_id', auth()->id())->orWhere('supervisor_id', auth()->id()))->exists(),
+                    fn ($q) => $q->orWhereHas('evaluatee', fn ($q) => $q->where('instructor_department_id', $id)))
                 ->orWhere(fn ($q) => $q->whereNull('teaching_department_id')->where(fn ($q) => $q->whereHas('course', fn ($q) => $q->where('department_id', $id))
                     ->orWhere(fn ($q) => $q->whereNull('course_id')->whereHas('evaluatee', fn ($q) => $q->where('instructor_department_id', $id)))))))
             ->when($context['evaluation_cycle_id'] ?? null, fn ($q, $id) => $q->where('evaluation_cycle_id', $id));
@@ -90,7 +94,7 @@ class ReportService
             ->with(['teachingDepartment', 'course.department', 'semester.schoolYear', 'evaluationForm.fields', 'formSubmissions', 'students' => fn ($q) => $q->withTrashed()])
             ->withCount(['students' => fn ($q) => $q->withTrashed(), 'formSubmissions' => fn ($q) => $q->whereColumn('form_submissions.form_id', 'course_offerings.form_id')])->get();
         if (auth()->id() === $evaluatee->id) {
-            $offerings = $offerings->filter(fn ($co) => EvaluationResultsRelease::isReleased($co));
+            $offerings = $offerings->filter(fn ($co) => EvaluationResultsRelease::canSeeScores(auth()->user(), $co));
         }
         if (! empty($context['evaluation_type'])) {
             $offerings = $offerings->filter(fn ($co) => app(EvaluationScoring::class)->instrument($co) === $context['evaluation_type']);
@@ -103,14 +107,9 @@ class ReportService
             if (app(EvaluationScoring::class)->instrument($co) !== 'SET') {
                 continue;
             }
-            $enrolled += $co->students->count();
-            $fingerprints = $submissions->pluck('submission_fingerprint')->filter()->flip();
-            $legacy = $submissions->pluck('user_id')->filter()->flip();
-            foreach ($co->students as $student) {
-                if ($fingerprints->has(app(EvaluationSubmissionIdentity::class)->fingerprint($co, request(), $student)) || $legacy->has($student->id)) {
-                    $completed++;
-                }
-            }
+            $completion = $this->assignmentCompletion($co);
+            $enrolled += $completion['expected'];
+            $completed += $completion['completed'];
         }
         $instruments = app(EvaluationScoring::class)->instruments($rows);
         $ratedTypes = collect($instruments)->filter(fn ($row) => $row['count'] > 0);
@@ -124,16 +123,21 @@ class ReportService
 
     public function assignmentCompletion(CourseOffering $assignment): array
     {
-        $assignment->loadMissing('historicalStudents', 'evaluationForm');
+        $assignment->loadMissing('evaluationForm');
         if (app(EvaluationScoring::class)->instrument($assignment) !== 'SET') {
             return ['expected' => 0, 'completed' => 0, 'percentage' => null];
         }
-        $submissions = $assignment->formSubmissions()->where('form_id', $assignment->form_id)->get(['id', 'submission_fingerprint', 'user_id']);
+        $submissions = $assignment->relationLoaded('formSubmissions')
+            ? $assignment->formSubmissions->where('form_id', $assignment->form_id)
+            : $assignment->formSubmissions()->where('form_id', $assignment->form_id)->get(['id', 'submission_fingerprint', 'user_id']);
         $fingerprints = $submissions->pluck('submission_fingerprint')->filter()->flip();
         $legacy = $submissions->pluck('user_id')->filter()->flip();
-        $completed = $assignment->historicalStudents->filter(fn ($student) => $legacy->has($student->id)
-            || $fingerprints->has(app(EvaluationSubmissionIdentity::class)->fingerprint($assignment, request(), $student)))->count();
-        $expected = $assignment->historicalStudents->count();
+        // Count the authorized class roster, not the viewer's accessible student accounts.
+        // This includes historical/deleted accounts without exposing names or expanding student access.
+        $ids = DB::table('course_offering_student')->where('course_offering_id', $assignment->id)->distinct()->pluck('user_id');
+        $completed = $ids->filter(fn ($id) => $legacy->has($id)
+            || $fingerprints->has(app(EvaluationSubmissionIdentity::class)->forUser($assignment, (int) $id)))->count();
+        $expected = $ids->count();
 
         return ['expected' => $expected, 'completed' => $completed, 'percentage' => $expected ? round($completed / $expected * 100, 1) : null];
     }
@@ -186,6 +190,27 @@ class ReportService
         }
 
         return ['field_comments' => $fieldComments, 'overall_comments' => $overallComments];
+    }
+
+    /**
+     * Drop blank and placeholder non-comments ("N/A", "none", "wala", empty, punctuation-only) from a list.
+     * This only curates what a comments summary displays; it never edits or hides a genuine comment.
+     *
+     * @param  array<int, mixed>  $comments
+     * @return array<int, string>
+     */
+    public function meaningfulComments(array $comments): array
+    {
+        $placeholders = ['', 'n/a', 'na', 'none', 'wala', 'no comment', 'no comments', 'nothing', 'nada'];
+
+        return array_values(array_filter($comments, function ($comment) use ($placeholders) {
+            if (! is_string($comment)) {
+                return false;
+            }
+            $normalized = trim(mb_strtolower($comment), " \t\n\r\0\x0B.!-");
+
+            return $normalized !== '' && ! in_array($normalized, $placeholders, true) && preg_match('/[\p{L}\p{N}]/u', $comment);
+        }));
     }
 
     public function getDepartmentSummary(Department $department, ?int $semesterId = null): array

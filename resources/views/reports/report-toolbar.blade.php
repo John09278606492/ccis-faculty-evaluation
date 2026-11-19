@@ -1,6 +1,10 @@
 <div class="toolbar" style="gap:12px;flex-wrap:wrap">
     <div><strong>{{ $annex === 'C' ? 'Faculty Evaluation Report' : 'Development Acknowledgement' }}</strong></div>
     <button type="button" onclick="window.print()">Print / Save PDF</button>
+    @if($annex === 'C')
+        <button type="button" id="placeholder-toggle" class="no-print" aria-pressed="false">Show N/A, None &amp; empty responses</button>
+        <span class="no-print" id="comment-visibility-count" style="font-size:12px" aria-live="polite"></span>
+    @endif
 </div>
 <p class="no-print" style="margin:0;padding:6px 24px;background:white;font-size:12px;color:#536273">Print: A4 · Portrait · 100% scale. Browser headers and footers are hidden automatically in current Chrome and Edge.</p>
 <script>

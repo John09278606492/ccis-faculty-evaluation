@@ -13,6 +13,43 @@ use Illuminate\Support\Facades\DB;
 
 class StudentEvaluationProgress
 {
+    public function students(User $actor, Campus $campus, ?array $departments = null): Builder
+    {
+        abort_unless(! $actor->isStudent() && $actor->canAccessTenant($campus) && $actor->can('page_StudentEvaluationProgress'), 403);
+        $existing = app(AcademicStudents::class)->students($actor, $campus)->select('users.id');
+        $classes = $this->scopeAssignments(app(AssignedDataAccess::class)->apply(CourseOffering::query(), $actor, $campus), $campus, $departments)->select('course_offerings.id');
+
+        return User::withoutGlobalScope('assigned_data')->where('is_student', true)->whereHas('campuses', fn ($q) => $q->whereKey($campus->id))
+            ->where(fn ($q) => $q->whereIn('users.id', $existing)->orWhereIn('users.id', DB::table('course_offering_student')->select('user_id')->whereIn('course_offering_id', $classes)));
+    }
+
+    public function sections(User $actor, Campus $campus, ?array $departments = null): Builder
+    {
+        abort_unless(! $actor->isStudent() && $actor->canAccessTenant($campus) && $actor->can('page_StudentEvaluationProgress'), 403);
+        $own = app(AssignedDataAccess::class)->apply(AcademicSection::query(), $actor, $campus)
+            ->when($departments !== null, fn ($q) => $q->whereIn('department_id', $departments))->select('academic_sections.id');
+        $classes = $this->scopeAssignments(app(AssignedDataAccess::class)->apply(CourseOffering::query(), $actor, $campus), $campus, $departments)->get(['id', 'semester_id', 'section', 'evaluator_selection']);
+        $labels = [];
+        foreach ($classes as $class) {
+            $names = [$class->section, ...array_values($class->evaluator_selection['report_sections'] ?? [])];
+            foreach ($class->evaluator_selection['sections'] ?? [] as $key) {
+                $parts = explode('~', $key);
+                if (count($parts) === 3) $names[] = rawurldecode($parts[2]);
+            }
+            $labels[$class->semester_id] = array_unique([...($labels[$class->semester_id] ?? []), ...array_filter($names)]);
+        }
+
+        return AcademicSection::withoutGlobalScope('assigned_data')->whereIn('department_id', DB::table('departments')->select('id')->where('campus_id', $campus->id))
+            ->where(fn ($q) => $q->whereIn('academic_sections.id', $own)->orWhere(function ($q) use ($labels, $classes) {
+                $q->whereIn('academic_sections.id', DB::table('student_section_memberships')->select('academic_section_id')
+                    ->whereIn('user_id', DB::table('course_offering_student')->select('user_id')->whereIn('course_offering_id', $classes->modelKeys())))
+                    ->where(function ($q) use ($labels) {
+                        $q->whereRaw('1 = 0');
+                        foreach ($labels as $semester => $names) $q->orWhere(fn ($q) => $q->where('semester_id', $semester)->whereIn('name', $names));
+                    });
+            }));
+    }
+
     private function emptyProgress(): array
     {
         return ['completed' => 0, 'total' => 0, 'remaining' => 0, 'open_pending' => 0, 'not_open' => 0, 'closed_pending' => 0, 'unavailable' => 0];
@@ -37,20 +74,19 @@ class StudentEvaluationProgress
         abort_unless(! $actor->isStudent() && $actor->canAccessTenant($campus) && $actor->can('page_StudentEvaluationProgress'), 403);
         $allowed = $this->departmentIds($actor, $campus);
         $departmentIds = $departmentIds === null ? $allowed : ($allowed === null ? $departmentIds : array_values(array_intersect($departmentIds, $allowed)));
-        $sections = app(AssignedDataAccess::class)->apply(AcademicSection::query(), $actor, $campus)->whereKey($sectionIds)
-            ->when($departmentIds !== null, fn ($q) => $q->whereIn('department_id', $departmentIds))->get();
+        $sections = $this->sections($actor, $campus, $departmentIds)->whereKey($sectionIds)->get();
         if ($sections->isEmpty()) {
             return [];
         }
         $memberships = DB::table('student_section_memberships')->whereIn('academic_section_id', $sections->modelKeys())->get(['academic_section_id', 'user_id']);
-        $studentQuery = app(AcademicStudents::class)->students($actor, $campus)
+        $studentQuery = $this->students($actor, $campus, $departmentIds)
             ->whereHas('campuses', fn ($q) => $q->whereKey($campus->id))
             ->whereIn('users.id', DB::table('student_section_memberships')->whereIn('academic_section_id', $sections->modelKeys())->select('user_id'));
         $students = (clone $studentQuery)->with('roles')->get()->keyBy('id');
         $perStudent = [];
         $assignments = $this->scopeAssignments(CourseOffering::query(), $campus, $departmentIds)
             ->whereIn('semester_id', $sections->pluck('semester_id')->unique())
-            ->whereHas('students', fn ($q) => $q->whereIn('users.id', (clone $studentQuery)->select('users.id')))
+            ->whereHas('students', fn ($q) => $q->withoutGlobalScope('assigned_data')->whereIn('users.id', (clone $studentQuery)->select('users.id')))
             ->with(['evaluationForm' => fn ($q) => $q->withCount('submissions'), 'evaluationForm.campuses', 'evaluationForm.departments',
                 'course', 'evaluationCycle', 'semester.schoolYear', 'evaluatee.instructorDepartment'])->get();
         $enrolments = $completedUsers = $completedFingerprints = [];
@@ -125,12 +161,12 @@ class StudentEvaluationProgress
     public function openPendingCounts(Campus $campus, array $userIds, ?int $semesterId = null, ?array $departmentIds = null): array
     {
         $counts = [];
-        $students = User::whereKey($userIds)->with('roles')->get()->keyBy('id');
+        $students = $this->students(auth()->user(), $campus, $departmentIds)->whereKey($userIds)->with('roles')->get()->keyBy('id');
         $identity = app(EvaluationSubmissionIdentity::class);
         foreach (array_chunk($students->keys()->all(), 400) as $chunk) {
             $classes = $this->scopeAssignments(CourseOffering::query(), $campus, $departmentIds)
                 ->when($semesterId, fn ($q) => $q->where('semester_id', $semesterId))
-                ->whereHas('students', fn ($q) => $q->whereIn('users.id', $chunk))
+                ->whereHas('students', fn ($q) => $q->withoutGlobalScope('assigned_data')->whereIn('users.id', $chunk))
                 ->with(['evaluationForm.campuses', 'evaluationForm.departments', 'course', 'evaluationCycle', 'semester.schoolYear', 'evaluatee.instructorDepartment'])->get()
                 ->filter(function (CourseOffering $class) use ($campus) {
                     $form = $class->evaluationForm;
@@ -175,7 +211,12 @@ class StudentEvaluationProgress
         return $query->where('is_active', true)->whereNotNull('form_id')
             ->whereHas('semester.schoolYear', fn ($q) => $q->where('campus_id', $campus->id))
             ->when($departmentIds !== null, fn ($q) => $q->where(function ($q) use ($departmentIds) {
-                $q->whereIn('teaching_department_id', $departmentIds)->orWhere(function ($q) use ($departmentIds) {
+                if (auth()->user() && auth()->user()->can('page_StudentEvaluationProgress')) {
+                    $heads = DB::table('departments')->select('id')->whereIn('id', $departmentIds)
+                        ->where(fn ($q) => $q->where('chairperson_id', auth()->id())->orWhere('supervisor_id', auth()->id()));
+                    $q->orWhereHas('evaluatee', fn ($q) => $q->where('is_instructor', true)->where('is_student', false)->whereIn('instructor_department_id', $heads));
+                }
+                $q->orWhereIn('teaching_department_id', $departmentIds)->orWhere(function ($q) use ($departmentIds) {
                     $q->whereNull('teaching_department_id')->where(fn ($q) => $q->whereHas('course', fn ($q) => $q->whereIn('department_id', $departmentIds))
                         ->orWhere(fn ($q) => $q->whereNull('course_id')->whereHas('evaluatee', fn ($q) => $q->whereIn('instructor_department_id', $departmentIds))));
                 });

@@ -14,7 +14,7 @@ trait QueuesDepartmentSupervisors
 
     protected function prepareDepartmentSupervisorBulk(array $data): array
     {
-        $this->fillMissingSupervisors = ! empty($data['fill_missing_supervisors']) && ! empty($data['supervisor_id']);
+        $this->fillMissingSupervisors = ! empty($data['fill_missing_supervisors']) && ! empty($data['chairperson_id']);
         $this->supervisorAcademicPeriod = isset($data['supervisor_academic_period']) ? (int) $data['supervisor_academic_period'] : null;
         if ($this->fillMissingSupervisors) {
             abort_unless(app(DepartmentSupervisorAssignments::class)->allowed(auth()->user(), filament()->getTenant()), 403);

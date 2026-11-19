@@ -53,6 +53,25 @@ beforeEach(function () {
     Filament::setTenant($this->campus, isQuiet: true);
 });
 
+it('shows supervised sections and students teaching outside their home department without exposing unrelated members', function (string $leadership) {
+    $home = Department::create(['campus_id' => $this->campus->id, 'name' => 'GenEd', 'code' => 'GENED', 'is_active' => true]);
+    $this->department->update(['chairperson_id' => null]);
+    $home->update([$leadership => $this->head->id]);
+    $this->offering->evaluatee->update(['instructor_department_id' => $home->id]);
+    $this->offering->evaluatee->campuses()->syncWithoutDetaching([$this->campus->id]);
+    $this->offering->update(['teaching_department_id' => $this->department->id, 'section' => $this->section->name]);
+    app(App\Services\AssignedDataAccess::class)->actor = $this->head;
+    $service = app(Progress::class);
+    expect($service->students($this->head, $this->campus, [$home->id])->pluck('users.id')->all())->toContain($this->student->id, $this->pending->id)->not->toContain($this->unassigned->id);
+    $summaries = $service->sectionSummaries($this->head, $this->campus, [$this->section->id], [$home->id]);
+    expect($summaries[$this->section->id])->toMatchArray(['students' => 2, 'completed' => 1, 'total' => 2, 'completion_rate' => 50.0]);
+    expect($service->summary($this->student, $this->campus, $this->offering->semester_id, [$home->id]))->toMatchArray(['total' => 1, 'completed' => 1]);
+    Livewire::test(StudentEvaluationProgress::class)->filterTable('department', $home->id)
+        ->assertCanSeeTableRecords([$this->student, $this->pending])->assertCanNotSeeTableRecords([$this->unassigned])
+        ->callAction('bySection')->assertCanSeeTableRecords([$this->section])->assertCanNotSeeTableRecords([$this->otherSection])
+        ->assertSee('50% complete')->assertDontSee('PRIVATE-RESPONSE-CONTENT');
+})->with(['chairperson_id', 'supervisor_id']);
+
 it('shows section completion separately from students with no assignments and supports irregular membership', function () {
     $summary = app(Progress::class)->sectionSummaries($this->head, $this->campus, [$this->section->id, $this->otherSection->id]);
     expect($summary[$this->section->id])->toMatchArray(['students' => 3, 'assigned_students' => 2, 'complete_students' => 1,

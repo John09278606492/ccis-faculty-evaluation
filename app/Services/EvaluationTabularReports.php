@@ -26,7 +26,7 @@ class EvaluationTabularReports
             'evaluation_cycle_id' => $filters['cycle'] ?? null, 'evaluation_type' => $filters['instrument'] ?? null];
         $assignments = app(AssignedDataAccess::class)->apply(app(ReportService::class)->offerings($context), $actor, $campus)
             ->where('user_id', $anchor->user_id)->with(['evaluationForm.fields', 'formSubmissions', 'course.department', 'teachingDepartment'])
-            ->orderBy('id')->get()->filter(fn ($assignment) => ! $personal || EvaluationResultsRelease::isReleased($assignment));
+            ->orderBy('id')->get()->filter(fn ($assignment) => ! $personal || EvaluationResultsRelease::canSeeScores($actor, $assignment));
         $reports = collect();
         foreach ($assignments as $assignment) {
             if (! $assignment->evaluationForm) {

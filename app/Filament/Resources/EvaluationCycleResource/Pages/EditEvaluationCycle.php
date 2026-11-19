@@ -65,7 +65,7 @@ class EditEvaluationCycle extends EditRecord
                 ->modalHeading('Review evaluation setup')->modalContent(fn () => view('filament.pages.partials.cycle-readiness', ['cycle' => $this->record, 'readiness' => app(EvaluationCycles::class)->readiness($this->record)]))
                 ->extraModalFooterActions([
                     $this->supervisorGapAction('resolveSupervisorGapsInReview')->cancelParentActions(),
-                    Action::make('departmentSupervisorsInReview')->label('Use Department Supervisor')->color('gray')
+                    Action::make('departmentSupervisorsInReview')->label('Use Chairperson')->color('gray')
                         ->visible(fn () => $this->canUseDepartmentSupervisor())
                         ->action(fn () => $this->queueDepartmentSupervisorAssignments())->cancelParentActions(),
                 ])
@@ -104,10 +104,10 @@ class EditEvaluationCycle extends EditRecord
                     app(EvaluationClassAdditions::class)->enqueue(auth()->user(), filament()->getTenant(), $this->record->id, $data['preview_token'], $data['class_ids'] ?? []);
                     Notification::make()->success()->title('New classes queued')->body('Classes and supervisor tasks will be added in the background. The bell will confirm completion.')->send();
                 }),
-            Action::make('departmentSupervisors')->label('Use Department Supervisor')->icon('heroicon-o-user-group')->color('gray')
+            Action::make('departmentSupervisors')->label('Use Chairperson')->icon('heroicon-o-user-group')->color('gray')
                 ->visible(fn () => $this->canUseDepartmentSupervisor())->requiresConfirmation()
                 ->modalHeading('Fill missing supervisor assignments')
-                ->modalDescription('Adds the saved department supervisor to classes in this evaluation that have no supervisor. Existing choices and additional supervisors are kept. Self-evaluation is skipped.')
+                ->modalDescription('Adds the saved chairperson to classes in this evaluation that have no supervisor. Existing choices and additional supervisors are kept. Self-evaluation is skipped.')
                 ->modalSubmitActionLabel('Fill Missing Supervisors')
                 ->action(fn () => $this->queueDepartmentSupervisorAssignments()),
             ActionGroup::make([
@@ -130,7 +130,7 @@ class EditEvaluationCycle extends EditRecord
 
     protected function canUseDepartmentSupervisor(): bool
     {
-        return $this->record->status === 'draft' && (bool) $this->record->department?->supervisor_id
+        return $this->record->status === 'draft' && (bool) $this->record->department?->chairperson_id
             && app(DepartmentSupervisorAssignments::class)->allowed(auth()->user(), filament()->getTenant());
     }
 

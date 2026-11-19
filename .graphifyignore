@@ -1,0 +1,24 @@
+# Keep live campus data, copies of it and generated files out of the Graphify map.
+# .gitignore is applied too; these add to it.
+output/
+work/
+runtime/
+storage/
+database/*.sqlite*
+*.sqlite
+*.sqlite3
+*.db
+*.xlsx
+*.xls
+*.csv
+.env*
+docs/reviews/
+public/build/
+public/code-runner/
+public/vendor/
+public/js/filament/
+public/css/filament/
+desktop-host/
+node_modules/
+vendor/
+graphify-out/

@@ -171,6 +171,19 @@ it('saves only the overall comment with the answers', function () {
         ->and($submission->data['_overall_comment'])->toBe('Very effective instructor.');
 });
 
+it('rejects emoji comments on the server without saving a submission', function (string $emoji) {
+    ['student' => $student, 'offering' => $offering] = evaluationFixture();
+    $this->actingAs($student)->post(route('evaluate.store', $offering), [
+        'fields' => ['teaching_quality' => 5], 'overall_comment' => 'Salamat Niño '.$emoji,
+    ])->assertSessionHasErrors('overall_comment');
+    expect(FormSubmission::count())->toBe(0);
+})->with(['😊', '🇵🇭', '👍🏽', '👨‍👩‍👧‍👦', '1️⃣']);
+
+it('removes emoji sequences while retaining Bisaya letters punctuation and numbers', function () {
+    expect(\App\Services\EvaluationCommentText::clean('Salamat Niño 😊 🇵🇭 👍🏽 👨‍👩‍👧‍👦 1️⃣ — 99.36%!'))
+        ->toBe('Salamat Niño      — 99.36%!');
+});
+
 it('leaves out a comment the student left blank', function () {
     ['student' => $student, 'offering' => $offering] = evaluationFixture();
 

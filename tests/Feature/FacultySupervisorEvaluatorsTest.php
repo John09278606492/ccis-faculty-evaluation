@@ -264,3 +264,24 @@ it('does not let a dean or chairperson role answer a legacy supervisor evaluatio
     }
     expect(app(EvaluationTemplates::class)->create('B', $campus)->evaluator_roles)->toBe([]);
 });
+
+it('lists pending supervisor tasks before completed tasks after a submission', function () {
+    extract(facultySupervisorFixture());
+    app(FacultySupervisorEvaluators::class)->save($owner, $offering, [$head->id]);
+    $cycles = app(EvaluationCycles::class);
+    $cycle = $cycles->save($owner, $campus, $data);
+    $cycles->publish($owner, $cycle);
+    $done = $cycle->assignments()->where('evaluation_type', 'SEF')->sole();
+    $other = $offering->fresh()->replicate();
+    $other->user_id = User::factory()->create(['is_student' => false, 'is_instructor' => true, 'instructor_department_id' => $department->id])->id;
+    $other->save();
+    $other->supervisorEvaluators()->sync([$head->id]);
+    app(SupervisorEvaluationAssignments::class)->prepareSource($other);
+    $pending = $cycle->assignments()->where('evaluation_type', 'SEF')->where('user_id', $other->user_id)->sole();
+    Filament::setCurrentPanel(Filament::getPanel('admin'));
+    Filament::setTenant($campus, isQuiet: true);
+    $this->actingAs($head);
+    $answers = $b->fields()->pluck('name')->mapWithKeys(fn ($name) => [$name => 4])->all();
+    $this->post(route('evaluate.store', $done), ['fields' => $answers])->assertRedirect(route('evaluate.success', $done));
+    Livewire::test(SupervisorEvaluations::class)->assertCanSeeTableRecords([$pending, $done], inOrder: true);
+});

@@ -69,19 +69,19 @@ class RoleResource extends Resource implements HasShieldPermissions
     {
         $currentUser = auth()->user();
 
-        if (! $currentUser?->can('update_role')) {
-            return false;
+        if ($currentUser?->isSuperAdmin()) {
+            return true;
         }
 
-        if ($currentUser->hasRole('super_admin')) {
-            return true;
+        if (! $currentUser?->can('update_role')) {
+            return false;
         }
 
         if ($record->name === 'super_admin' || is_null($record->team_id)) {
             return false;
         }
 
-        return true;
+        return (int) $record->team_id === filament()->getTenant()?->id;
     }
 
     /**

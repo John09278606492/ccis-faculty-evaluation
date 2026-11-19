@@ -117,7 +117,7 @@ class StudentEvaluationProgress extends Page implements HasTable
     {
         $allowed = $this->sectionQuery(false)->whereKey($sectionIds)->pluck('academic_sections.id')->all();
         $rows = DB::table('student_section_memberships')->whereIn('academic_section_id', $allowed)
-            ->whereIn('user_id', app(AcademicStudents::class)->students(auth()->user(), filament()->getTenant())->select('users.id'))
+            ->whereIn('user_id', app(Progress::class)->students(auth()->user(), filament()->getTenant(), $this->selectedDepartments())->select('users.id'))
             ->get(['user_id', 'academic_section_id']);
 
         return $rows->mapWithKeys(fn ($row) => [$row->user_id => $row->academic_section_id])->all();
@@ -235,8 +235,7 @@ class StudentEvaluationProgress extends Page implements HasTable
     {
         $departments = $this->selectedDepartments();
 
-        return app(AssignedDataAccess::class)->apply(AcademicSection::query(), auth()->user(), filament()->getTenant())
-            ->when($departments !== null, fn ($q) => $q->whereIn('department_id', $departments))
+        return app(Progress::class)->sections(auth()->user(), filament()->getTenant(), $departments)
             ->when($this->selectedSemester(), fn ($q, $id) => $q->where('semester_id', $id))
             ->when($applySectionFilter && ($this->tableFilters['section']['value'] ?? null), fn ($q) => $q->whereKey($this->tableFilters['section']['value']))
             ->with('department');
@@ -335,7 +334,7 @@ class StudentEvaluationProgress extends Page implements HasTable
     public function table(Table $table): Table
     {
         return $table->heading(fn () => $this->viewMode === 'sections' ? 'Progress by section' : 'Progress by student')
-            ->query(fn () => $this->viewMode === 'sections' ? $this->sectionsBehindFirst() : User::query()->where('is_student', true)
+            ->query(fn () => $this->viewMode === 'sections' ? $this->sectionsBehindFirst() : app(Progress::class)->students(auth()->user(), filament()->getTenant(), $this->selectedDepartments())
                 ->whereHas('campuses', fn ($q) => $q->whereKey(filament()->getTenant()->id))
                 ->when(! ($this->tableFilters['section']['value'] ?? null), fn ($q) => $q->whereHas('courseOfferings', fn ($q) => $this->scopedAssignments($q)))
                 ->when($this->tableFilters['section']['value'] ?? null, fn ($q, $id) => $q->whereHas('studentSectionMemberships', fn ($q) => $q->where('academic_section_id', $id)->whereIn('academic_section_id', $this->sectionQuery(false)->select('academic_sections.id'))))

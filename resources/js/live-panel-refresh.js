@@ -46,7 +46,7 @@ export class PanelRefreshQueue {
         this.schedule();
     }
 
-    schedule(delay = Math.max(400, 2000 - (this.now() - this.last))) {
+    schedule(delay = Math.max(50, 150 - (this.now() - this.last))) {
         if (this.timeout !== null || !this.pending.size) return;
         this.timeout = this.timer(() => { this.timeout = null; this.flush(); }, delay);
     }
